@@ -1,0 +1,31 @@
+sources:
+  - name: main-org
+    type: github
+    config:
+      org: my-org
+    secrets:
+      token: GITHUB_TOKEN
+  - name: mirror-org
+    type: github
+    config:
+      org: my-mirror-org
+    secrets:
+      token: GITHUB_MIRROR_TOKEN
+  - name: internal-gitlab
+    type: gitlab
+    config:
+      base_url: https://gitlab.example.com
+    secrets:
+      token: GITLAB_TOKEN
+
+virtual_collections:
+  chats:
+    - "telegram:*"
+    - "slack:*"
+    - "mattermost:*"
+  requirements:
+    - "wiki:*"
+    - "tracker:*"
+  code:
+    - "github:*"
+    - "gitlab:*"

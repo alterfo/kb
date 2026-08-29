@@ -1,0 +1,15 @@
+kb
+Copyright 2026 kb contributors
+
+This product includes third-party software vendored under the following
+licenses. Full license texts are reproduced in THIRD_PARTY_LICENSES.md.
+
+- Cytoscape.js (internal/web/static/cytoscape.min.js)
+  Copyright (c) 2016-2024, The Cytoscape Consortium
+  Licensed under the MIT License
+  https://github.com/cytoscape/cytoscape.js
+
+- htmx (internal/web/static/htmx.min.js)
+  Copyright (c) 2020, Big Sky Software
+  Licensed under the Zero-Clause BSD License
+  https://github.com/bigskysoftware/htmx

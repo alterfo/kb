@@ -1,0 +1,36 @@
+{{define "node-report-estimate"}}
+{{with .Data}}
+<section class="form-box">
+  <h4>Отчёт о ноде</h4>
+  {{if .Entity.Name}}<p><strong>{{.Entity.Name}}</strong></p>{{end}}
+  <p>Оценка контекста: <strong>{{.TokenEstimate}}</strong> токенов</p>
+  {{if .Groups}}
+  <ul>
+    {{range .Groups}}<li>{{.Name}}: {{.Count}}</li>{{end}}
+  </ul>
+  {{end}}
+  {{if .Dropped}}
+  <p class="muted">Отброшено:</p>
+  <ul>
+    {{range .Dropped}}<li>{{.Name}} — {{.Reason}}</li>{{end}}
+  </ul>
+  {{end}}
+  {{range .Warnings}}<div class="alert alert-warning">{{.}}</div>{{end}}
+  <form class="row" hx-post="/reports" hx-target="#node-report" hx-swap="innerHTML">
+    <input type="hidden" name="node" value="{{.Entity.ID}}">
+    <input type="search" name="q" value="{{.Entity.Name}}" placeholder="вопрос для отчёта">
+    <button type="submit">Сгенерировать отчёт</button>
+  </form>
+</section>
+{{end}}
+{{end}}
+
+{{define "node-report-result"}}
+{{with .Data}}
+<section class="form-box">
+  <h4>Отчёт о ноде{{if .NodeName}}: {{.NodeName}}{{end}}</h4>
+  {{range .Warnings}}<div class="alert alert-warning">{{.}}</div>{{end}}
+  <div class="markdown">{{.Report}}</div>
+</section>
+{{end}}
+{{end}}

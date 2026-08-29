@@ -1,0 +1,10 @@
+{
+  "title": "Hackathon project: queue debugger",
+  "channel": "hackathons",
+  "author": "Evan Brooks",
+  "body": "We built a small tool to replay delayed queues.",
+  "title_field_name": "title",
+  "content_field_names": ["body"],
+  "dataset_doc_uuid": "dsid_55555555555555555555555555555555",
+  "dataset_noise_document": true
+}

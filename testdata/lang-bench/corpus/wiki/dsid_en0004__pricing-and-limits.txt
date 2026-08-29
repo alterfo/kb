@@ -1,0 +1,3 @@
+Pricing and Storage Limits
+
+The Starter plan costs $49 per month and includes 5 users and 100 GB of storage. The Growth plan costs $199 per month and includes 50 users and 1 TB of storage. The Enterprise plan is priced individually. The maximum size for a single uploaded file is 5 GB. Audit logs are retained for 90 days.

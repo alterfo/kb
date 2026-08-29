@@ -1,0 +1,213 @@
+{{define "page-graph"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+<script src="/static/cytoscape.min.js"></script>
+<script src="/static/graph-node.js"></script>
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+<h1>Knowledge graph ({{len .Data.Entities}} entities, {{len .Data.Relations}} relations)</h1>
+<div class="row">
+  <input type="search" id="graph-q" placeholder="search entities">
+  <select id="graph-community">
+    <option value="">all communities</option>
+    {{range .Data.Communities}}<option value="{{.ID}}">{{.Title}}</option>{{end}}
+  </select>
+  <input type="number" id="graph-min-degree" placeholder="min degree" min="0" style="width:8em">
+  <span id="graph-meta" class="muted"></span>
+</div>
+<div id="cy" style="height:600px;border:1px solid #26314a;"></div>
+<div class="graph-layout">
+  <div id="graph-content">{{template "graph-content" .}}</div>
+  <aside id="entity-panel">{{template "entity-panel" .}}</aside>
+</div>
+</main>
+<script>
+(function () {
+  var cy = cytoscape({
+    container: document.getElementById("cy"),
+    style: [
+      { selector: "node", style: {
+        "background-color": "data(color)",
+        "label": "data(label)",
+        "width": "mapData(degree, 0, 20, 16, 48)",
+        "height": "mapData(degree, 0, 20, 16, 48)",
+        "font-size": 10,
+        "color": "#cfe0ff",
+        "text-valign": "bottom",
+        "text-margin-y": 4
+      }},
+      { selector: "edge", style: {
+        "width": 1,
+        "line-color": "#3a4a6b",
+        "target-arrow-color": "#3a4a6b",
+        "target-arrow-shape": "triangle",
+        "curve-style": "bezier",
+        "label": "data(type)",
+        "font-size": 8,
+        "color": "#8fa0bd"
+      }}
+    ]
+  });
+
+  cy.on("tap", "node", function (evt) {
+    htmx.ajax("GET", "/graph/node?id=" + encodeURIComponent(evt.target.id()), {
+      target: "#entity-panel", swap: "innerHTML"
+    });
+  });
+
+  function debounce(fn, ms) {
+    var t;
+    return function () {
+      clearTimeout(t);
+      var args = arguments;
+      t = setTimeout(function () { fn.apply(null, args); }, ms);
+    };
+  }
+
+  function load() {
+    var params = new URLSearchParams();
+    var q = document.getElementById("graph-q").value.trim();
+    if (q) params.set("q", q);
+    var community = document.getElementById("graph-community").value;
+    if (community) params.set("community", community);
+    var minDegree = document.getElementById("graph-min-degree").value;
+    if (minDegree) params.set("min_degree", minDegree);
+
+    fetch("/graph/data?" + params.toString())
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        cy.elements().remove();
+        cy.add((data.nodes || []).map(function (n) { return { group: "nodes", data: n }; }));
+        cy.add((data.edges || []).map(function (e) { return { group: "edges", data: e }; }));
+        cy.layout({ name: "cose", animate: false }).run();
+        var meta = "showing " + data.returned_entities + " of " + data.total_entities + " entities";
+        if (data.truncated) meta += " (truncated — narrow your search or raise min degree)";
+        document.getElementById("graph-meta").textContent = meta;
+      });
+  }
+
+  window.kbGraphRefresh = load;
+  document.getElementById("graph-q").addEventListener("input", debounce(load, 300));
+  document.getElementById("graph-community").addEventListener("change", load);
+  document.getElementById("graph-min-degree").addEventListener("input", debounce(load, 300));
+  document.body.addEventListener("htmx:afterSwap", function (evt) {
+    if (evt.detail && evt.detail.target && evt.detail.target.id === "graph-content") load();
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>
+{{end}}
+
+{{define "graph-content"}}
+{{with .Data}}
+<section class="form-box">
+  <h3>Add entity</h3>
+  <form hx-post="/graph/entities" hx-target="#graph-content" hx-swap="innerHTML">
+    <label>Name <input name="name" required></label>
+    <label>Type <input name="type" required></label>
+    <label>Description <textarea name="description" rows="2"></textarea></label>
+    <label>Source chunks (optional, comma-separated) <input name="source_chunks"></label>
+    <button type="submit">Save entity</button>
+  </form>
+</section>
+
+<h2>Entities</h2>
+<table>
+  <thead><tr><th>Name</th><th>Type</th><th>Degree</th><th>Description</th><th></th></tr></thead>
+  <tbody>
+  {{range .Entities}}
+  <tr>
+    <td><button class="link" hx-get="{{.DetailURL}}" hx-target="#entity-panel" hx-swap="innerHTML">{{.Name}}</button></td>
+    <td>{{.Type}}</td>
+    <td>{{.Degree}}</td>
+    <td>{{.Description}}</td>
+    <td><button hx-delete="{{.DeleteURL}}" hx-target="#graph-content" hx-swap="innerHTML" hx-confirm="Delete {{.Name}}?">Delete</button></td>
+  </tr>
+  {{else}}
+  <tr><td colspan="5">no entities</td></tr>
+  {{end}}
+  </tbody>
+</table>
+
+<section class="form-box">
+  <h3>Add relation</h3>
+  <form hx-post="/graph/relations" hx-target="#graph-content" hx-swap="innerHTML">
+    <label>Source entity (id or name) <input name="src" required></label>
+    <label>Target entity (id or name) <input name="dst" required></label>
+    <label>Type <input name="type" required></label>
+    <label>Description <input name="description"></label>
+    <label>Source chunks (optional, comma-separated) <input name="source_chunks"></label>
+    <button type="submit">Save relation</button>
+  </form>
+</section>
+
+<h2>Relations</h2>
+<table>
+  <thead><tr><th>Source</th><th>Type</th><th>Target</th><th>Description</th><th></th></tr></thead>
+  <tbody>
+  {{range .Relations}}
+  <tr>
+    <td>{{.Src}}</td>
+    <td>{{.Type}}</td>
+    <td>{{.Dst}}</td>
+    <td>{{.Description}}</td>
+    <td><button hx-delete="{{.DeleteURL}}" hx-target="#graph-content" hx-swap="innerHTML" hx-confirm="Delete relation?">Delete</button></td>
+  </tr>
+  {{else}}
+  <tr><td colspan="5">no relations</td></tr>
+  {{end}}
+  </tbody>
+</table>
+
+<h2>Communities</h2>
+{{range .Communities}}
+<section class="form-box">
+  <h3>{{.Title}} <span class="muted">({{.ID}})</span></h3>
+  {{if .Summary}}<p>{{.Summary}}</p>{{end}}
+  <p class="muted">{{range .Members}}{{.}} {{end}}</p>
+</section>
+{{else}}
+<p>no communities</p>
+{{end}}
+{{end}}
+{{end}}
+
+{{define "entity-panel"}}
+{{with .Data.Selected}}
+<section class="form-box">
+  <h3>{{.Name}}</h3>
+  <p class="muted">{{.Type}} · degree {{.Degree}}</p>
+  {{if .Description}}<p>{{.Description}}</p>{{end}}
+  {{if .SourceChunks}}<p class="muted">source chunks: {{range .SourceChunks}}{{.}} {{end}}</p>{{end}}
+  <form hx-post="/graph/entities" hx-target="#graph-content" hx-swap="innerHTML">
+    <input type="hidden" name="id" value="{{.ID}}">
+    <label>Name <input name="name" value="{{.Name}}" required readonly></label>
+    <label>Type <input name="type" value="{{.Type}}" required readonly></label>
+    <label>Description <textarea name="description" rows="2">{{.Description}}</textarea></label>
+    <label>Source chunks (comma-separated) <input name="source_chunks" value="{{join .SourceChunks ","}}"></label>
+    <button type="submit">Save</button>
+  </form>
+  <button hx-delete="{{.DeleteURL}}" hx-target="#graph-content" hx-swap="innerHTML" hx-confirm="Delete {{.Name}}?">Delete</button>
+  <h4>Relations</h4>
+  {{range .Relations}}
+  <p>{{.Src}} — {{.Type}} — {{.Dst}} <button hx-delete="{{.DeleteURL}}" hx-target="#graph-content" hx-swap="innerHTML" hx-confirm="Delete relation?">Delete</button></p>
+  {{else}}
+  <p class="muted">no relations</p>
+  {{end}}
+</section>
+{{else}}
+<section class="form-box"><p class="muted">Select an entity to inspect or edit it.</p></section>
+{{end}}
+{{end}}
+
+{{define "graph-error"}}
+<div class="alert alert-error">{{.Title}}</div>
+{{end}}

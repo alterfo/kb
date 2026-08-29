@@ -1,0 +1,7 @@
+sources:
+  - name: leon-ai
+    type: github
+    config:
+      repos: leon-ai/leon
+      include_wiki: "false"
+      include_contents: "false"

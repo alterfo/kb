@@ -1,0 +1,8 @@
+Runbook: Audit Exporter Delivery Failures
+
+Symptoms:
+Audit exporter deliveries fail with 503 from the sink.
+
+Steps:
+1. Check the delivery queue depth.
+2. Restart the exporter pod.

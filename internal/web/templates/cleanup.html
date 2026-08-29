@@ -1,0 +1,76 @@
+{{define "page-cleanup"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+<h1>Cleanup</h1>
+{{with .Data}}
+{{if .Note}}<p class="muted">{{.Note}}</p>{{end}}
+<form method="post" action="/cleanup">
+{{range .Duplicates}}
+<section class="form-box">
+  <h3>Duplicate group</h3>
+  <p class="muted">keep: {{.Keep.Path}}</p>
+  {{range .Trash}}
+  <label class="check-row"><input type="checkbox" name="action" value="trash:{{.Path}}"> trash {{.Path}}</label>
+  {{end}}
+</section>
+{{end}}
+{{if .Empty}}
+<section class="form-box">
+  <h3>Near-empty documents</h3>
+  {{range .Empty}}
+  <label class="check-row"><input type="checkbox" name="action" value="trash:{{.Path}}"> trash {{.Path}}</label>
+  {{end}}
+</section>
+{{end}}
+{{range .Merges}}
+<section class="form-box">
+  <h3>Merge candidates: {{.Stem}}</h3>
+  <label class="check-row"><input type="checkbox" name="action" value="merge:{{join .Paths ";"}}"> merge {{range .Paths}}{{.}} {{end}}</label>
+</section>
+{{end}}
+{{if .Compress}}
+<section class="form-box">
+  <h3>Compress candidates</h3>
+  {{range .Compress}}
+  <label class="check-row"><input type="checkbox" name="action" value="compress:{{.Path}}"> compress {{.Path}} ({{.Size}} bytes)</label>
+  {{end}}
+</section>
+{{end}}
+{{if or .Duplicates .Empty .Merges .Compress}}
+<div class="row"><button type="submit">Apply selected</button></div>
+{{else}}
+<p>nothing to clean up</p>
+{{end}}
+</form>
+{{if .Results}}
+<h2>Results</h2>
+<ul>
+{{range .Results}}
+<li>{{if .OK}}<span class="badge badge-ok">ok</span>{{else}}<span class="badge badge-never">failed</span>{{end}} {{.Action}} — {{.Detail}}</li>
+{{end}}
+</ul>
+{{end}}
+{{if .Proposals}}
+<h2>LLM proposals — review then confirm</h2>
+{{range .Proposals}}
+<form method="post" action="/cleanup/rewrite" class="form-box">
+  <h3>{{.Kind}} → {{.Primary}}</h3>
+  <p class="muted">originals: {{range .Paths}}{{.}} {{end}} · {{.OriginalSize}} → {{.NewSize}} bytes</p>
+  <textarea name="content">{{.Content}}</textarea>
+  <input type="hidden" name="paths" value="{{join .Paths ";"}}">
+  <div class="row"><button type="submit">Confirm rewrite</button></div>
+</form>
+{{end}}
+{{end}}
+{{end}}
+</main>
+</body>
+</html>
+{{end}}

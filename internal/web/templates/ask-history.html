@@ -1,0 +1,32 @@
+{{define "page-ask-history"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+<h1>Ask History</h1>
+<p class="muted"><a href="/ask">Back to Ask</a></p>
+<table>
+  <thead><tr><th>Query</th><th>Status</th><th>Started</th><th>Finished</th><th></th></tr></thead>
+  <tbody>
+  {{range .Data.Runs}}
+  <tr>
+    <td>{{.Query}}</td>
+    <td><span class="badge">{{.Status}}</span></td>
+    <td class="muted">{{.CreatedAt}}</td>
+    <td class="muted">{{if .FinishedAt}}{{.FinishedAt}}{{else}}—{{end}}</td>
+    <td><a href="/ask?run={{.ID}}">Open</a></td>
+  </tr>
+  {{else}}
+  <tr><td colspan="5">no ask runs yet</td></tr>
+  {{end}}
+  </tbody>
+</table>
+</main>
+</body>
+</html>
+{{end}}

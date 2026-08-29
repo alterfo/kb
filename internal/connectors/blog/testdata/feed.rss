@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Leon Blog</title>
+    <link>https://blog.getleon.ai</link>
+    <description>Stories from the Leon team</description>
+    <item>
+      <title>Leon 2.0 is here</title>
+      <link>https://blog.getleon.ai/leon-2-0</link>
+      <guid isPermaLink="false">post-42</guid>
+      <pubDate>Sat, 22 Aug 2026 10:30:00 +0000</pubDate>
+      <description><![CDATA[<p>Short summary.</p>]]></description>
+      <content:encoded><![CDATA[<h1>Leon 2.0</h1><p>Full <strong>post</strong> body.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>Weekly update</title>
+      <link>https://blog.getleon.ai/weekly-update</link>
+      <pubDate>Fri, 21 Aug 2026 09:00:00 +0000</pubDate>
+      <description>Plain text body.</description>
+    </item>
+  </channel>
+</rss>

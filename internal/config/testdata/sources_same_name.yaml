@@ -1,0 +1,9 @@
+sources:
+  - name: prod
+    type: github
+    secrets:
+      token: GITHUB_TOKEN
+  - name: prod
+    type: gitlab
+    secrets:
+      token: GITLAB_TOKEN

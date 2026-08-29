@@ -1,0 +1,6 @@
+{
+  "title": "Broken document missing uuid",
+  "body": "This document lacks dataset_doc_uuid.",
+  "title_field_name": "title",
+  "content_field_names": ["body"]
+}

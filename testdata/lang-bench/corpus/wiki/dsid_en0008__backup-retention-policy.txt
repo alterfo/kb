@@ -1,0 +1,3 @@
+Backup and Retention Policy
+
+The backup system takes snapshots every hour. Daily snapshots are retained for 90 days, and monthly snapshots are retained for 24 months. The recovery point objective is 1 hour, and the recovery time objective is 2 hours. Restores use the latest complete snapshot plus the incremental chain.
