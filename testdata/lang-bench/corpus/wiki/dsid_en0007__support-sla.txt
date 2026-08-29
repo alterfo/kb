@@ -1,0 +1,3 @@
+Customer Support SLA
+
+A Sev1 support ticket receives a first response within 20 minutes. The target first response time is 2 hours for Sev2 and one business day for Sev3. Support is available 24/7 for Sev1 and Sev2 issues. Lower-severity tickets are handled during standard business hours.

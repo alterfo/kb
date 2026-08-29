@@ -1,0 +1,27 @@
+{{define "page-home"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+<h1>Overview</h1>
+{{with .Data}}
+<div class="cards">
+  <div class="card"><div class="card-value">{{.Chunks}}</div><div class="card-label">chunks</div></div>
+  <div class="card"><div class="card-value">{{.Documents}}</div><div class="card-label">documents</div></div>
+  <div class="card"><div class="card-value">{{.Entities}}</div><div class="card-label">entities</div></div>
+  <div class="card"><div class="card-value">{{.Relations}}</div><div class="card-label">relations</div></div>
+  <div class="card"><div class="card-value">{{.Communities}}</div><div class="card-label">communities</div></div>
+  <div class="card"><div class="card-value">{{.Sources}}</div><div class="card-label">sources</div></div>
+</div>
+<p class="muted">corpus version {{.CorpusVersion}} · embed model {{.EmbedModel}} · LLM {{.LLMModel}}</p>
+<p class="muted">{{.StaleSources}} source(s) stale or never synced · {{.VirtualCollections}} virtual collection(s)</p>
+{{end}}
+</main>
+</body>
+</html>
+{{end}}

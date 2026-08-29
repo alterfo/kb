@@ -1,0 +1,5 @@
+{
+  "title": "Retriever module",
+  "description": "The kb project is a graph-based knowledge base. The retriever module fuses dense vectors and BM25 scores. Alice maintains the retriever module and Bob wrote the indexer.",
+  "team": "retrieval"
+}

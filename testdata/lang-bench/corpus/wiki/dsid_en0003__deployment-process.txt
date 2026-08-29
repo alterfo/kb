@@ -1,0 +1,3 @@
+Production Deployment Process
+
+The service uses continuous deployment behind feature flags. Every pull request requires one approval and a fully green test suite. A rollout starts with a canary receiving 5% of traffic for 30 minutes. Traffic expands automatically after the canary passes health checks. Automatic rollback triggers when the error rate exceeds 2%.

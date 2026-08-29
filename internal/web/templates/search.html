@@ -1,0 +1,73 @@
+{{define "page-search"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+<h1>Search</h1>
+<form hx-get="/search" hx-target="#search-results" hx-swap="outerHTML" hx-push-url="true" hx-indicator="#search-spinner" class="row">
+  <input type="search" name="q" value="{{.Data.Query}}" placeholder="query" autofocus>
+  <input type="text" name="source" value="{{.Data.Source}}" placeholder="source filter (optional)">
+  <button type="submit">Search</button>
+  <span id="search-spinner" class="htmx-indicator">searching…</span>
+</form>
+{{template "search-results" .}}
+</main>
+</body>
+</html>
+{{end}}
+
+{{define "search-results"}}
+<div id="search-results">
+{{template "alerts" .}}
+{{with .Data.Saved}}
+<section>
+  <h2>Saved search</h2>
+  <p class="muted">query: {{.Query}}</p>
+  {{with .Answer}}
+  <h3>Synthesis</h3>
+  <div class="markdown">{{.}}</div>
+  {{end}}
+  <p class="muted">{{.ResultsCount}} results · {{.DurationMS}}ms · {{.CreatedAt}}</p>
+  <p><a class="button" href="/search?q={{.Query | urlquery}}{{with .SourceFilter}}&amp;source={{. | urlquery}}{{end}}">Повторить поиск</a></p>
+</section>
+{{end}}
+{{if .Data.SynthesisFallback}}
+<div class="alert alert-warning">Синтез недоступен — показан список источников. Причина: {{.Data.SynthesisFallbackReason}}</div>
+{{else}}
+{{with .Data.Answer}}
+<section>
+  <h2>Synthesis</h2>
+  <div class="markdown">{{.}}</div>
+</section>
+{{end}}
+{{end}}
+{{with .Data.Path}}
+<p class="muted">chunks for document <a href="/documents/view?path={{. | urlquery}}">{{.}}</a></p>
+{{end}}
+<h2>Results ({{len .Data.Results}})</h2>
+{{range .Data.Results}}
+<article class="result">
+  <h3><a href="/documents/view?path={{.FilePath}}">{{.FileName}}</a></h3>
+  <p class="muted">{{.Source}} · score {{printf "%.3f" .Score}} · {{.FilePath}}</p>
+  <p class="snippet">{{.Text}}</p>
+</article>
+{{else}}
+<p>no results</p>
+{{end}}
+{{if .Data.History}}
+<section>
+  <h2>Recent searches</h2>
+  <ul class="history-list">
+  {{range .Data.History}}
+    <li><a href="/search?id={{.ID}}">{{.Query}}</a> <span class="muted">{{.ResultsCount}} results · {{.DurationMS}}ms · {{.CreatedAt}}</span></li>
+  {{end}}
+  </ul>
+</section>
+{{end}}
+</div>
+{{end}}

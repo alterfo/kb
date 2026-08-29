@@ -1,0 +1,27 @@
+{{define "head"}}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} — KB</title>
+<link rel="stylesheet" href="/static/kb.css">
+<script src="/static/htmx.min.js"></script>
+{{end}}
+
+{{define "nav"}}
+<nav class="nav">
+  <a href="/">KB</a>
+  <a href="/search">Search</a>
+  <a href="/ask">Ask</a>
+  <a href="/documents">Documents</a>
+  <a href="/add">Add</a>
+  <a href="/integrations">Integrations</a>
+  <a href="/reports">Reports</a>
+  <a href="/cleanup">Cleanup</a>
+  <a href="/trash">Trash</a>
+  <a href="/graph">Graph</a>
+  <a href="/mcp/info">MCP</a>
+</nav>
+{{end}}
+
+{{define "alerts"}}
+{{range .Alerts}}<div class="alert alert-{{.Kind}}">{{.Message}}</div>{{end}}
+{{end}}

@@ -1,0 +1,24 @@
+{{define "page-add"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+<h1>Add note</h1>
+<form method="post" action="/add" class="form-box">
+  <label for="path">Path (KB_ROOT-relative, e.g. notes/my-note.md; bare name goes under notes/)</label>
+  <input type="text" id="path" name="path" value="{{.Data.Path}}" placeholder="notes/my-note.md">
+  <label for="title">Title</label>
+  <input type="text" id="title" name="title" value="{{.Data.Title}}" placeholder="optional title">
+  <label for="content">Content (markdown)</label>
+  <textarea id="content" name="content" placeholder="write the note…">{{.Data.Content}}</textarea>
+  <div class="row"><button type="submit">Save</button></div>
+</form>
+</main>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,11 @@
+{
+  "subject": "Standup notes",
+  "participants": [
+    "Ann",
+    "Bob"
+  ],
+  "notes": "Discussed rollout.",
+  "title_field_name": "subject",
+  "content_field_names": ["participants", "notes"],
+  "dataset_doc_uuid": "dsid_44444444444444444444444444444444"
+}

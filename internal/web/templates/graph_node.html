@@ -1,0 +1,88 @@
+{{define "node-view"}}
+{{with $node := .Data}}
+<section class="node-view">
+  <header class="form-box">
+    <h3>{{$node.Document.Name}}</h3>
+    <p class="muted">
+      {{$node.Document.Type}} · {{$node.Document.ID}} · {{$node.TotalNeighbors}} neighbours
+      {{if $node.Hub}}· hub{{end}}
+    </p>
+    {{if $node.Document.Description}}<p>{{$node.Document.Description}}</p>{{end}}
+    <p><a href="/graph/entity?id={{urlquery $node.Document.ID}}" hx-get="/graph/entity?id={{urlquery $node.Document.ID}}" hx-target="#entity-panel" hx-swap="innerHTML">Edit entity</a></p>
+  </header>
+
+  <div id="node-cy" style="height:{{if $node.Hub}}460{{else}}220{{end}}px" data-node-id="{{$node.Document.ID}}" data-hub="{{if $node.Hub}}1{{else}}0{{end}}"></div>
+
+  {{range $node.Warnings}}<div class="alert alert-error">{{.}}</div>{{end}}
+
+  <section class="form-box">
+    <button type="button" class="secondary" hx-get="/reports/node/estimate?id={{urlquery $node.Document.ID}}" hx-target="#node-report" hx-swap="innerHTML">Сгенерировать отчёт о ноде</button>
+    <div id="node-report"></div>
+  </section>
+
+  {{if $node.Community}}
+  <section class="form-box">
+    <h4>Community</h4>
+    {{range $node.Community}}
+    <p><strong>{{.Title}}</strong>{{if .Summary}} — {{.Summary}}{{end}}</p>
+    {{end}}
+  </section>
+  {{end}}
+
+  <section class="form-box">
+    <h4>Connections</h4>
+    {{range $node.Edges}}
+    <details {{if not .Foldable}}open{{end}}>
+      <summary>{{.Type}}: {{.Count}}{{if .Foldable}} <span class="muted">(top {{len .Edges}} shown)</span>{{end}}</summary>
+      <ul>
+        {{range .Edges}}
+        <li title="{{.Type}} · authority: {{with .Authority}}{{.}}{{else}}unknown{{end}} · recency: {{with .Recency}}{{.}}{{else}}unknown{{end}}">
+          {{.NeighborName}}{{if .NeighborType}} <span class="muted">({{.NeighborType}})</span>{{end}}
+          {{if .Description}} — {{.Description}}{{end}}
+          {{if or .Authority .Recency}}<span class="muted"> · {{.Authority}}{{if .Authority}} / {{end}}{{.Recency}}</span>{{end}}
+        </li>
+        {{end}}
+      </ul>
+      {{if .Foldable}}
+      <p><a href="/graph/node?id={{urlquery $node.Document.ID}}&limit=100" hx-get="/graph/node?id={{urlquery $node.Document.ID}}&limit=100" hx-target="#entity-panel" hx-swap="innerHTML">Show all</a></p>
+      {{end}}
+    </details>
+    {{else}}
+    <p class="muted">no connections found — verify manually</p>
+    {{end}}
+  </section>
+
+  {{if $node.Inferred}}
+  <section class="form-box">
+    <h4>Suggested connections <span class="badge badge-stale">найдено по тексту</span></h4>
+    <p class="muted">Query-time entity-linking candidates — not persisted graph edges yet.</p>
+    <ul>
+      {{range $node.Inferred}}
+      <li class="inferred-edge">
+        {{.EntityName}}{{if .EntityType}} <span class="muted">({{.EntityType}})</span>{{end}}
+        <form class="inline" hx-post="/graph/relations" hx-target="#entity-panel" hx-swap="innerHTML">
+          <input type="hidden" name="src" value="{{$node.Document.ID}}">
+          <input type="hidden" name="dst" value="{{.EntityID}}">
+          <input type="hidden" name="type" value="{{.Type}}">
+          <input type="hidden" name="provenance" value="user-accepted">
+          <input type="hidden" name="source_chunks" value="{{join $node.Document.SourceChunks ","}}">
+          <button type="submit" class="secondary">принять в граф</button>
+        </form>
+      </li>
+      {{end}}
+    </ul>
+  </section>
+  {{end}}
+
+  {{if $node.DocPath}}
+  <section class="form-box">
+    <h4>Document context</h4>
+    <p class="muted">{{$node.DocPath}}</p>
+    {{if $node.DocTitle}}<p><strong>{{$node.DocTitle}}</strong></p>{{end}}
+    <div class="markdown">{{$node.DocBody}}</div>
+    <p><a href="{{$node.DocViewURL}}">Open document</a></p>
+  </section>
+  {{end}}
+</section>
+{{end}}
+{{end}}

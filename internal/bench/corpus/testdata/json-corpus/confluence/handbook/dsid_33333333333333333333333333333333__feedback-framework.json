@@ -1,0 +1,18 @@
+{
+  "title": "Asynchronous Feedback Framework",
+  "space": "people-ops",
+  "author": "Maya Chen",
+  "owner_team": "people-ops",
+  "status": "published",
+  "created_at": "2026-01-12",
+  "last_updated": "2026-02-03",
+  "labels": [
+    "feedback",
+    "remote-work"
+  ],
+  "confidentiality": "internal",
+  "content": "Summary:\nThis page documents Redwood's asynchronous feedback framework.",
+  "title_field_name": "title",
+  "content_field_names": ["content"],
+  "dataset_doc_uuid": "dsid_33333333333333333333333333333333"
+}

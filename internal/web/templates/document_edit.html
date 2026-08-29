@@ -1,0 +1,32 @@
+{{define "page-document-edit"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+{{with .Data}}
+<h1>Edit {{.Path}}</h1>
+<form method="post" action="/documents/edit">
+  <input type="hidden" name="path" value="{{.Path}}">
+  <div class="form-box">
+    <label for="title">Title</label>
+    <input type="text" id="title" name="title" value="{{.Title}}">
+    <label for="summary">Summary</label>
+    <input type="text" id="summary" name="summary" value="{{.Summary}}">
+    <label for="body">Body (markdown)</label>
+    <textarea id="body" name="body">{{.Body}}</textarea>
+    <label for="frontmatter">Frontmatter (YAML)</label>
+    <textarea id="frontmatter" name="frontmatter" rows="6">{{.Frontmatter}}</textarea>
+  </div>
+  <button type="submit">Save</button>
+  <a href="/documents/view?path={{.Path}}">Cancel</a>
+</form>
+{{end}}
+</main>
+</body>
+</html>
+{{end}}

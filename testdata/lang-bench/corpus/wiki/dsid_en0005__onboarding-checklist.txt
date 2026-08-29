@@ -1,0 +1,3 @@
+New Hire Onboarding Checklist
+
+On day one, a new hire receives their laptop, accounts, and VPN access. On day two, they complete mandatory security training. A mentor or buddy is assigned by day five. Access to core engineering systems is granted during the first week. Performance goals for the probation period are recorded within the first 30 days.

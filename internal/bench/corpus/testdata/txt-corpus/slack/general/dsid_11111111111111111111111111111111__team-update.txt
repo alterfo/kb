@@ -1,0 +1,8 @@
+Team Update: Q3 Roadmap Review
+
+Summary:
+The platform team reviewed the Q3 roadmap.
+
+Action items:
+- finalize capacity plan
+- ship billing beta

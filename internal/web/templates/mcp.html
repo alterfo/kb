@@ -1,0 +1,42 @@
+{{define "page-mcp-info"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+<h1>MCP</h1>
+{{if not .Data.Configured}}
+<p class="muted">MCP is not configured on this server.</p>
+{{else}}
+<p>The knowledge base is exposed over the Model Context Protocol two ways:</p>
+<table>
+  <tbody>
+    <tr><th>stdio</th><td><code>{{.Data.StdioCmd}}</code> (local process, e.g. Claude Desktop/Code)</td></tr>
+    <tr><th>HTTP</th><td><code>{{.Data.Endpoint}}</code> (this server, streamable HTTP transport)</td></tr>
+  </tbody>
+</table>
+
+<h2>Client config</h2>
+<h3>stdio</h3>
+<pre class="raw">{{.Data.StdioConfig}}</pre>
+<h3>HTTP</h3>
+<pre class="raw">{{.Data.HTTPConfig}}</pre>
+
+<h2>Tools ({{len .Data.Tools}})</h2>
+<table>
+  <thead><tr><th>Name</th><th>Description</th></tr></thead>
+  <tbody>
+  {{range .Data.Tools}}
+  <tr><td><code>{{.Name}}</code></td><td>{{.Description}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}
+</main>
+</body>
+</html>
+{{end}}

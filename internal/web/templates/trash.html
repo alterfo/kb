@@ -1,0 +1,35 @@
+{{define "page-trash"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+<h1>Trash ({{len .Data.Entries}})</h1>
+<table>
+  <thead><tr><th>Path</th><th>Size</th><th>Trashed</th><th></th></tr></thead>
+  <tbody>
+  {{range .Data.Entries}}
+  <tr>
+    <td>{{.Path}}</td>
+    <td>{{.Size}} B</td>
+    <td class="muted">{{.ModTime}}</td>
+    <td>
+      <form method="post" action="/trash/restore"><input type="hidden" name="path" value="{{.Path}}"><button type="submit">Restore</button></form>
+    </td>
+  </tr>
+  {{else}}
+  <tr><td colspan="4">trash is empty</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{if .Data.Entries}}
+<form method="post" action="/trash/empty"><button type="submit" class="secondary">Empty trash</button></form>
+{{end}}
+</main>
+</body>
+</html>
+{{end}}

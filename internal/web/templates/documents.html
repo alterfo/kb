@@ -1,0 +1,51 @@
+{{define "page-documents"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+<h1>Documents ({{.Data.Total}})</h1>
+<p class="muted">
+  filter:
+  <a href="/documents">all</a>
+  {{range .Data.Sources}}· <a href="/documents?source={{.}}">{{.}}</a>{{end}}
+</p>
+{{template "documents-table" .}}
+</main>
+</body>
+</html>
+{{end}}
+
+{{define "documents-table"}}
+<div id="documents-table">
+<table>
+  <thead><tr><th>Path</th><th>Title</th><th>Summary</th><th>Source</th><th>Updated</th><th></th></tr></thead>
+  <tbody>
+  {{range .Data.Documents}}
+  <tr>
+    <td><a href="/documents/view?path={{.Path}}">{{.Path}}</a></td>
+    <td>{{.Title}}</td>
+    <td>{{if .Summary}}{{.Summary}}{{else}}<span class="badge">no description</span>{{end}}</td>
+    <td>{{.Source}}</td>
+    <td class="muted">{{.UpdatedAt}}</td>
+    <td>
+      <a href="{{.EditURL}}">Edit</a>
+      <button hx-delete="{{.DeleteURL}}" hx-confirm="Delete {{.Path}}?">Delete</button>
+    </td>
+  </tr>
+  {{else}}
+  <tr><td colspan="6">no documents</td></tr>
+  {{end}}
+  </tbody>
+</table>
+<div class="muted row">
+  <span>showing {{.Data.From}}–{{.Data.To}} of {{.Data.Total}}</span>
+  {{if .Data.HasPrev}}<button class="secondary" hx-get="{{.Data.PrevURL}}" hx-target="#documents-table" hx-swap="outerHTML">Prev</button>{{end}}
+  {{if .Data.HasNext}}<button class="secondary" hx-get="{{.Data.NextURL}}" hx-target="#documents-table" hx-swap="outerHTML">Next</button>{{end}}
+</div>
+</div>
+{{end}}

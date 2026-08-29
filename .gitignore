@@ -1,0 +1,23 @@
+/bin/
+/dist/
+*.db
+*.db-shm
+*.db-wal
+.env
+.sync-state.json
+.tombstones.json
+/kb_root/
+
+/kb
+.kilo/
+.revmux/
+.ralphex/
+/model-duel-*.md
+/BACKLOG.md
+
+# Test / coverage artifacts
+*.test
+*.out
+coverage.out
+coverage.html
+.DS_Store

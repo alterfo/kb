@@ -1,0 +1,260 @@
+{
+  "entities": [
+    {
+      "id": "alice-person-869f76e5",
+      "name": "Alice",
+      "type": "person",
+      "description": "engineering lead"
+    },
+    {
+      "id": "acme-corp-company-5f8c6302",
+      "name": "Acme Corp",
+      "type": "company",
+      "description": "software company"
+    },
+    {
+      "id": "bob-person-c8600bcb",
+      "name": "Bob",
+      "type": "person",
+      "description": "CTO"
+    },
+    {
+      "id": "monday-sync-event-de6609c4",
+      "name": "Monday sync",
+      "type": "event",
+      "description": "weekly meeting"
+    },
+    {
+      "id": "atlas-platform-team-team-6aafec9d",
+      "name": "Atlas platform team",
+      "type": "team",
+      "description": ""
+    },
+    {
+      "id": "carol-person-008298ee",
+      "name": "Carol",
+      "type": "person",
+      "description": "assistant"
+    },
+    {
+      "id": "dave-person-038a99af",
+      "name": "Dave",
+      "type": "person",
+      "description": "backend engineer"
+    },
+    {
+      "id": "atlas-product-29feaf4b",
+      "name": "Atlas",
+      "type": "product",
+      "description": "platform"
+    },
+    {
+      "id": "postgresql-technology-712dee13",
+      "name": "PostgreSQL",
+      "type": "technology",
+      "description": "database"
+    },
+    {
+      "id": "go-technology-876d0d0d",
+      "name": "Go",
+      "type": "technology",
+      "description": "programming language"
+    },
+    {
+      "id": "eve-person-cb4cc5c6",
+      "name": "Eve",
+      "type": "person",
+      "description": "product manager"
+    },
+    {
+      "id": "amsterdam-location-eb466169",
+      "name": "Amsterdam",
+      "type": "location",
+      "description": "city"
+    },
+    {
+      "id": "legal-department-department-8ec32f05",
+      "name": "Legal department",
+      "type": "department",
+      "description": ""
+    },
+    {
+      "id": "frank-person-c97fe27d",
+      "name": "Frank",
+      "type": "person",
+      "description": "legal lead"
+    }
+  ],
+  "relations": [
+    {
+      "id": "alice-person-869f76e5-reports-to-bob-person-c8600bcb-6fc07370",
+      "src": "alice-person-869f76e5",
+      "dst": "bob-person-c8600bcb",
+      "type": "reports_to",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "alice-person-869f76e5-works-at-acme-corp-company-5f8c6302-0750a3fd",
+      "src": "alice-person-869f76e5",
+      "dst": "acme-corp-company-5f8c6302",
+      "type": "works_at",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "alice-person-869f76e5-attends-monday-sync-event-de6609c4-cb9a2393",
+      "src": "alice-person-869f76e5",
+      "dst": "monday-sync-event-de6609c4",
+      "type": "attends",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "bob-person-c8600bcb-works-at-acme-corp-company-5f8c6302-ff97cb48",
+      "src": "bob-person-c8600bcb",
+      "dst": "acme-corp-company-5f8c6302",
+      "type": "works_at",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "bob-person-c8600bcb-leads-atlas-platform-team-team-6aafec9d-3a57fc3e",
+      "src": "bob-person-c8600bcb",
+      "dst": "atlas-platform-team-team-6aafec9d",
+      "type": "leads",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "carol-person-008298ee-assists-bob-person-c8600bcb-782a641f",
+      "src": "carol-person-008298ee",
+      "dst": "bob-person-c8600bcb",
+      "type": "assists",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "carol-person-008298ee-works-at-acme-corp-company-5f8c6302-47c2c211",
+      "src": "carol-person-008298ee",
+      "dst": "acme-corp-company-5f8c6302",
+      "type": "works_at",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "dave-person-038a99af-works-at-acme-corp-company-5f8c6302-91231a3a",
+      "src": "dave-person-038a99af",
+      "dst": "acme-corp-company-5f8c6302",
+      "type": "works_at",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "dave-person-038a99af-works-on-atlas-product-29feaf4b-3466394a",
+      "src": "dave-person-038a99af",
+      "dst": "atlas-product-29feaf4b",
+      "type": "works_on",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "acme-corp-company-5f8c6302-develops-atlas-product-29feaf4b-79a3f1e6",
+      "src": "acme-corp-company-5f8c6302",
+      "dst": "atlas-product-29feaf4b",
+      "type": "develops",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "atlas-product-29feaf4b-uses-postgresql-technology-712dee13-6deb15fd",
+      "src": "atlas-product-29feaf4b",
+      "dst": "postgresql-technology-712dee13",
+      "type": "uses",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "atlas-product-29feaf4b-uses-go-technology-876d0d0d-26003786",
+      "src": "atlas-product-29feaf4b",
+      "dst": "go-technology-876d0d0d",
+      "type": "uses",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "eve-person-cb4cc5c6-works-at-acme-corp-company-5f8c6302-0e0fcd18",
+      "src": "eve-person-cb4cc5c6",
+      "dst": "acme-corp-company-5f8c6302",
+      "type": "works_at",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "acme-corp-company-5f8c6302-headquartered-in-amsterdam-location-eb466169-a7dbf5ff",
+      "src": "acme-corp-company-5f8c6302",
+      "dst": "amsterdam-location-eb466169",
+      "type": "headquartered_in",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "atlas-platform-team-team-6aafec9d-meets-at-monday-sync-event-de6609c4-260f302a",
+      "src": "atlas-platform-team-team-6aafec9d",
+      "dst": "monday-sync-event-de6609c4",
+      "type": "meets_at",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "frank-person-c97fe27d-leads-legal-department-department-8ec32f05-ab558c03",
+      "src": "frank-person-c97fe27d",
+      "dst": "legal-department-department-8ec32f05",
+      "type": "leads",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    },
+    {
+      "id": "legal-department-department-8ec32f05-part-of-acme-corp-company-5f8c6302-97bd4cb6",
+      "src": "legal-department-department-8ec32f05",
+      "dst": "acme-corp-company-5f8c6302",
+      "type": "part_of",
+      "description": "",
+      "weight": 1,
+      "valid_from": "",
+      "valid_to": ""
+    }
+  ]
+}

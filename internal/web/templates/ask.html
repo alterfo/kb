@@ -1,0 +1,81 @@
+{{define "page-ask"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+<h1>Ask (Graph-of-Thoughts)</h1>
+<p class="muted"><a href="/ask/history">Run history</a></p>
+<form method="post" action="/ask/start" class="row">
+  <input type="search" name="q" value="{{.Data.Query}}" placeholder="question" autofocus>
+  <button type="submit">Start</button>
+</form>
+{{with .Data.RunID}}
+<div id="ask-status">
+  <h2>Run {{.}}</h2>
+  <p class="muted">query: {{$.Data.Query}} · status: {{if $.Data.Status}}{{$.Data.Status}}{{else}}unknown{{end}}</p>
+  <div id="ask-out">rendering…</div>
+  <form method="post" action="/ask/approve" class="row">
+    <input type="hidden" name="id" value="{{.}}">
+    <input type="text" name="title" placeholder="title for approved note (optional)">
+    <button type="submit">Approve as note</button>
+  </form>
+  <form method="post" action="/ask/promote" class="row">
+    <input type="hidden" name="id" value="{{.}}">
+    <button type="submit" class="secondary">Promote (retire cited sources)</button>
+  </form>
+</div>
+<script>
+(function () {
+  var out = document.getElementById("ask-out");
+
+  function escapeHTML(s) {
+    var div = document.createElement("div");
+    div.textContent = s == null ? "" : String(s);
+    return div.innerHTML;
+  }
+
+  function renderGraph(g) {
+    g = g || {};
+    var nodes = g.nodes || [];
+    var html = "";
+    nodes.forEach(function (n) {
+      html += '<div class="ask-node ask-node-' + escapeHTML(n.status) + '">';
+      html += "<strong>" + escapeHTML(n.type) + "</strong> ";
+      html += '<span class="muted">' + escapeHTML(n.status) + (n.stage ? " · " + escapeHTML(n.stage) : "") + "</span>";
+      if (n.query) html += "<p class=\"muted\">" + escapeHTML(n.query) + "</p>";
+      if (n.deps && n.deps.length) html += '<p class="muted">deps: ' + escapeHTML(n.deps.join(", ")) + "</p>";
+      if (n.answer) html += "<p>" + escapeHTML(n.answer) + "</p>";
+      if (n.sources && n.sources.length) html += '<p class="muted">' + n.sources.length + " source(s)</p>";
+      if (n.contradictions && n.contradictions.length) {
+        html += '<p class="alert alert-error">' + n.contradictions.length + " contradiction(s)</p>";
+      }
+      html += "</div>";
+    });
+    if (g.final_answer) {
+      html += '<div class="ask-final"><h3>Final answer</h3><p>' + escapeHTML(g.final_answer) + "</p></div>";
+    }
+    out.innerHTML = html || '<p class="muted">waiting for progress…</p>';
+  }
+
+  renderGraph({{if $.Data.GraphJSON}}{{$.Data.GraphJSON}}{{else}}null{{end}});
+
+  {{if eq $.Data.Status "running"}}
+  var es = new EventSource("/ask/events?id={{.}}");
+  es.addEventListener("progress", function (e) { renderGraph(JSON.parse(e.data)); });
+  es.addEventListener("done", function (e) {
+    renderGraph(JSON.parse(e.data));
+    es.close();
+  });
+  {{end}}
+})();
+</script>
+{{end}}
+</main>
+</body>
+</html>
+{{end}}

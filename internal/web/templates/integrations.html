@@ -1,0 +1,71 @@
+{{define "page-integrations"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+<h1>Integrations</h1>
+{{with .Data}}
+{{if .Note}}<p class="muted">{{.Note}}</p>{{end}}
+
+<h2>{{if .Form.Editing}}Edit {{.Form.Editing}}{{else}}Add source{{end}}</h2>
+<form method="post" action="/integrations/save" class="form-box">
+  <input type="hidden" name="original" value="{{.Form.Editing}}">
+  <label for="name">Name (unique across sources)</label>
+  <input type="text" id="name" name="name" value="{{.Form.Name}}" placeholder="leon-code">
+  <label for="type">Type (connector type)</label>
+  <input type="text" id="type" name="type" value="{{.Form.Type}}" placeholder="github">
+  <label for="config">Config (key=value, one per line)</label>
+  <textarea id="config" name="config" rows="4" placeholder="repo=leon-ai/leon">{{.Form.Config}}</textarea>
+  <label for="secrets">Secrets (field=ENV_VAR_NAME, one per line)</label>
+  <textarea id="secrets" name="secrets" rows="4" placeholder="token=GITHUB_TOKEN">{{.Form.Secrets}}</textarea>
+  <div class="row">
+    <button type="submit">Save</button>
+    {{if .Form.Editing}}<a href="/integrations">Cancel</a>{{end}}
+  </div>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Name</th><th>Type</th><th>Config keys</th><th>Secrets (env presence)</th><th>Last sync</th><th>Last error</th><th></th></tr>
+  </thead>
+  <tbody>
+  {{range .Sources}}
+  <tr>
+    <td>{{.Name}}</td>
+    <td>{{.Type}}</td>
+    <td>{{range .ConfigKeys}}<span class="badge">{{.}}</span> {{end}}</td>
+    <td>{{range .Secrets}}<span class="badge {{if .Present}}badge-ok{{else}}badge-stale{{end}}">{{.Name}}{{if not .Present}} (unset){{end}}</span> {{end}}</td>
+    <td>
+      {{if .NeverSynced}}<span class="badge badge-never">never synced</span>
+      {{else}}{{.LastSync}}{{if .Stale}} <span class="badge badge-stale">stale</span>{{else}} <span class="badge badge-ok">fresh</span>{{end}}{{end}}
+    </td>
+    <td class="muted">{{.LastError}}</td>
+    <td>
+      <a href="{{.EditURL}}">Edit</a>
+      <form method="post" action="/integrations/delete" class="inline" onsubmit="return confirm('Remove {{.Name}}?')">
+        <input type="hidden" name="name" value="{{.Name}}">
+        <button type="submit" class="danger">Delete</button>
+      </form>
+    </td>
+  </tr>
+  {{else}}
+  <tr><td colspan="7">no sources configured</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{if .VirtualCollections}}
+<h2>Virtual collections</h2>
+<ul>
+  {{range $name, $members := .VirtualCollections}}<li><strong>{{$name}}</strong>: {{range $members}}{{.}} {{end}}</li>{{end}}
+</ul>
+{{end}}
+{{end}}
+</main>
+</body>
+</html>
+{{end}}

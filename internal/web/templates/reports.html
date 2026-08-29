@@ -1,0 +1,27 @@
+{{define "page-reports"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+<h1>Reports</h1>
+<form method="post" action="/reports" class="row">
+  {{if .Data.NodeID}}<input type="hidden" name="node" value="{{.Data.NodeID}}">{{end}}
+  <select name="mode">
+    <option value="search" {{if eq .Data.Mode "search"}}selected{{end}}>search synthesis</option>
+    <option value="global" {{if eq .Data.Mode "global"}}selected{{end}}>global (communities)</option>
+  </select>
+  <input type="search" name="q" value="{{.Data.Query}}" placeholder="report query">
+  <button type="submit">Generate</button>
+</form>
+{{with .Data.Report}}
+<div class="markdown">{{.}}</div>
+{{end}}
+</main>
+</body>
+</html>
+{{end}}

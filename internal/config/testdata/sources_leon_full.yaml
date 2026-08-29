@@ -1,0 +1,24 @@
+sources:
+  - name: leon-ai
+    type: github
+    config:
+      repos: leon-ai/leon
+      include_wiki: "false"
+      include_contents: "false"
+  - name: leon-code
+    type: file
+    config:
+      path: kb_root/.persist/leon-repo
+  - name: leon-wiki
+    type: github
+    config:
+      repos: leon-ai/leon
+      include_wiki: "true"
+      include_contents: "false"
+  - name: leon-discord
+    type: discord
+    config:
+      guild_id: "587078057634824222"
+      channels: "587078058130014240"
+    secrets:
+      token: KB_DISCORD_TOKEN

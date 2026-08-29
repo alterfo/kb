@@ -1,0 +1,9 @@
+sources:
+  - name: main-org
+    type: github
+    secrets:
+      token: GITHUB_TOKEN
+  - name: main-org
+    type: github
+    secrets:
+      token: GITHUB_TOKEN_2

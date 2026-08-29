@@ -1,0 +1,3 @@
+API Rate Limits
+
+The default per-key rate limit is 60 requests per minute, with a short burst allowance of 120 requests. The batch endpoint has a separate limit of 200 requests per minute. When a limit is exceeded, the API returns HTTP 429 with a Retry-After header. Enterprise keys can be granted a higher limit on request.

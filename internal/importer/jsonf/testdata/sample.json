@@ -1,0 +1,11 @@
+{
+  "name": "acme-service",
+  "version": 3,
+  "active": true,
+  "owner": {
+    "team": "platform",
+    "contacts": ["a@example.com", "b@example.com"]
+  },
+  "tags": [],
+  "notes": null
+}

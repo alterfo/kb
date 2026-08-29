@@ -1,0 +1,60 @@
+{{define "page-document"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "nav" .}}
+<main>
+{{template "alerts" .}}
+{{with .Data}}
+<h1>{{if .Title}}{{.Title}}{{else}}{{.Path}}{{end}}</h1>
+<p class="muted">{{.Path}}</p>
+<div class="row">
+  <a href="{{.EditURL}}">Edit</a>
+  <button hx-delete="{{.DeleteURL}}" hx-confirm="Delete {{.Path}}?">Delete</button>
+</div>
+{{if .Summary}}
+<div class="form-box">
+  <strong>Summary</strong>
+  <p>{{.Summary}}</p>
+</div>
+{{end}}
+<table>
+  <tbody>
+    <tr><th>Source</th><td>{{.Source}}</td></tr>
+    <tr><th>ID</th><td>{{.ID}}</td></tr>
+    {{if .URL}}<tr><th>URL</th><td><a href="{{.URL}}">{{.URL}}</a></td></tr>{{end}}
+    {{if .UpdatedAt}}<tr><th>Updated</th><td>{{.UpdatedAt}}</td></tr>{{end}}
+    {{range $k, $v := .Fields}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
+  </tbody>
+</table>
+<h2>Content</h2>
+<div class="markdown">{{.Body}}</div>
+<h2>Relationships</h2>
+{{if not .Relations.Indexed}}
+<p class="muted">this document has not been indexed into the knowledge graph yet (no chunks found)</p>
+{{else if not .Relations.Entities}}
+<p class="muted">indexed, but the knowledge graph found no entities in this document</p>
+{{else}}
+<div class="row">
+{{range .Relations.Entities}}
+<a class="badge" href="{{.URL}}">{{.Name}} <span class="muted">({{.Type}})</span></a>
+{{end}}
+</div>
+{{if .Relations.Relations}}
+<ul>
+{{range .Relations.Relations}}
+<li><a href="{{.SrcURL}}">{{.SrcName}}</a> —{{.Type}}→ <a href="{{.DstURL}}">{{.DstName}}</a></li>
+{{end}}
+</ul>
+{{else}}
+<p class="muted">no relations found between this document's entities</p>
+{{end}}
+{{end}}
+{{end}}
+</main>
+</body>
+</html>
+{{end}}
