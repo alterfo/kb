@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -87,10 +88,29 @@ func retrievalHit(foundIDs, wantIDs []string) bool {
 	return false
 }
 
+var setItemRe = regexp.MustCompile(`'([^']*)'`)
+
 func answerContainsGold(modelAnswer, goldAnswer string) bool {
 	gold := strings.TrimSpace(goldAnswer)
 	if gold == "" {
 		return false
+	}
+	if strings.HasPrefix(gold, "[") && strings.HasSuffix(gold, "]") {
+		items := setItemRe.FindAllStringSubmatch(gold, -1)
+		if len(items) == 0 {
+			return false
+		}
+		lowerAnswer := strings.ToLower(modelAnswer)
+		for _, m := range items {
+			item := strings.TrimSpace(m[1])
+			if item == "" {
+				continue
+			}
+			if !strings.Contains(lowerAnswer, strings.ToLower(item)) {
+				return false
+			}
+		}
+		return true
 	}
 	return strings.Contains(strings.ToLower(modelAnswer), strings.ToLower(gold))
 }

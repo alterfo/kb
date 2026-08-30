@@ -111,6 +111,41 @@ func TestScore_CaseInsensitiveAnswerMatch(t *testing.T) {
 	}
 }
 
+func TestAnswerContainsGold_SetTypeAllItemsPresent(t *testing.T) {
+	answer := "Комаров — педагог, музыкант, а также деятель культуры."
+	if !answerContainsGold(answer, "['Педагог', 'Музыкант']") {
+		t.Fatal("expected all set items to match")
+	}
+}
+
+func TestAnswerContainsGold_SetTypeMissingItem(t *testing.T) {
+	answer := "Комаров — педагог."
+	if answerContainsGold(answer, "['Педагог', 'Музыкант']") {
+		t.Fatal("expected match to fail when an item is missing")
+	}
+}
+
+func TestAnswerContainsGold_SetTypeEmptyList(t *testing.T) {
+	if answerContainsGold("что угодно", "[]") {
+		t.Fatal("expected empty set list to never match")
+	}
+}
+
+func TestScore_SetTypeUsesListMatching(t *testing.T) {
+	submission := map[string]SubmissionEntry{
+		"1": {ModelAnswer: "Ответ: Педагог и Музыкант."},
+	}
+	gold := []GoldQA{{ID: 0, PublicID: 1, TextIDs: "[1]", Answer: "['Педагог', 'Музыкант']", Type: "set"}}
+
+	rep, err := Score(submission, gold)
+	if err != nil {
+		t.Fatalf("Score: %v", err)
+	}
+	if rep.AnswerContains != 1 {
+		t.Fatalf("AnswerContains = %d, want 1", rep.AnswerContains)
+	}
+}
+
 func TestScore_EmptyGoldAnswerNeverCounted(t *testing.T) {
 	submission := map[string]SubmissionEntry{
 		"1": {FoundIDs: nil, ModelAnswer: "что угодно"},
