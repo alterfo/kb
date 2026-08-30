@@ -2,9 +2,7 @@
 
 [![CI](https://github.com/alterfo/kb/actions/workflows/ci.yml/badge.svg)](https://github.com/alterfo/kb/actions/workflows/ci.yml)
 
-`kb` is a self-contained Go prototype of a graph-aware retrieval-augmented
-knowledge base over code, documents, tasks, and chats.
-
+`kb` is a knowledge base over code, docs, tasks, and chats.
 
 ## Requirements
 
