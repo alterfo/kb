@@ -3,29 +3,14 @@
 [![CI](https://github.com/alterfo/kb/actions/workflows/ci.yml/badge.svg)](https://github.com/alterfo/kb/actions/workflows/ci.yml)
 
 `kb` is a self-contained Go prototype of a graph-aware retrieval-augmented
-knowledge base over code, documents, tasks, and chats. It is a single point of
-retrieval and answer synthesis over heterogeneous sources of an organization or
-project: the only runtime dependency is an OpenAI-compatible LLM endpoint
-(chat completions at `/v1/chat/completions` and embeddings at `/v1/embeddings`),
-and all persistence (vectors + knowledge graph + metadata) lives in one SQLite
-file. `kb` does not bundle or launch a model server — you operate the endpoint.
+knowledge base over code, documents, tasks, and chats.
 
-The engine was redesigned from scratch (no data or code is carried over from
-the previous Python prototype) and is deliberately generic: GitHub, GitLab,
-wikis, MCP servers, chats, task trackers, and file importers, with a real
-knowledge graph on top of hybrid vector search.
 
 ## Requirements
 
 - **Go 1.26+** to build from source (or use a prebuilt release binary).
-- **An OpenAI-compatible LLM endpoint** that *you* operate, exposing chat
+- **An OpenAI-compatible LLM endpoint**, exposing chat
   completions at `/v1/chat/completions` and embeddings at `/v1/embeddings`.
-  `kb` does not include or start a model server — the inference infrastructure is
-  entirely on your side. Any OpenAI-compatible backend works (for example a local
-  local model server (for example vLLM), or a hosted API), as long as it serves those two paths.
-- **`jq`** (optional) only for the JSONL demo used by `kb bench`.
-- **OS**: macOS, Linux, or Windows. Persistence is a single SQLite file; no other
-  services to run.
 
 ## Quickstart
 
@@ -41,10 +26,6 @@ export KB_LLM_MODEL=qwen3.8:latest
 export KB_EMBED_MODEL=qwen3-embedding
 ./bin/kb serve
 ```
-
-`kb` reads its configuration from the environment (see Configuration below) or a
-local `.env` file — only the endpoint URL, model names, and storage paths are
-required. Nothing else needs to be launched.
 
 Or install the latest release directly:
 
@@ -93,49 +74,6 @@ whenever `corpus_version` changes.
 See `docs/architecture.md` for the pipeline in detail.
 See `docs/architecture-review.md` for the architectural review, strengths,
 risks, and public-release readiness checklist.
-
-## Stack
-
-| Layer | Choice |
-|---|---|
-| Vector store | `ncruces/go-sqlite3` (pure Go, no cgo), brute-force cosine over BLOBs |
-| Graph store | same SQLite file (`entities`/`relations`/`communities` tables) |
-| Lexical search | in-memory Okapi BM25, tokenizer `[\p{L}\p{N}]+` (Cyrillic-safe) |
-| Community detection | `gonum.org/v1/gonum/graph/community` (Louvain) |
-| Sentence splitting | `neurosnap/sentences` (Punkt, RU/EN) |
-| Token counting | stdlib heuristic (rune count / 4) |
-| LLM + embeddings | custom OpenAI-compatible client (`/v1/embeddings`, `/v1/chat/completions`) with proxy-bypass, retry, SSE streaming |
-| MCP | `modelcontextprotocol/go-sdk` |
-| Web | stdlib `net/http` + `html/template` + vendored htmx, SSE, vendored Cytoscape.js (graph canvas) |
-| HTTP connectors | shared `transport.Client` (pagination, retry/backoff, ratelimit, ETag, no-proxy, SOCKS5 via `KB_SOCKS_PROXY`) |
-| Files | PDF (pure-Go + `pdftotext` fallback), XLSX (`xuri/excelize/v2`), JSON (`tidwall/gjson`), hand-written SQL DDL parser |
-
-## Repository layout
-
-- `cmd/kb` — CLI: `sync`, `reindex`, `doctor`, `serve`, `mcp`, `plan`, `describe`, `verify`, `bench`, `bench-dragon`
-- `internal/config` — env loading + `sources.yaml` (secret env-var *names* only)
-- `internal/llm` — LLM client (chat, chat stream, embeddings, dim probe)
-- `internal/store/{sqlite,vector,graphstore,bm25,history}` — persistence
-  (`history` — search/ask history, backing the dashboard's search/ask history
-  pages)
-- `internal/engine/{chunk,retriever,rerank,got}` — chunking, hybrid+graph retrieval, rerank, Graph-of-Thoughts
-- `internal/engine/report` — answer synthesis and global GraphRAG reports
-- `internal/graph` — LLM extraction (generic + legal + chat), merge/dedup, communities, summaries, `codegraph` (deterministic Go code graph)
-- `internal/governance` — corpus governance (scan, retention, trash)
-- `internal/connector` + `internal/connectors/*` — connector contract, registry, implementations
-- `internal/transport` — shared HTTP client
-- `internal/state` — `.sync-state.json` (cursor advance-on-success + rollback), tombstones
-- `internal/render` — Document → markdown + YAML frontmatter (golden tests)
-- `internal/markdown` — HTML → Markdown conversion used by the `rss` and `web` connectors
-- `internal/sink` — `FileSink` (default) | `APISink` | `TeeSink`
-- `internal/importer/{pdf,xlsx,jsonf,sqlddl,legalru,code}` — file importers
-- `internal/verify` — golden-graph diff, citation checks, contradiction detection, `legaleval` (legal faithfulness metrics), `qa` (Leon issue Q&A evals)
-- `internal/ingest` — ingest driver loop (used by `cmd/kb sync`)
-- `internal/mcp` — MCP server (search, ask, get_document, list_sources, add_note, add_source, graph_query, generate_report, reindex, status)
-- `internal/web` — dashboard (search + history, ask with SSE + history, documents + graph
-  relationships, integrations, reports, interactive graph (Cytoscape.js), MCP info page,
-  cleanup, trash)
-- `internal/planner` — agentic plan execution loop for `kb plan`
 
 ## Configuration
 
@@ -614,12 +552,10 @@ Step-by-step guide with a checklist of test axes: `docs/new-connector.md`.
 
 Start from the docs index: `docs/README.md`.
 
-- `docs/architecture-review.md` — consolidated architectural review, strengths, risks, and public-release readiness checklist
 - `docs/architecture.md` — GraphRAG pipeline diagram and data flow
 - `docs/sources.md` — `sources.yaml` format and per-connector options
 - `docs/new-connector.md` — how to add a new connector
 - `docs/legal-gold-corpus.md` — legal gold-corpus methodology and eval metrics
-- `docs/leiden-audit-20260821.md` — independent audit of the `go-leiden` dependency
 - `CONTRIBUTING.md` — development and testing conventions
 - `SECURITY.md` — loopback/no-auth design and vulnerability reporting
 - `CHANGELOG.md` — release notes
