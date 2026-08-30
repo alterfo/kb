@@ -1,4 +1,4 @@
-# kb — universal GraphRAG knowledge base
+# kb — comprehensive knowledge boss
 
 [![CI](https://github.com/alterfo/kb/actions/workflows/ci.yml/badge.svg)](https://github.com/alterfo/kb/actions/workflows/ci.yml)
 
