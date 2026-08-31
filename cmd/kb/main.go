@@ -19,7 +19,7 @@ func run(args []string, stdout, stderr *os.File) int {
 
 	cmd := args[0]
 	switch cmd {
-	case "serve", "sync", "reindex", "doctor", "mcp", "plan", "describe", "verify", "bench", "bench-dragon":
+	case "serve", "sync", "reindex", "doctor", "mcp", "describe", "verify", "bench", "bench-dragon":
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n\n%s\n", cmd, usage())
 		return 2
@@ -47,8 +47,6 @@ func run(args []string, stdout, stderr *os.File) int {
 		return runDoctorCmd(args[1:], env, stdout, stderr)
 	case "mcp":
 		return runMCPCmd(args[1:], env, stdout, stderr)
-	case "plan":
-		return runPlanCmd(args[1:], env, stdout, stderr)
 	case "describe":
 		return runDescribeCmd(args[1:], env, stdout, stderr)
 	case "verify":
@@ -63,5 +61,5 @@ func run(args []string, stdout, stderr *os.File) int {
 }
 
 func usage() string {
-	return "usage: kb <serve|sync|reindex|doctor|mcp|plan|describe|verify|bench|bench-dragon>"
+	return "usage: kb <serve|sync|reindex|doctor|mcp|describe|verify|bench|bench-dragon>"
 }

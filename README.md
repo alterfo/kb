@@ -350,21 +350,6 @@ Two transports:
 ./bin/kb mcp
 ```
 
-### plan
-
-Agentic plan execution loop: `kb plan` runs a Markdown plan file through an
-LLM-driven execution loop (bash/tool calls, signal handling) and commits progress.
-
-```sh
-./bin/kb plan <plan>.md
-./bin/kb plan --new "<description>"   # create a new plan
-./bin/kb plan --no-commit <plan>      # dry-run without commits
-./bin/kb plan --max-iterations N <plan>  # cap the execution loop (default 50)
-```
-
-Environment overrides: `KB_PLAN_BASE_URL`, `KB_PLAN_API_KEY`, `KB_PLAN_MODEL`,
-`KB_PLAN_DIR`, `KB_PLAN_PROGRESS_DIR`.
-
 ## Connectors
 
 Registered types (in `internal/connectors/registry`, wired in `cmd/kb/connectors.go`):

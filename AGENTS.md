@@ -63,9 +63,9 @@ General project rules apply; this section keeps only kb-specific rules.
                           ▼                                ▼
                  internal/mcp (MCP-сервер,           internal/web (дашборд,
                  stdio+HTTP, tools)                  html/template+htmx+SSE)
-                 internal/planner (`kb plan`)        internal/governance (scan/
-                 internal/engine/report              retention/trash/apply)
-                 (synthesis + global-отчёты)         internal/integration (e2e)
+                 internal/engine/report              internal/governance (scan/
+                 (synthesis + global-отчёты)         retention/trash/apply)
+                                                     internal/integration (e2e)
 ```
 
 Персистентность — **один файл** `$PERSIST_DIR/kb.db`: таблицы векторного стора
@@ -101,7 +101,6 @@ General project rules apply; this section keeps only kb-specific rules.
 | `internal/sink` | `FileSink`/`APISink`/`TeeSink` — реализации `connector.Sink` | |
 | `internal/importer/{pdf,xlsx,jsonf,sqlddl}` | файловые импортёры → `Document` | все реализованы; используются `file`-коннектором на sync |
 | `internal/ingest` | драйвер-цикл ингеста, используется `cmd/kb sync` | в конце sync-батча вызывает `RefreshStaleCommunities` |
-| `internal/planner` | агентский цикл исполнения планов `cmd/kb plan` (runner/agent/tools) | env-оверрайды: `KB_PLAN_BASE_URL/API_KEY/MODEL/DIR/PROGRESS_DIR` |
 | `internal/governance` | сканирование/retention/trash/apply корпуса (`kb`-дашборд routes) | |
 | `internal/mcp` | MCP-сервер (`modelcontextprotocol/go-sdk`): search, ask, get_document, list_sources, add_note, add_source, graph_query, generate_report, reindex, status; `HTTPHandler()` — `StreamableHTTPHandler` для монтирования в `kb serve`, `Tools()` — список для UI | реализован; два транспорта — stdio (`kb mcp`) и HTTP (смонтирован на `/mcp` внутри `kb serve`, не отдельный процесс) |
 | `internal/web` | дашборд (`html/template`+htmx+SSE): search (+ история в SQLite, клик по записи → `/search?id=<id>` показывает сохранённый ответ без нового поиска), ask (+ история ранов, структурированный прогресс, fallback на историю после рестарта), documents (+ секция graph relationships на `/documents/view`), integrations, reports, graph (интерактивный канвас Cytoscape.js + JSON API `/graph/data` с фильтрами/пагинацией), `/mcp/info` (эндпоинт+тулы+конфиг), cleanup, trash | реализован; htmx-фрагменты для CRUD (documents edit/delete → trash, graph entities/relations, integrations `sources.yaml`); vendored JS — `htmx.min.js`, `cytoscape.min.js` (без CDN, без build-шага); **только loopback** — нет аутентификации, есть деструктивные routes |
