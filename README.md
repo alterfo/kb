@@ -107,6 +107,7 @@ connector that needs them (Discord).
 | `KB_STALE_AFTER` | `24h` | Sync staleness threshold for `doctor` / `/integrations` |
 | `KB_COMMUNITY_ALGO` | `louvain` | Community detection: `louvain` \| `leiden` (Leiden is hierarchical) |
 | `KB_LLM_TIMEOUT` | `60s` | Request timeout for embed + chat calls to the endpoint |
+| `KB_LLM_NO_THINK` | `false` | Skip chain-of-thought generation on hybrid-reasoning models (e.g. Qwen3) for non-streaming, non-tool `Chat()` calls (graph extraction, GoT synthesis) by routing them to Ollama's native `/api/chat` with `think:false` instead of `/v1/chat/completions` — the OpenAI-compat endpoint ignores `think:false` on Ollama and still pays the full reasoning cost. Only affects the LLM pointed at by `KB_LLM_BASE_URL`; requires that endpoint to be Ollama, serving a hybrid-reasoning model. Some Ollama versions reject the `think` field outright for a plain (non-hybrid) model — only enable this when `KB_LLM_MODEL` actually supports thinking mode. Streaming (`kb serve`'s Ask) and tool-calling requests are unaffected. |
 | `KB_MAX_SUBGOALS` | `5` | Max GoT subgoals per question; lower cuts per-question LLM calls at some recall cost |
 | `KB_MAX_GAP_QUERIES` | `3` | Max GoT gap-refine queries per question; lower cuts per-question LLM calls |
 | `KB_DESCRIBE_MODEL` | `qwen3.8:latest` | Chat model used by `kb describe` (independent of `KB_LLM_MODEL`) |

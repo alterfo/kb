@@ -146,6 +146,33 @@ func TestScore_SetTypeUsesListMatching(t *testing.T) {
 	}
 }
 
+func TestAnswerContainsGold_MatchesAcrossGrammaticalCase(t *testing.T) {
+	if !answerContainsGold("Он сейчас проживает в Израиле.", "Израиль") {
+		t.Fatal("expected inflected form (Израиле) to match nominative gold answer (Израиль)")
+	}
+}
+
+func TestAnswerContainsGold_RejectsScatteredWordsNotAdjacent(t *testing.T) {
+	answer := "Он проживает в Израиле уже давно. Джеймсом его называли в детстве."
+	if answerContainsGold(answer, "Израиль Джеймс") {
+		t.Fatal("expected no match when gold phrase's words appear scattered in unrelated sentences")
+	}
+}
+
+func TestAnswerContainsGold_MatchesAdjacentPhraseAcrossCase(t *testing.T) {
+	answer := "Их познакомил в Израиле Джеймсом описанный ранее коллега."
+	if !answerContainsGold(answer, "Израиль Джеймс") {
+		t.Fatal("expected match when gold phrase's words appear adjacent, even in a different case")
+	}
+}
+
+func TestAnswerContainsGold_SetTypeMatchesAcrossGrammaticalCase(t *testing.T) {
+	answer := "Россия обогнала США, Великобританию и Францию."
+	if !answerContainsGold(answer, "['Великобритания', 'США', 'Франция']") {
+		t.Fatal("expected accusative-case set items to match nominative gold list")
+	}
+}
+
 func TestScore_EmptyGoldAnswerNeverCounted(t *testing.T) {
 	submission := map[string]SubmissionEntry{
 		"1": {FoundIDs: nil, ModelAnswer: "что угодно"},

@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/kljensen/snowball/russian"
 )
 
 type ScoreStat struct {
@@ -89,30 +91,60 @@ func retrievalHit(foundIDs, wantIDs []string) bool {
 }
 
 var setItemRe = regexp.MustCompile(`'([^']*)'`)
+var wordRe = regexp.MustCompile(`[\p{L}\p{N}]+`)
+
+func stemSequence(s string) []string {
+	tokens := wordRe.FindAllString(strings.ToLower(s), -1)
+	stems := make([]string, len(tokens))
+	for i, t := range tokens {
+		stems[i] = russian.Stem(t, true)
+	}
+	return stems
+}
+
+func phraseStemsPresent(modelStems []string, phrase string) bool {
+	phraseStems := stemSequence(phrase)
+	if len(phraseStems) == 0 || len(phraseStems) > len(modelStems) {
+		return false
+	}
+	for i := 0; i+len(phraseStems) <= len(modelStems); i++ {
+		match := true
+		for j, ps := range phraseStems {
+			if modelStems[i+j] != ps {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
 
 func answerContainsGold(modelAnswer, goldAnswer string) bool {
 	gold := strings.TrimSpace(goldAnswer)
 	if gold == "" {
 		return false
 	}
+	modelStems := stemSequence(modelAnswer)
 	if strings.HasPrefix(gold, "[") && strings.HasSuffix(gold, "]") {
 		items := setItemRe.FindAllStringSubmatch(gold, -1)
 		if len(items) == 0 {
 			return false
 		}
-		lowerAnswer := strings.ToLower(modelAnswer)
 		for _, m := range items {
 			item := strings.TrimSpace(m[1])
 			if item == "" {
 				continue
 			}
-			if !strings.Contains(lowerAnswer, strings.ToLower(item)) {
+			if !phraseStemsPresent(modelStems, item) {
 				return false
 			}
 		}
 		return true
 	}
-	return strings.Contains(strings.ToLower(modelAnswer), strings.ToLower(gold))
+	return phraseStemsPresent(modelStems, gold)
 }
 
 func flattenTextIDs(raw string) ([]string, error) {

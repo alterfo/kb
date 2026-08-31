@@ -42,6 +42,7 @@ type Env struct {
 	MaxGapQueries        int
 	LLMTimeout           time.Duration
 	LLMMaxTokens         int
+	LLMNoThink           bool
 	IndexGraph           bool
 }
 
@@ -282,6 +283,13 @@ func LoadEnv(lookup EnvLookup) (Env, error) {
 			return Env{}, fmt.Errorf("KB_LLM_MAX_TOKENS: invalid positive int %q", v)
 		}
 		e.LLMMaxTokens = n
+	}
+	if v, ok := lookup("KB_LLM_NO_THINK"); ok && v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return Env{}, fmt.Errorf("KB_LLM_NO_THINK: invalid bool %q: %w", v, err)
+		}
+		e.LLMNoThink = b
 	}
 	if v, ok := lookup("KB_INDEX_GRAPH"); ok && v != "" {
 		b, err := strconv.ParseBool(v)

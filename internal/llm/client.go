@@ -29,6 +29,7 @@ type Config struct {
 	RequestTimeout    time.Duration
 	MaxTokens         int
 	DefaultEmbedModel string
+	NoThink           bool
 	Sleep             func(ctx context.Context, d time.Duration) error
 	JitterFunc        func() float64
 }
@@ -43,6 +44,7 @@ type Client struct {
 	reqTimeout time.Duration
 	maxTokens  int
 	embedModel string
+	noThink    bool
 	sleep      func(ctx context.Context, d time.Duration) error
 	jitter     func() float64
 }
@@ -79,6 +81,7 @@ func NewClient(cfg Config) *Client {
 		reqTimeout: cfg.RequestTimeout,
 		maxTokens:  cfg.MaxTokens,
 		embedModel: cfg.DefaultEmbedModel,
+		noThink:    cfg.NoThink,
 		sleep:      cfg.Sleep,
 		jitter:     cfg.JitterFunc,
 	}

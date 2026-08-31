@@ -39,6 +39,7 @@ func newEngineBundle(env config.Env) (*engineBundle, error) {
 		DefaultEmbedModel: env.EmbedModel,
 		RequestTimeout:    env.LLMTimeout,
 		MaxTokens:         env.LLMMaxTokens,
+		NoThink:           env.LLMNoThink,
 	})
 
 	// Query-time embeddings (retrieval) use KB_EMBED_BASE_URL — pinned to the

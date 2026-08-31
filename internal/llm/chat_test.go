@@ -45,6 +45,101 @@ func TestChat_ParsesNonStreamResponse(t *testing.T) {
 	}
 }
 
+func TestChat_NoThink_UsesNativeAPIChat(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			t.Errorf("unexpected path %s, want /api/chat", r.URL.Path)
+		}
+		var req nativeChatRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.Think {
+			t.Error("expected think=false in native request")
+		}
+		if req.Stream {
+			t.Error("expected stream=false in native request")
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"message":     map[string]string{"content": "4", "role": "assistant"},
+			"done_reason": "stop",
+		})
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{BaseURL: srv.URL, NoThink: true})
+	resp, err := c.Chat(context.Background(), ChatRequest{
+		Model:    "qwen3.8:latest",
+		Messages: []ChatMessage{{Role: "user", Content: "2+2="}},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Content != "4" {
+		t.Errorf("unexpected content %q", resp.Content)
+	}
+	if resp.FinishReason != "stop" {
+		t.Errorf("unexpected finish reason %q", resp.FinishReason)
+	}
+}
+
+func TestChat_NoThink_SendsMaxTokensAsNumPredict(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req nativeChatRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.Options == nil || req.Options.NumPredict != 256 {
+			t.Errorf("expected options.num_predict=256, got %+v", req.Options)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"message": map[string]string{"content": "ok"}})
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{BaseURL: srv.URL, NoThink: true, MaxTokens: 256})
+	if _, err := c.Chat(context.Background(), ChatRequest{Model: "m", Messages: []ChatMessage{{Role: "user", Content: "hi"}}}); err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
+func TestChat_NoThink_OmitsOptionsWhenMaxTokensUnset(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req nativeChatRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.Options != nil {
+			t.Errorf("expected no options when MaxTokens is unset, got %+v", req.Options)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"message": map[string]string{"content": "ok"}})
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{BaseURL: srv.URL, NoThink: true})
+	if _, err := c.Chat(context.Background(), ChatRequest{Model: "m", Messages: []ChatMessage{{Role: "user", Content: "hi"}}}); err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
+func TestChat_NoThink_FallsBackToOpenAICompatWhenToolsPresent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("unexpected path %s, want /v1/chat/completions (tool calls must not use native endpoint)", r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message":       map[string]string{"content": "ok", "role": "assistant"},
+				"finish_reason": "stop",
+			}},
+		})
+	}))
+	defer srv.Close()
+
+	c := NewClient(Config{BaseURL: srv.URL, NoThink: true})
+	_, err := c.Chat(context.Background(), ChatRequest{
+		Model:    "qwen3.8:latest",
+		Messages: []ChatMessage{{Role: "user", Content: "hi"}},
+		Tools:    []Tool{{Type: "function"}},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
 func TestChat_EmptyContent_ReturnsEmptyResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{

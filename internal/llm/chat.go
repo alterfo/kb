@@ -65,6 +65,25 @@ type chatStreamChunk struct {
 	} `json:"choices"`
 }
 
+type nativeChatOptions struct {
+	NumPredict int `json:"num_predict,omitempty"`
+}
+
+type nativeChatRequest struct {
+	Model    string             `json:"model"`
+	Messages []ChatMessage      `json:"messages"`
+	Think    bool               `json:"think"`
+	Stream   bool               `json:"stream"`
+	Options  *nativeChatOptions `json:"options,omitempty"`
+}
+
+type nativeChatResponse struct {
+	Message struct {
+		Content string `json:"content"`
+	} `json:"message"`
+	DoneReason string `json:"done_reason"`
+}
+
 func (c *Client) chatPayload(req ChatRequest, stream bool) chatCompletionRequest {
 	return chatCompletionRequest{
 		Model:       req.Model,
@@ -79,6 +98,10 @@ func (c *Client) chatPayload(req ChatRequest, stream bool) chatCompletionRequest
 func (c *Client) Chat(ctx context.Context, req ChatRequest) (ChatResponse, error) {
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
+
+	if c.noThink && len(req.Tools) == 0 {
+		return c.nativeChatNoThink(ctx, req)
+	}
 
 	payload := c.chatPayload(req, false)
 	resp, err := c.postJSON(ctx, "/v1/chat/completions", payload)
@@ -104,6 +127,32 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest) (ChatResponse, error
 		Content:      choice.Message.Content,
 		FinishReason: choice.FinishReason,
 		ToolCalls:    choice.Message.ToolCalls,
+	}, nil
+}
+
+func (c *Client) nativeChatNoThink(ctx context.Context, req ChatRequest) (ChatResponse, error) {
+	payload := nativeChatRequest{Model: req.Model, Messages: req.Messages, Think: false, Stream: false}
+	if c.maxTokens > 0 {
+		payload.Options = &nativeChatOptions{NumPredict: c.maxTokens}
+	}
+	resp, err := c.postJSON(ctx, "/api/chat", payload)
+	if err != nil {
+		return ChatResponse{}, fmt.Errorf("chat request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return ChatResponse{}, fmt.Errorf("chat: unexpected status %s: %s", resp.Status, string(b))
+	}
+
+	var parsed nativeChatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return ChatResponse{}, fmt.Errorf("chat: decode response: %w", err)
+	}
+	return ChatResponse{
+		Content:      parsed.Message.Content,
+		FinishReason: parsed.DoneReason,
 	}, nil
 }
 

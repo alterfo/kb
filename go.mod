@@ -5,6 +5,7 @@ go 1.26.6
 require (
 	github.com/gomarkdown/markdown v0.0.0-20260818103853-6d1f24fc3a11
 	github.com/k8nstantin/go-leiden v0.1.0
+	github.com/kljensen/snowball v0.10.0
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/ncruces/go-sqlite3 v0.35.3

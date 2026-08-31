@@ -81,6 +81,7 @@ func TestLoadEnv_Overrides(t *testing.T) {
 		"KB_ASK_ROLLING_WINDOW":    "7",
 		"KB_MAX_SUBGOALS":          "3",
 		"KB_MAX_GAP_QUERIES":       "2",
+		"KB_LLM_NO_THINK":          "true",
 	}
 	e, err := LoadEnv(fakeLookup(m))
 	if err != nil {
@@ -172,6 +173,9 @@ func TestLoadEnv_Overrides(t *testing.T) {
 	if e.MaxGapQueries != 2 {
 		t.Errorf("MaxGapQueries = %d, want 2", e.MaxGapQueries)
 	}
+	if !e.LLMNoThink {
+		t.Errorf("LLMNoThink = %v, want true", e.LLMNoThink)
+	}
 }
 
 func TestLoadEnv_InvalidValues(t *testing.T) {
@@ -220,6 +224,7 @@ func TestLoadEnv_InvalidValues(t *testing.T) {
 		{"bad max subgoals zero", "KB_MAX_SUBGOALS", "0"},
 		{"bad max gap queries not a number", "KB_MAX_GAP_QUERIES", "many"},
 		{"bad max gap queries zero", "KB_MAX_GAP_QUERIES", "0"},
+		{"bad llm no think bool", "KB_LLM_NO_THINK", "notabool"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
