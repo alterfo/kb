@@ -9,6 +9,7 @@ package got
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -583,15 +584,18 @@ func (o *Orchestrator) chat(ctx context.Context, req llm.ChatRequest) (llm.ChatR
 	if o.cfg.Chat == nil {
 		return llm.ChatResponse{}, false
 	}
+	var lastErr error
 	for attempt := 0; attempt <= o.cfg.MaxRetries; attempt++ {
 		resp, err := o.cfg.Chat.Chat(ctx, req)
 		if err == nil {
 			return resp, true
 		}
+		lastErr = err
 		if attempt == o.cfg.MaxRetries || !o.wait(ctx, attempt) {
 			break
 		}
 	}
+	slog.Error("chat request failed", "error", lastErr)
 	return llm.ChatResponse{}, false
 }
 
