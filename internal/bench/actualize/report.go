@@ -69,15 +69,30 @@ func BuildReport(before, after []string) (Report, error) {
 		if afterScore {
 			rep.Summary.AfterCorrect++
 		}
-		if q.Affected && afterScore {
+		if q.Affected && afterScore &&
+			!dragon.AnswerContainsGold(before[i], q.AnswerAfter) &&
+			!dragon.AnswerContainsGold(after[i], q.AnswerBefore) {
 			rep.Summary.AffectedUpdated++
 		}
-		if !q.Affected && beforeScore && afterScore {
+		if !q.Affected && beforeScore && afterScore &&
+			!containsAnyAffectedCorrection(after[i], questions, q.TargetDocID) {
 			rep.Summary.ControlStable++
 		}
 	}
 	rep.Summary.Total = len(questions)
 	return rep, nil
+}
+
+func containsAnyAffectedCorrection(text string, questions []QA, skipDocID string) bool {
+	for _, q := range questions {
+		if !q.Affected || q.TargetDocID == skipDocID {
+			continue
+		}
+		if dragon.AnswerContainsGold(text, q.AnswerAfter) {
+			return true
+		}
+	}
+	return false
 }
 
 func SaveReport(path string, rep Report) error {

@@ -149,6 +149,15 @@ func relationExists(rels []graphstore.Relation, src, dst, typ string) bool {
 	return false
 }
 
+// No WithChatExtractor: production always routes Slack "message" documents
+// through ChatExtractor, which only ever emits DECIDED/PROPOSED/AGREED edges
+// attributed to the speaker (internal/graph/chat.go's chatEdgeTypes) and
+// cannot produce a typed fact relation like AV-3->supplier. This test proves
+// the bi-temporal relation-closure mechanism exists in the graph store via
+// the generic extractor, the same path a document-sourced correction would
+// take; the live kb bench-actualize run gets its correct answers from
+// retrieval picking up the freshly indexed Slack chunk directly, not from
+// this relation ever closing for real Slack input.
 func TestMechanism_SupersessionAndRelationClosure(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -226,6 +235,23 @@ func TestMechanism_SupersessionAndRelationClosure(t *testing.T) {
 	}
 	if relationExists(relsAfter, av3ID, energolitID, "supplier") {
 		t.Errorf("after correction: ЭнергоЛит relation must be closed: %+v", relsAfter)
+	}
+
+	all, err := gs.AllRelations(ctx)
+	if err != nil {
+		t.Fatalf("AllRelations: %v", err)
+	}
+	closed := false
+	for _, r := range all {
+		if r.Src == av3ID && r.Dst == energolitID && r.Type == "supplier" {
+			closed = true
+			if r.ValidTo == nil {
+				t.Errorf("ЭнергоЛит relation row survives but was not closed (valid_to is nil): %+v", r)
+			}
+		}
+	}
+	if !closed {
+		t.Errorf("ЭнергоЛит relation row was deleted instead of closed with valid_to")
 	}
 }
 

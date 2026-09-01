@@ -119,6 +119,13 @@ func runBenchActualizeCmd(args []string, env config.Env, stdout, stderr io.Write
 
 func actualizeIsolatedEnv(env config.Env, persistDir string) (config.Env, func(), error) {
 	if persistDir != "" {
+		entries, err := os.ReadDir(persistDir)
+		if err != nil && !os.IsNotExist(err) {
+			return env, func() {}, err
+		}
+		if len(entries) != 0 {
+			return env, func() {}, fmt.Errorf("persist-dir %q is not empty: bench-actualize needs a fresh directory per run, since reusing one carries over sync cursors and indexed state from the earlier run", persistDir)
+		}
 		if err := os.MkdirAll(persistDir, 0o755); err != nil {
 			return env, func() {}, err
 		}
