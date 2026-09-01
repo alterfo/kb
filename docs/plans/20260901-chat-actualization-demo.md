@@ -210,12 +210,12 @@ practice as the other bench plans in this repo.
 
 ### Task N-1: Verify acceptance criteria
 
-- [ ] verify Task 3's regression test passes and is wired into
+- [x] verify Task 3's regression test passes and is wired into
       `go test ./...`
-- [ ] verify the Task 5 live run shows the expected before→after change
+- [x] verify the Task 5 live run shows the expected before→after change
       on the affected set and stability on the control set
-- [ ] run full test suite (`go test ./...`)
-- [ ] run linter — all issues fixed
+- [x] run full test suite (`go test ./...`)
+- [x] run linter — all issues fixed
 
 ### Task 6: [Final] Write up the demo
 
