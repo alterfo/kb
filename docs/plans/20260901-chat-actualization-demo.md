@@ -126,7 +126,7 @@ practice as the other bench plans in this repo.
 
 ### Task 2: Local Slack fixture server
 
-- [ ] add a small `net/http` handler (e.g.
+- [x] add a small `net/http` handler (e.g.
       `internal/bench/actualize/fixtureserver.go`) serving
       `/conversations.history`: reads `channel`/`oldest` query params,
       returns the Task 1 messages for that channel as
@@ -134,10 +134,10 @@ practice as the other bench plans in this repo.
       `internal/connectors/chat/slack/fetch_test.go` already uses,
       respecting `oldest` (only messages newer than it) so a second sync
       pass doesn't re-ingest
-- [ ] write tests: full fetch returns all 5 messages; fetch with `oldest`
+- [x] write tests: full fetch returns all 5 messages; fetch with `oldest`
       set to the 3rd message's `ts` returns only the later ones; unknown
       channel returns empty
-- [ ] run `go test ./internal/bench/actualize/...` — must pass before task 3
+- [x] run `go test ./internal/bench/actualize/...` — must pass before task 3
 
 ### Task 3: Deterministic regression test — mechanism fires
 
