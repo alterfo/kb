@@ -196,17 +196,17 @@ practice as the other bench plans in this repo.
 
 ### Task 5: Run the live demo and capture results
 
-- [ ] run `kb bench-actualize` against the real ai-box endpoint
-- [ ] verify: all 10 affected questions score higher against
+- [x] run `kb bench-actualize` against the real ai-box endpoint
+- [x] verify: all 10 affected questions score higher against
       `answerAfter` than `answerBefore` post-correction, and all 5
       control questions score the same (or equivalently) both times
-- [ ] for any question that doesn't behave as expected, manually inspect
+- [x] for any question that doesn't behave as expected, manually inspect
       the actual answer text — distinguish "mechanism didn't fire"
       (check Task 3's assertions still hold in this run's DB) from
       "mechanism fired but the LLM phrased the answer oddly" (scorer
       false negative) from "fixture fact is genuinely ambiguous" (fix the
       fixture, not the code)
-- [ ] save the run output under `docs/bench/actualization/`
+- [x] save the run output under `docs/bench/actualization/`
 
 ### Task N-1: Verify acceptance criteria
 
