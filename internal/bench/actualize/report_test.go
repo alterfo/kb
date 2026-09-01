@@ -61,6 +61,54 @@ func TestBuildReportDetectsWrongAnswers(t *testing.T) {
 	}
 }
 
+func TestBuildReportExcludesFalsePositives(t *testing.T) {
+	questions := Questions()
+	before := make([]string, len(questions))
+	after := make([]string, len(questions))
+	for i, q := range questions {
+		before[i] = q.AnswerBefore
+		after[i] = q.AnswerAfter
+	}
+
+	roadmapIdx, budgetIdx, officeIdx := -1, -1, -1
+	for i, q := range questions {
+		switch q.TargetDocID {
+		case "roadmap":
+			if roadmapIdx == -1 {
+				roadmapIdx = i
+			}
+		case "budget":
+			if budgetIdx == -1 {
+				budgetIdx = i
+			}
+		case "office":
+			officeIdx = i
+		}
+	}
+	if roadmapIdx == -1 || budgetIdx == -1 || officeIdx == -1 {
+		t.Fatalf("fixture questions missing roadmap/budget/office targets")
+	}
+
+	// Affected question whose before-answer already contains the after-gold: not a
+	// genuine transition, must not count as updated.
+	before[roadmapIdx] = questions[roadmapIdx].AnswerAfter
+
+	// Control question whose after-answer leaks an unrelated affected correction:
+	// the office fact itself didn't change, but the metric must not call it stable.
+	after[officeIdx] = questions[officeIdx].AnswerBefore + " (бюджет вырос до " + questions[budgetIdx].AnswerAfter + ")"
+
+	rep, err := BuildReport(before, after)
+	if err != nil {
+		t.Fatalf("BuildReport: %v", err)
+	}
+	if rep.Summary.AffectedUpdated != 9 {
+		t.Errorf("AffectedUpdated = %d, want 9 (roadmap excluded: before already contained the after-gold)", rep.Summary.AffectedUpdated)
+	}
+	if rep.Summary.ControlStable != 4 {
+		t.Errorf("ControlStable = %d, want 4 (office excluded: after leaks an unrelated affected correction)", rep.Summary.ControlStable)
+	}
+}
+
 func TestBuildReportRejectsAnswerCountMismatch(t *testing.T) {
 	if _, err := BuildReport([]string{"one"}, []string{"two"}); err == nil {
 		t.Fatal("BuildReport with mismatched answer counts returned nil error")

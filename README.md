@@ -508,9 +508,13 @@ Edited messages are re-delivered (not skipped) and carry a normalized
   only stale components in batch at the end of a sync batch and lazily on a
   query throttle in the retriever. A failed refresh degrades to serving stale
   summaries as-is (fail-open).
-- End-to-end demonstration of this actualization path (a Slack correction
-  soft-closes the right chunks and relations and changes the answers, with a
-  permanent CI-safe regression test): `docs/bench/actualization-report.md`.
+- End-to-end demonstration of this actualization path, with a permanent
+  CI-safe regression test: `docs/bench/actualization-report.md`. The
+  regression test proves chunk soft-close and bi-temporal relation-close
+  both work in the graph store; live Slack input only reliably drives the
+  chunk-level supersession, since `ChatExtractor` (the real extraction path
+  for chat-sourced documents) only emits decision-tracking edges, not typed
+  facts, so it doesn't produce a relation to close.
 
 ## Development
 

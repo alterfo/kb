@@ -6,7 +6,7 @@
     "before_correct": 15,
     "after_correct": 15,
     "affected_updated": 10,
-    "control_stable": 5
+    "control_stable": 3
   },
   "questions": [
     {

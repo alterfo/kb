@@ -70,8 +70,7 @@ func BuildReport(before, after []string) (Report, error) {
 			rep.Summary.AfterCorrect++
 		}
 		if q.Affected && afterScore &&
-			!dragon.AnswerContainsGold(before[i], q.AnswerAfter) &&
-			!dragon.AnswerContainsGold(after[i], q.AnswerBefore) {
+			!dragon.AnswerContainsGold(before[i], q.AnswerAfter) {
 			rep.Summary.AffectedUpdated++
 		}
 		if !q.Affected && beforeScore && afterScore &&
