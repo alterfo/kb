@@ -61,7 +61,18 @@ func TestBuildReportDetectsWrongAnswers(t *testing.T) {
 	}
 }
 
-func TestBuildReportExcludesFalsePositives(t *testing.T) {
+func questionIndexByTargetDocID(t *testing.T, questions []QA, docID string) int {
+	t.Helper()
+	for i, q := range questions {
+		if q.TargetDocID == docID {
+			return i
+		}
+	}
+	t.Fatalf("fixture questions missing target %q", docID)
+	return -1
+}
+
+func TestBuildReportExcludesAffectedBeforeAlreadyMatchingAfter(t *testing.T) {
 	questions := Questions()
 	before := make([]string, len(questions))
 	after := make([]string, len(questions))
@@ -69,43 +80,56 @@ func TestBuildReportExcludesFalsePositives(t *testing.T) {
 		before[i] = q.AnswerBefore
 		after[i] = q.AnswerAfter
 	}
-
-	roadmapIdx, budgetIdx, officeIdx := -1, -1, -1
-	for i, q := range questions {
-		switch q.TargetDocID {
-		case "roadmap":
-			if roadmapIdx == -1 {
-				roadmapIdx = i
-			}
-		case "budget":
-			if budgetIdx == -1 {
-				budgetIdx = i
-			}
-		case "office":
-			officeIdx = i
-		}
-	}
-	if roadmapIdx == -1 || budgetIdx == -1 || officeIdx == -1 {
-		t.Fatalf("fixture questions missing roadmap/budget/office targets")
-	}
-
-	// Affected question whose before-answer already contains the after-gold: not a
-	// genuine transition, must not count as updated.
+	roadmapIdx := questionIndexByTargetDocID(t, questions, "roadmap")
 	before[roadmapIdx] = questions[roadmapIdx].AnswerAfter
-
-	// Control question whose after-answer leaks an unrelated affected correction:
-	// the office fact itself didn't change, but the metric must not call it stable.
-	after[officeIdx] = questions[officeIdx].AnswerBefore + " (бюджет вырос до " + questions[budgetIdx].AnswerAfter + ")"
 
 	rep, err := BuildReport(before, after)
 	if err != nil {
 		t.Fatalf("BuildReport: %v", err)
 	}
 	if rep.Summary.AffectedUpdated != 9 {
-		t.Errorf("AffectedUpdated = %d, want 9 (roadmap excluded: before already contained the after-gold)", rep.Summary.AffectedUpdated)
+		t.Errorf("AffectedUpdated = %d, want 9", rep.Summary.AffectedUpdated)
+	}
+}
+
+func TestBuildReportKeepsAffectedContrastiveAnswerAsUpdated(t *testing.T) {
+	questions := Questions()
+	before := make([]string, len(questions))
+	after := make([]string, len(questions))
+	for i, q := range questions {
+		before[i] = q.AnswerBefore
+		after[i] = q.AnswerAfter
+	}
+	partnersIdx := questionIndexByTargetDocID(t, questions, "partners")
+	after[partnersIdx] = questions[partnersIdx].AnswerAfter + ", которая заменила предыдущего поставщика " + questions[partnersIdx].AnswerBefore
+
+	rep, err := BuildReport(before, after)
+	if err != nil {
+		t.Fatalf("BuildReport: %v", err)
+	}
+	if rep.Summary.AffectedUpdated != 10 {
+		t.Errorf("AffectedUpdated = %d, want 10 (a contrastive answer that restates the old value while giving the new one is still a genuine update)", rep.Summary.AffectedUpdated)
+	}
+}
+
+func TestBuildReportExcludesControlContaminatedByUnrelatedCorrection(t *testing.T) {
+	questions := Questions()
+	before := make([]string, len(questions))
+	after := make([]string, len(questions))
+	for i, q := range questions {
+		before[i] = q.AnswerBefore
+		after[i] = q.AnswerAfter
+	}
+	budgetIdx := questionIndexByTargetDocID(t, questions, "budget")
+	officeIdx := questionIndexByTargetDocID(t, questions, "office")
+	after[officeIdx] = questions[officeIdx].AnswerBefore + " (бюджет вырос до " + questions[budgetIdx].AnswerAfter + ")"
+
+	rep, err := BuildReport(before, after)
+	if err != nil {
+		t.Fatalf("BuildReport: %v", err)
 	}
 	if rep.Summary.ControlStable != 4 {
-		t.Errorf("ControlStable = %d, want 4 (office excluded: after leaks an unrelated affected correction)", rep.Summary.ControlStable)
+		t.Errorf("ControlStable = %d, want 4", rep.Summary.ControlStable)
 	}
 }
 
