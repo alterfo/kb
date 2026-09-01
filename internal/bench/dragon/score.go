@@ -184,3 +184,7 @@ func SaveScoreReport(path string, rep *ScoreReport) error {
 	}
 	return nil
 }
+
+func AnswerContainsGold(modelAnswer, goldAnswer string) bool {
+	return answerContainsGold(modelAnswer, goldAnswer)
+}
