@@ -141,7 +141,7 @@ practice as the other bench plans in this repo.
 
 ### Task 3: Deterministic regression test — mechanism fires
 
-- [ ] following the `internal/integration/e2e_fake_test.go` pattern
+- [x] following the `internal/integration/e2e_fake_test.go` pattern
       (`testkit.NewFakeChat`/`NewFakeEmbedder`, direct
       db/indexer/retriever/got.Orchestrator wiring, no network): index
       the 10 seed docs, then feed the 5 correction messages through the
@@ -151,19 +151,19 @@ practice as the other bench plans in this repo.
       the real `slack.Connector` against the Task 2 fixture server, the
       latter is more faithful and preferred if it fits cleanly with the
       fake-LLM wiring)
-- [ ] assert: after ingesting the roadmap-correction message, the seed
+- [x] assert: after ingesting the roadmap-correction message, the seed
       "roadmap.md" doc's chunks have `superseded_by` set to the
       correction message's document ID (`VectorStore`/`GraphStore`
       query, not answer-text inspection)
-- [ ] assert the same for at least one more corrected fact (e.g. budget),
+- [x] assert the same for at least one more corrected fact (e.g. budget),
       and assert an *unrelated* seed doc (e.g. "office.md", a control
       fact) has no `superseded_by` mark after all 5 corrections land
-- [ ] if a corrected fact maps cleanly onto a graph relation
+- [x] if a corrected fact maps cleanly onto a graph relation
       (same src+predicate, different dst — e.g. "AV-3 supplier" changing
       from ЭнергоЛит to PowerCell Rus), also assert
       `GraphStore.RelationsAsOf` returns the old dst before the
       correction's timestamp and the new dst after
-- [ ] run `go test ./...` — must pass before task 4, and must keep
+- [x] run `go test ./...` — must pass before task 4, and must keep
       passing permanently (this is the regression test, not a one-off)
 
 ### Task 4: Live-run harness (`kb bench-actualize`)
