@@ -168,31 +168,31 @@ practice as the other bench plans in this repo.
 
 ### Task 4: Live-run harness (`kb bench-actualize`)
 
-- [ ] add a `bench-actualize` subcommand to `cmd/kb` (mirrors
+- [x] add a `bench-actualize` subcommand to `cmd/kb` (mirrors
       `runBenchDragonCmd`'s structure: isolated persist-dir via
       `os.MkdirTemp` unless `-persist-dir` given, `newEngineBundle`,
       `got.Orchestrator` wired with default env — full pipeline, all
       features on, since this demo is end-to-end, not an ablation)
-- [ ] index the Task 1 seed corpus directly via `bundle.indexer.IndexDocument`
+- [x] index the Task 1 seed corpus directly via `bundle.indexer.IndexDocument`
       (same as `bench-dragon` does for DRAGON texts)
-- [ ] ask all 15 Task 1 questions through `got.Orchestrator.Run`, save as
+- [x] ask all 15 Task 1 questions through `got.Orchestrator.Run`, save as
       the "before" answer set
-- [ ] start the Task 2 fixture server in-process, write a temporary
+- [x] start the Task 2 fixture server in-process, write a temporary
       `sources.yaml` pointing a `slack` source at it
       (`config.base_url`, `config.channels`, `secrets.token`), and run
       the sync path (reuse whatever `kb sync` calls internally — check
       `cmd/kb/sync.go` — rather than re-implementing source-loading)
       against the same persist-dir
-- [ ] ask the same 15 questions again, save as the "after" answer set
-- [ ] score both sets against `answerBefore`/`answerAfter` using the
+- [x] ask the same 15 questions again, save as the "after" answer set
+- [x] score both sets against `answerBefore`/`answerAfter` using the
       DRAGON scorer's matcher (`internal/bench/dragon/score.go`, or a
       thin wrapper if the types don't line up); write results (question,
       before answer, after answer, expected before/after, affected/
       control, before-score, after-score) to
       `docs/bench/actualization/run.json`
-- [ ] write tests for the before/after scoring and report-writing logic
+- [x] write tests for the before/after scoring and report-writing logic
       (mock the orchestrator the way existing bench tests do)
-- [ ] run `go test ./...` — must pass before task 5
+- [x] run `go test ./...` — must pass before task 5
 
 ### Task 5: Run the live demo and capture results
 
