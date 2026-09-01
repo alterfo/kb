@@ -508,6 +508,9 @@ Edited messages are re-delivered (not skipped) and carry a normalized
   only stale components in batch at the end of a sync batch and lazily on a
   query throttle in the retriever. A failed refresh degrades to serving stale
   summaries as-is (fail-open).
+- End-to-end demonstration of this actualization path (a Slack correction
+  soft-closes the right chunks and relations and changes the answers, with a
+  permanent CI-safe regression test): `docs/bench/actualization-report.md`.
 
 ## Development
 
@@ -540,6 +543,7 @@ Start from the docs index: `docs/README.md`.
 - `docs/sources.md` — `sources.yaml` format and per-connector options
 - `docs/new-connector.md` — how to add a new connector
 - `docs/legal-gold-corpus.md` — legal gold-corpus methodology and eval metrics
+- `docs/bench/actualization-report.md` — chat-actualization demo (temporal updates change answers)
 - `CONTRIBUTING.md` — development and testing conventions
 - `SECURITY.md` — loopback/no-auth design and vulnerability reporting
 - `CHANGELOG.md` — release notes

@@ -167,6 +167,11 @@ canonical `text_ids` — но во всех 391 случаях документ,
 - `cmd/kb/dragon.go` — `kb bench-dragon [--hist] [--limit N] [--concurrency N]`,
   `kb bench-dragon score <answers.json>`.
 
+**See also:** `docs/bench/actualization-report.md` — тот угол, который DRAGON
+показать не может: как ответы меняются после прихода новых сообщений в чат
+(temporal-актуализация: `superseded_by` на чанках, закрытие `valid_to` у старых
+связей), тогда как DRAGON — статичный one-shot корпус без обновлений.
+
 ## Оставшийся разрыв (~25%, 149 вопросов) и рычаги для второго раунда
 
 Прогон делался с конфигом по умолчанию: `KB_RERANK=off`, `KB_QUALIFIER_FILTER=false`.

@@ -219,13 +219,13 @@ practice as the other bench plans in this repo.
 
 ### Task 6: [Final] Write up the demo
 
-- [ ] write `docs/bench/actualization-report.md`: the scenario, the
+- [x] write `docs/bench/actualization-report.md`: the scenario, the
       before/after table for all 15 questions, and explicit callouts of
       the Task 3 mechanism-level evidence (`superseded_by` marks,
       relation closures) alongside the answer-text evidence — the point
       being "this isn't just the LLM improvising differently, the
       retrieval layer actually changed what it serves"
-- [ ] cross-link from `README.md` (near "Incremental reindexing" /
+- [x] cross-link from `README.md` (near "Incremental reindexing" /
       "Temporal knowledge graph") and from `docs/bench/dragon-report.md`
       as "see also" for the actualization angle DRAGON can't show
 
