@@ -4,7 +4,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
 )
 
 func TestGuardRequiresToken(t *testing.T) {
@@ -74,5 +76,56 @@ func TestGuardRateLimitsPerClient(t *testing.T) {
 
 	if secondRR.Code != http.StatusTooManyRequests {
 		t.Fatalf("second request status = %d, want 429", secondRR.Code)
+	}
+}
+
+// TestGuardRateLimitsUnauthenticatedRequests pins the fix ordering the
+// limiter check before the auth check: the actual brute-force/abuse threat
+// is unauthenticated traffic, and it must be throttled too, not just traffic
+// that already has a valid token.
+func TestGuardRateLimitsUnauthenticatedRequests(t *testing.T) {
+	root := t.TempDir()
+	srv := NewServer(Deps{
+		Root:        root,
+		PersistDir:  filepath.Join(root, ".persist"),
+		AuthToken:   "secret-token",
+		RequireAuth: true,
+		RateLimit:   1,
+	})
+	h := srv.Handler()
+
+	first := httptest.NewRequest(http.MethodGet, "/", nil)
+	first.RemoteAddr = "192.0.2.9:1"
+	firstRR := httptest.NewRecorder()
+	h.ServeHTTP(firstRR, first)
+	if firstRR.Code != http.StatusUnauthorized {
+		t.Fatalf("first unauthenticated request status = %d, want 401", firstRR.Code)
+	}
+
+	second := httptest.NewRequest(http.MethodGet, "/", nil)
+	second.RemoteAddr = "192.0.2.9:1"
+	secondRR := httptest.NewRecorder()
+	h.ServeHTTP(secondRR, second)
+	if secondRR.Code != http.StatusTooManyRequests {
+		t.Fatalf("second unauthenticated request status = %d, want 429 (rate limiter must run even when auth fails)", secondRR.Code)
+	}
+}
+
+func TestClientRateLimiterEvictsExpiredClients(t *testing.T) {
+	current := time.Unix(0, 0)
+	now := func() time.Time { return current }
+	l := newClientRateLimiter(1, now)
+
+	for i := 0; i < clientRateLimiterSweepEvery-1; i++ {
+		l.allow("client-" + strconv.Itoa(i))
+	}
+	current = current.Add(2 * time.Minute)
+	l.allow("trigger")
+
+	l.mu.Lock()
+	n := len(l.clients)
+	l.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("clients map has %d entries after the periodic sweep, want 1 (only the just-added trigger key; the %d expired entries should have been evicted, not retained forever)", n, clientRateLimiterSweepEvery-1)
 	}
 }

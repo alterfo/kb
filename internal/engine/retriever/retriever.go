@@ -414,6 +414,13 @@ func (r *Retriever) queryDense(ctx context.Context, vec []float32, query string,
 		addDegraded(ctx, "ANN prefilter query failed; falling back to exhaustive vector search: "+err.Error())
 		return r.cfg.Vector.Query(ctx, vec, r.cfg.CandidateK, filter)
 	}
+	if len(results) == 0 {
+		// Metadata/source filters may exclude every prefiltered candidate
+		// even though the corpus has matching chunks outside the candidate
+		// set. Fall back rather than silently returning an empty dense leg.
+		addDegraded(ctx, "ANN prefilter candidates matched nothing after filtering; falling back to exhaustive vector search")
+		return r.cfg.Vector.Query(ctx, vec, r.cfg.CandidateK, filter)
+	}
 	return results, nil
 }
 

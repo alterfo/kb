@@ -460,6 +460,50 @@ func TestRunIndependentSubgoalsRunInParallel(t *testing.T) {
 	})
 }
 
+// selectiveFailRetriever fails retrieval for a fixed set of queries and
+// succeeds with goodChunks for every other query, so a test can trigger a
+// known, exact count of retry-exhausted degrade events.
+type selectiveFailRetriever struct {
+	fail map[string]bool
+}
+
+func (r selectiveFailRetriever) RetrieveMode(ctx context.Context, query string, k int, mode retriever.Mode) ([]vector.ScoredChunk, error) {
+	if r.fail[query] {
+		return nil, errors.New("simulated retrieval failure")
+	}
+	return goodChunks(query), nil
+}
+
+// TestRunConcurrentSubgoalsAccumulateCollectorsSafely runs many independent
+// subgoals in parallel and asserts the shared degraded-message count is
+// exact. Before the mutex-guarded runCollector, concurrent unsynchronized
+// appends from addDegraded (called from every subgoal goroutine sharing one
+// *[]string) could silently lose entries or race under -race; run this test
+// with -race to catch a regression.
+func TestRunConcurrentSubgoalsAccumulateCollectorsSafely(t *testing.T) {
+	failing := map[string]bool{"s1": true, "s3": true, "s5": true, "s7": true}
+	retriever := selectiveFailRetriever{fail: failing}
+	chat := scriptedChat{byPrompt: map[string]llm.ChatResponse{
+		"You break a user question":         {Content: `["s0","s1","s2","s3","s4","s5","s6","s7"]`},
+		"Given the original question":       {Content: `[]`},
+		"You combine sub-answers":           {Content: "final"},
+		"You answer a focused sub-question": {Content: "sub answer"},
+	}}
+	cfg := baseConfig()
+	cfg.Retriever = retriever
+	cfg.Chat = chat
+	cfg.MaxConcurrency = 4
+	cfg.MaxSubgoals = 8
+	g := New(cfg).Run(context.Background(), "q")
+
+	if want := len(failing); len(g.Degraded) != want {
+		t.Fatalf("got %d degraded messages, want %d (lost updates under concurrent append): %v", len(g.Degraded), want, g.Degraded)
+	}
+	if g.Metrics.Cost.TotalTokens <= 0 {
+		t.Fatalf("got zero accumulated cost across 8 concurrent subgoals, want > 0")
+	}
+}
+
 func TestRunCycleFallsBackToSequentialFlat(t *testing.T) {
 	retriever := &recordingRetriever{}
 	chat := dependencyAwareChat{decompose: `[{"subquestion":"a","depends_on":[1]},{"subquestion":"b","depends_on":[0]}]`}

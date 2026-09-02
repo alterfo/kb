@@ -43,7 +43,8 @@ General project rules apply; this section keeps only kb-specific rules.
                           ▼                              communities (Louvain) → summaries
         internal/store/sqlite.VectorStore                        │
         (embeddings BLOB, brute-force cosine)                    ▼
-        internal/store/bm25 (in-memory Okapi BM25)     internal/store/graphstore
+        лексический индекс: SQLite FTS5 (дефолт)       internal/store/graphstore
+        или internal/store/bm25 (in-memory, KB_FTS5=false)
                           │                              (entities/relations/communities в SQLite)
                           └───────────────┬───────────────────────┘
                                           ▼
@@ -70,8 +71,9 @@ General project rules apply; this section keeps only kb-specific rules.
 
 Персистентность — **один файл** `$PERSIST_DIR/kb.db`: таблицы векторного стора
 (`chunks`), графа (`entities`/`relations`/`communities`) и `kb_meta`/`corpus_version`
-в одной SQLite-базе. BM25-индекс — только в памяти, полностью перестраивается из
-`chunks` при инвалидации `corpus_version`.
+в одной SQLite-базе. Лексический индекс по умолчанию — SQLite FTS5-таблица над
+`chunks`; `KB_FTS5=false` откатывает на legacy in-memory BM25, который полностью
+перестраивается из `chunks` при инвалидации `corpus_version`.
 
 ## Карта пакетов (актуальное состояние, не план)
 
@@ -83,7 +85,7 @@ General project rules apply; this section keeps only kb-specific rules.
 | `internal/store/sqlite` | `VectorStore` и `GraphStore` — реализации поверх `ncruces/go-sqlite3` (pure-Go, без cgo); lifecycle-колонки `chunks` (`created_at/valid_to/replaces/superseded_by`) | **Векторный поиск — brute-force cosine по BLOB**, не sqlite-vec extension (asg017 cgo-only недоступен в pure-Go стеке); чанки soft-close вместо delete в update-пути |
 | `internal/store/vector` | интерфейс `Store` (`EnsureDim/Upsert/DeleteByDoc/Query/AllForBM25/SoftCloseByDoc/SetSuperseded/ClearSupersededBy`) + `Chunk` с lifecycle-полями + `ScoredChunk` | контракт, реализация — в `store/sqlite` |
 | `internal/store/graphstore` | интерфейс `Store` графа (`UpsertEntities/UpsertRelations/MatchEntities/Neighbors/UpsertCommunities/CommunitiesFor/PruneOrphans/OverlappingChunks/RefreshStaleCommunities/...`) | **живёт здесь, не в `internal/graph`** |
-| `internal/store/bm25` | in-memory Okapi BM25, `[\p{L}\p{N}]+`-токенайзер | rebuild целиком на запись — осознанный компромисс масштаба прототипа |
+| `internal/store/bm25` | in-memory Okapi BM25, `[\p{L}\p{N}]+`-токенайзер | legacy-путь под `KB_FTS5=false`; дефолт — SQLite FTS5 (`internal/store/sqlite/fts5.go`), без rebuild-на-запись |
 | `internal/store/history` | интерфейс `Store` (`RecordSearch/SearchHistory/SearchEntryByID/SaveAskRun/AskRuns/AskRun/MarkRunningInterrupted`) + типы `SearchEntry` (поле `Answer` — снапшот синтеза)/`AskRunEntry` | контракт, реализация — `sqlite.HistoryStore` в `store/sqlite`; таблицы `search_history`/`ask_runs` |
 | `internal/engine/chunk` | `sentences`-based chunker + `ChatChunker` (thread-aware) | |
 | `internal/engine/retriever` | `Retriever` (struct, не интерфейс), `retriever.New(cfg).Retrieve(ctx, query, opt)` | гибрид (dense+BM25+RRF+authority+cap) + graph-aware fusion; superseded-penalty; lazy refresh stale-коммунити |
@@ -138,11 +140,11 @@ General project rules apply; this section keeps only kb-specific rules.
 - **`ConflictResolver` как отдельная подсистема** — не строим. Решается authority prior
   (`notes/approved/` весит больше шумного чата) + обязательным цитированием источников
   по filename в синтезе ответа — пользователь видит оба факта и решает сам.
-- **Полный BM25-rebuild на запись** — осознанный компромисс масштаба прототипа; community
-  detection — lazy: записи помечают затронутые компоненты `stale`, Detect идёт пакетно
-  (конец sync-батча / query throttle) по затронутым компонентам, без инкрементальных
-   delta-обновлений. Первый кандидат на замену при росте корпуса — SQLite FTS5 для BM25
-   и инкрементальный Leiden.
+- **Полный BM25-rebuild на запись** — снят по умолчанию переходом на SQLite FTS5
+  (`KB_FTS5=true` по умолчанию); legacy in-memory BM25 (`KB_FTS5=false`) остаётся с тем же
+  компромиссом для отката. Community detection — lazy: записи помечают затронутые компоненты
+  `stale`, Detect идёт пакетно (конец sync-батча / query throttle) по затронутым компонентам,
+  без инкрементальных delta-обновлений; инкрементальный Leiden остаётся кандидатом на будущее.
 - **Embedding-based blast-radius** — не строим: cross-doc инвалидация идёт по пересечению
   сущностей (≥ N, `superseded_by` + мягкий penalty, fail-open), embedding-рефайнмент
    (ловля парафраз) — после накопления статистики по precision.

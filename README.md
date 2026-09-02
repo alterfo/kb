@@ -31,9 +31,10 @@ Or install the latest release directly:
 go install github.com/alterfo/kb/cmd/kb@latest
 ```
 
-Open http://127.0.0.1:8080. The dashboard intentionally binds only to loopback
-addresses and has no authentication, so keep it local or put it behind an SSH
-tunnel or authenticating reverse proxy. See Configuration below for the full
+Open http://127.0.0.1:8080. By default `serve` binds to loopback and has no
+authentication; binding a non-loopback `-addr` requires `KB_WEB_AUTH_TOKEN`
+(refused otherwise) and enables bearer/`X-KB-Token`/cookie auth plus an
+optional `KB_WEB_RATE_LIMIT`. See Configuration below for the full
 environment surface and Usage for each CLI command.
 
 ## Architecture
@@ -49,7 +50,7 @@ flowchart TD
     idx --> graphn["graph:<br/>LLM extraction of entities / relations<br/>→ merge / dedup → communities (Louvain) → summaries"]
 
     chunk --> vstore[("VectorStore<br/>embeddings BLOB, brute-force cosine")]
-    chunk --> bm25[("BM25<br/>in-memory Okapi")]
+    chunk --> bm25[("Lexical index<br/>SQLite FTS5 (default) or in-memory BM25")]
     graphn --> gstore[("GraphStore<br/>entities / relations / communities in SQLite")]
 
     vstore --> retr["retriever.Retriever:<br/>hybrid + graph-aware fusion<br/>dense multi-query + BM25 + RRF + authority + per-doc cap<br/>→ entity-linking → neighbor expansion → community context"]
@@ -66,8 +67,9 @@ flowchart TD
 Persistence is a single file `$PERSIST_DIR/kb.db`: vector tables (`chunks`),
 graph tables (`entities`/`relations`/`communities`), `kb_meta`/`corpus_version`,
 and `search_history`/`ask_runs` (dashboard search and ask history) in one SQLite
-database. The BM25 index is in-memory only and is rebuilt from `chunks`
-whenever `corpus_version` changes.
+database. The lexical index defaults to a SQLite FTS5 table over `chunks`
+(`KB_FTS5=false` reverts to the legacy in-memory BM25 index, which is rebuilt
+from `chunks` whenever `corpus_version` changes).
 
 See `docs/architecture.md` for the pipeline in detail.
 
@@ -111,6 +113,9 @@ connector that needs them (Discord).
 | `KB_DESCRIBE_MODEL` | `qwen3.8:latest` | Chat model used by `kb describe` (independent of `KB_LLM_MODEL`) |
 | `KB_DESCRIBE_BATCH` | `10` | Batch size for `kb describe` summary generation |
 | `KB_SOCKS_PROXY` | (unset) | SOCKS5 proxy (`socks5://host:port`) used by connectors that need it (e.g. Discord) |
+| `KB_FTS5` | `true` | Lexical index backend: SQLite FTS5 (default) vs. the legacy in-memory BM25 index when `false` |
+| `KB_WEB_AUTH_TOKEN` | (unset) | Bearer/`X-KB-Token`/cookie token required by `kb serve`; mandatory when `-addr` is non-loopback |
+| `KB_WEB_RATE_LIMIT` | `0` (off) | Requests per minute per client IP for `kb serve`; only enforced on non-loopback binds |
 
 Connector instances are declared in `$KB_ROOT/sources.yaml`. The file stores
 only the *names* of environment variables that hold secrets; values are read
@@ -379,9 +384,14 @@ Starts the web dashboard (`internal/web`):
 ./bin/kb serve -addr 127.0.0.1:9000   # custom listen address
 ```
 
-`serve` only binds to loopback addresses: the dashboard has no
-authentication and exposes destructive routes, so remote exposure must go
-through an SSH tunnel or a reverse proxy.
+`serve` binds to loopback by default: the dashboard has no authentication
+there and exposes destructive routes. Binding a non-loopback `-addr` requires
+`KB_WEB_AUTH_TOKEN` to be set (the process refuses to start otherwise), which
+enables bearer/`X-KB-Token`/cookie token auth on every non-`/healthz` route;
+pair it with `KB_WEB_RATE_LIMIT` (requests per minute per client IP,
+non-loopback binds only) if the endpoint is reachable beyond a trusted
+network. An SSH tunnel or authenticating reverse proxy remains the simpler
+option for remote access.
 
 ### mcp
 

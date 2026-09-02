@@ -98,42 +98,67 @@ type Config struct {
 	AskCache AskCache
 }
 
-type runMetricsKey struct{}
+// runCollector accumulates cost, degraded messages, and retrieved chunks
+// across a single Run. Subgoals within a DAG level execute concurrently
+// (bounded by MaxConcurrency) and all share one collector instance, so every
+// access is mutex-guarded.
+type runCollector struct {
+	mu        sync.Mutex
+	cost      metrics.Cost
+	degraded  []string
+	retrieved []vector.ScoredChunk
+}
 
-func withRunMetrics(ctx context.Context, m *metrics.Values) context.Context {
-	return context.WithValue(ctx, runMetricsKey{}, m)
+func (rc *runCollector) addCost(cost metrics.Cost) {
+	rc.mu.Lock()
+	rc.cost.Add(cost)
+	rc.mu.Unlock()
+}
+
+func (rc *runCollector) addDegraded(msg string) {
+	rc.mu.Lock()
+	rc.degraded = append(rc.degraded, msg)
+	rc.mu.Unlock()
+}
+
+func (rc *runCollector) appendRetrieved(chunks []vector.ScoredChunk) {
+	rc.mu.Lock()
+	rc.retrieved = append(rc.retrieved, chunks...)
+	rc.mu.Unlock()
+}
+
+func (rc *runCollector) snapshot() (cost metrics.Cost, degraded []string, retrieved []vector.ScoredChunk) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	return rc.cost, append([]string(nil), rc.degraded...), append([]vector.ScoredChunk(nil), rc.retrieved...)
+}
+
+type runCollectorKey struct{}
+
+func withRunCollector(ctx context.Context, rc *runCollector) context.Context {
+	return context.WithValue(ctx, runCollectorKey{}, rc)
+}
+
+func runCollectorFrom(ctx context.Context) *runCollector {
+	rc, _ := ctx.Value(runCollectorKey{}).(*runCollector)
+	return rc
 }
 
 func addRunCost(ctx context.Context, cost metrics.Cost) {
-	m, ok := ctx.Value(runMetricsKey{}).(*metrics.Values)
-	if ok && m != nil {
-		m.Cost.Add(cost)
+	if rc := runCollectorFrom(ctx); rc != nil {
+		rc.addCost(cost)
 	}
-}
-
-type degradedContextKey struct{}
-
-func withDegradedCollector(ctx context.Context, degraded *[]string) context.Context {
-	return context.WithValue(ctx, degradedContextKey{}, degraded)
 }
 
 func addDegraded(ctx context.Context, msg string) {
-	degraded, ok := ctx.Value(degradedContextKey{}).(*[]string)
-	if ok && degraded != nil {
-		*degraded = append(*degraded, msg)
+	if rc := runCollectorFrom(ctx); rc != nil {
+		rc.addDegraded(msg)
 	}
 }
 
-type retrievedChunksKey struct{}
-
-func withRetrievedChunks(ctx context.Context, chunks *[]vector.ScoredChunk) context.Context {
-	return context.WithValue(ctx, retrievedChunksKey{}, chunks)
-}
-
 func appendRetrievedChunks(ctx context.Context, chunks []vector.ScoredChunk) {
-	all, ok := ctx.Value(retrievedChunksKey{}).(*[]vector.ScoredChunk)
-	if ok && all != nil {
-		*all = append(*all, chunks...)
+	if rc := runCollectorFrom(ctx); rc != nil {
+		rc.appendRetrieved(chunks)
 	}
 }
 
@@ -208,12 +233,8 @@ func (o *Orchestrator) Run(ctx context.Context, query string) ThoughtGraph {
 		}
 	}
 	start := time.Now()
-	var degraded []string
-	var retrieved []vector.ScoredChunk
-	runMetrics := metrics.Values{}
-	ctx = withRunMetrics(ctx, &runMetrics)
-	ctx = withDegradedCollector(ctx, &degraded)
-	ctx = withRetrievedChunks(ctx, &retrieved)
+	rc := &runCollector{}
+	ctx = withRunCollector(ctx, rc)
 
 	b := newGraphBuilder(query, o.cfg.Progress)
 
@@ -275,12 +296,13 @@ func (o *Orchestrator) Run(ctx context.Context, query string) ThoughtGraph {
 	b.setFinal(refined, finalAnswer, finalSources)
 	b.setNode(Node{ID: NodeFinalize, Type: NodeFinalize, Status: StatusDone, Answer: finalAnswer, Sources: finalSources})
 
-	runMetrics.LatencyMS = metrics.LatencyMS(start)
+	cost, degraded, retrieved := rc.snapshot()
+	runMetrics := metrics.Values{Cost: cost, LatencyMS: metrics.LatencyMS(start)}
 	if len(o.cfg.RelevantIDs) > 0 {
 		runMetrics.RecallAtK = metrics.ComputeRecallAtK(retrieved, metrics.RelevantSet(o.cfg.RelevantIDs), o.cfg.K)
 	}
 	g := b.snapshot()
-	g.Degraded = append([]string(nil), degraded...)
+	g.Degraded = degraded
 	g.Metrics = runMetrics
 	if o.cfg.AskCache != nil {
 		_ = o.cfg.AskCache.Put(ctx, query, g)

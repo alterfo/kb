@@ -79,6 +79,57 @@ func TestDensePrefilterFallsBackToExhaustiveOnCandidateError(t *testing.T) {
 	}
 }
 
+// TestDensePrefilterFallsBackWhenCandidatesScoreEmpty covers the case where
+// QueryCandidates succeeds (err == nil) but the candidate set it was given
+// yields zero results after scoring/filtering -- e.g. the lexical/entity
+// prefilter picked a candidate whose embedding doesn't match the query,
+// while a genuinely similar chunk outside the candidate set was never
+// considered. Before the fix, queryDense returned that empty result
+// directly instead of falling back to exhaustive search, silently dropping
+// the dense retrieval leg.
+func TestDensePrefilterFallsBackWhenCandidatesScoreEmpty(t *testing.T) {
+	chunks := []vector.Chunk{
+		// Lexically matches "apple" so the FTS-based prefilter selects it as
+		// a candidate, but its embedding is orthogonal to the query vector
+		// so it scores zero and is dropped.
+		{ID: "a", RefDocID: "doc-a", Text: "apple orchard", Embedding: []float32{0, 1}},
+		// Never lexically matches "apple" so it is not a prefilter
+		// candidate, but its embedding is a perfect dense match.
+		{ID: "b", RefDocID: "doc-b", Text: "unrelated topic entirely", Embedding: []float32{1, 0}},
+	}
+	vs := &fakeVectorStore{chunks: chunks}
+	idx := bm25.New()
+	idx.Rebuild(chunks, 1)
+
+	r := New(Config{
+		Vector:       vs,
+		BM25:         idx,
+		Embed:        fakeEmbedder{vec: constVec([]float32{1, 0})},
+		Hybrid:       true,
+		ANNPrefilter: true,
+	})
+
+	got, err := r.Retrieve(context.Background(), "apple", Options{K: 10})
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if vs.candidateQueryCall != 1 {
+		t.Fatalf("candidate query calls = %d, want 1", vs.candidateQueryCall)
+	}
+	if vs.queryCalls != 1 {
+		t.Fatalf("exhaustive fallback calls = %d, want 1 (dense leg must not be silently dropped)", vs.queryCalls)
+	}
+	foundB := false
+	for _, sc := range got {
+		if sc.Chunk.ID == "b" {
+			foundB = true
+		}
+	}
+	if !foundB {
+		t.Fatalf("chunk b (outside the candidate set, strong dense match) missing from fallback results: %+v", got)
+	}
+}
+
 func TestDensePrefilterDisabledUsesExhaustiveQuery(t *testing.T) {
 	chunks := []vector.Chunk{
 		{ID: "a", RefDocID: "doc-a", Text: "apple orchard", Embedding: []float32{1, 0}},

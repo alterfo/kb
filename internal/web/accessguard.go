@@ -9,11 +9,18 @@ import (
 	"time"
 )
 
+// clientRateLimiterSweepEvery bounds how often allow() pays for an O(n)
+// sweep of every tracked client, so a busy server still amortizes it away
+// while a key that stops sending requests is eventually evicted instead of
+// living in the map forever.
+const clientRateLimiterSweepEvery = 1024
+
 type clientRateLimiter struct {
 	mu      sync.Mutex
 	limit   int
 	now     func() time.Time
 	clients map[string][]time.Time
+	calls   int
 }
 
 func newClientRateLimiter(limit int, now func() time.Time) *clientRateLimiter {
@@ -39,13 +46,40 @@ func (l *clientRateLimiter) allow(key string) bool {
 	if start > 0 {
 		times = append([]time.Time(nil), times[start:]...)
 	}
+	allowed := true
 	if len(times) >= l.limit {
-		l.clients[key] = times
-		return false
+		allowed = false
+	} else {
+		times = append(times, l.now())
 	}
-	times = append(times, l.now())
-	l.clients[key] = times
-	return true
+	if len(times) == 0 {
+		delete(l.clients, key)
+	} else {
+		l.clients[key] = times
+	}
+	l.sweepLocked(cutoff)
+	return allowed
+}
+
+// sweepLocked evicts every tracked client whose whole window has expired,
+// bounding l.clients to roughly the number of clients active in the last
+// minute rather than every client ever seen. Called under l.mu.
+func (l *clientRateLimiter) sweepLocked(cutoff time.Time) {
+	l.calls++
+	if l.calls%clientRateLimiterSweepEvery != 0 {
+		return
+	}
+	for key, times := range l.clients {
+		start := 0
+		for start < len(times) && times[start].Before(cutoff) {
+			start++
+		}
+		if start == len(times) {
+			delete(l.clients, key)
+		} else if start > 0 {
+			l.clients[key] = append([]time.Time(nil), times[start:]...)
+		}
+	}
 }
 
 func (s *Server) guard(next http.Handler) http.Handler {
@@ -58,14 +92,17 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if s.deps.RequireAuth && !authorized(r, s.deps.AuthToken) {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="kb"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
+		// Rate-limit before checking auth: otherwise an unauthenticated
+		// caller (the actual brute-force/abuse threat) always fails the
+		// auth check first and the limiter never sees the request.
 		if s.limiter != nil && !s.limiter.allow(clientKey(r)) {
 			w.Header().Set("Retry-After", "60")
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		if s.deps.RequireAuth && !authorized(r, s.deps.AuthToken) {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="kb"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		next.ServeHTTP(w, r)

@@ -283,6 +283,9 @@ func (s *VectorStore) DeleteByDoc(ctx context.Context, docID string) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM doc_fingerprints WHERE ref_doc_id = ?`, docID); err != nil {
 		return fmt.Errorf("sqlite: DeleteByDoc: delete fingerprint: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE doc_fingerprints SET duplicate_of = '' WHERE duplicate_of = ?`, docID); err != nil {
+		return fmt.Errorf("sqlite: DeleteByDoc: clear dependent duplicate_of: %w", err)
+	}
 	if err := bumpCorpusVersion(ctx, tx); err != nil {
 		return err
 	}

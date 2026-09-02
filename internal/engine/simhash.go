@@ -38,16 +38,27 @@ func (ix *Indexer) nearDuplicateDecisionFor(ctx context.Context, doc connector.D
 		maxBits = 0
 	}
 	decision := nearDuplicateDecision{available: true, fingerprint: fingerprint}
-	if own, ok, _ := store.DocumentFingerprint(ctx, refDocID); ok {
-		if own.DuplicateOf != "" {
-			decision.skip = true
-			decision.duplicateOf = own.DuplicateOf
-		}
-		return decision
-	}
 	rows, err := store.ListDocumentFingerprints(ctx)
 	if err != nil {
 		return decision
+	}
+	byRefDocID := make(map[string]vector.DocumentFingerprint, len(rows))
+	for _, row := range rows {
+		byRefDocID[row.RefDocID] = row
+	}
+	// A previous run may have flagged this document as a duplicate of some
+	// target. Re-validate rather than trusting the stored flag: the target
+	// may since have been deleted, or this document's own content may have
+	// changed enough that it no longer resembles the target. Either way,
+	// falling through to the corpus scan below re-derives the correct
+	// decision from the current body instead of leaving a stale document
+	// permanently unindexed.
+	if own, ok := byRefDocID[refDocID]; ok && own.DuplicateOf != "" {
+		if target, ok := byRefDocID[own.DuplicateOf]; ok && target.DuplicateOf == "" && hammingDistance(fingerprint, target.Fingerprint) <= maxBits {
+			decision.skip = true
+			decision.duplicateOf = own.DuplicateOf
+			return decision
+		}
 	}
 	for _, row := range rows {
 		if row.RefDocID == refDocID || row.DuplicateOf != "" || InferSource(row.RefDocID) != doc.Source {
