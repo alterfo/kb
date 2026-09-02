@@ -90,12 +90,12 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 3: Fix broken architecture-review documentation link
 
-- [ ] Decide whether to restore `docs/architecture-review.md` from git history or remove
+- [x] Decide whether to restore `docs/architecture-review.md` from git history or remove
       the dangling references
-- [ ] Fix the reference in `AGENTS.md:154`
-- [ ] Fix the reference in `README.md:73`
-- [ ] write tests / doc-link checks if the project has a docs-link-check mechanism
-- [ ] run project tests - must pass before next task
+- [x] Fix the reference in `AGENTS.md:154`
+- [x] Fix the reference in `README.md:73`
+- [x] write tests / doc-link checks if the project has a docs-link-check mechanism
+- [x] run project tests - must pass before next task
 
 ### Task 4: Add a deterministic quality gate to CI
 

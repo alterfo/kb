@@ -150,8 +150,6 @@ General project rules apply; this section keeps only kb-specific rules.
 ## Куда смотреть за подробностями
 
 - `docs/README.md` — индекс документации (архитектура, коннекторы, верификация, скриншоты).
-- `docs/architecture-review.md` — сводный architectural review: модульная карта, сильные стороны,
-  риски, рекомендации и checklist готовности к публикации.
 - `docs/screenshots/` — дашборд-скриншоты (search, Ask, graph, MCP info).
 - `CHANGELOG.md` — release notes первого публичного релиза.
 - `README.md` — стек, requirements, конфигурация, команды разработки, секции верификации и скриншотов.

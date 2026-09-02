@@ -70,8 +70,6 @@ database. The BM25 index is in-memory only and is rebuilt from `chunks`
 whenever `corpus_version` changes.
 
 See `docs/architecture.md` for the pipeline in detail.
-See `docs/architecture-review.md` for the architectural review, strengths,
-risks, and public-release readiness checklist.
 
 ## Configuration
 

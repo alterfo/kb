@@ -29,4 +29,4 @@ Conventions:
   names, never values.
 
 Please open an issue before large changes so the intended design can be
-aligned with docs/architecture-review.md.
+aligned with docs/architecture.md.
