@@ -27,8 +27,12 @@ type engineBundle struct {
 }
 
 func newEngineBundle(env config.Env) (*engineBundle, error) {
+	return newEngineBundleAt(env, filepath.Join(env.PersistDir, "kb.db"))
+}
+
+func newEngineBundleAt(env config.Env, dbPath string) (*engineBundle, error) {
 	ctx := context.Background()
-	db, err := sqlite.Open(ctx, filepath.Join(env.PersistDir, "kb.db"))
+	db, err := sqlite.Open(ctx, dbPath)
 	if err != nil {
 		return nil, err
 	}

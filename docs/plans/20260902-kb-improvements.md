@@ -196,9 +196,9 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 14: Support embedding-model migration without full reindex
 
-- [ ] Implement `kb reindex --embed-model=X --into=shadow.db`
-- [ ] Add metrics comparison between the current and shadow index before cutover
-- [ ] write tests for the shadow-reindex flow and metrics comparison
+- [x] Implement `kb reindex --embed-model=X --into=shadow.db`
+- [x] Add metrics comparison between the current and shadow index before cutover
+- [x] write tests for the shadow-reindex flow and metrics comparison
 - [x] run project tests - must pass before next task
 
 ### Task 15: Add guardrails for PII and prompt injection
