@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/alterfo/kb/internal/bench/corpus"
 	"github.com/alterfo/kb/internal/bench/dragon"
@@ -19,6 +20,9 @@ import (
 func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "score" {
 		return runBenchDragonScoreCmd(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "calibrate" {
+		return runBenchDragonCalibrateCmd(args[1:], env, stdout, stderr)
 	}
 	fset := flag.NewFlagSet("bench-dragon", flag.ContinueOnError)
 	fset.SetOutput(stderr)
@@ -42,6 +46,9 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 		if *limit == 0 {
 			*limit = 5
 		}
+	}
+	if *docLimit > 0 {
+		*hist = true
 	}
 
 	textsDataset, questionsDataset := dragon.TextsDataset, dragon.QuestionsDataset
@@ -72,8 +79,18 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 		return 1
 	}
 
+	var keptDocIDs map[string]struct{}
 	if reuseIndex {
 		fmt.Fprintln(stdout, "bench-dragon: skipping corpus fetch and indexing")
+		if *docLimit > 0 {
+			texts, err := dragon.FetchTexts(ctx, httpClient, *baseURL, textsDataset)
+			if err != nil {
+				fmt.Fprintf(stderr, "bench-dragon: %v\n", err)
+				return 1
+			}
+			texts = dragon.LimitTexts(texts, *docLimit)
+			keptDocIDs = dragon.TextIDSet(texts)
+		}
 	} else {
 		fmt.Fprintf(stdout, "bench-dragon: indexing into %s\n", benchEnv.PersistDir)
 		fmt.Fprintln(stdout, "bench-dragon: fetching corpus from HuggingFace...")
@@ -82,32 +99,17 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 			fmt.Fprintf(stderr, "bench-dragon: %v\n", err)
 			return 1
 		}
-		if *docLimit > 0 && *docLimit < len(texts) {
-			texts = texts[:*docLimit]
+		fetchedTexts := len(texts)
+		texts = dragon.LimitTexts(texts, *docLimit)
+		keptDocIDs = dragon.TextIDSet(texts)
+		if *docLimit > 0 {
+			fmt.Fprintf(stdout, "bench-dragon: doc-limit keeps %d/%d docs\n", len(texts), fetchedTexts)
+		} else {
+			fmt.Fprintf(stdout, "bench-dragon: fetched %d texts\n", len(texts))
 		}
-		fmt.Fprintf(stdout, "bench-dragon: fetched %d texts\n", len(texts))
 
-		bundle.updater.BeginBulk()
-		docs := dragon.ToDocuments(texts)
-		indexed := 0
-		skipped := 0
-		for _, doc := range docs {
-			changed, indexErr := bundle.indexer.IndexDocumentIfChanged(ctx, doc)
-			if indexErr != nil {
-				fmt.Fprintf(stderr, "bench-dragon: index %s: %v\n", doc.ID, indexErr)
-				return 1
-			}
-			if changed {
-				indexed++
-			} else {
-				skipped++
-			}
-			if (indexed+skipped)%25 == 0 || indexed+skipped == len(docs) {
-				fmt.Fprintf(stdout, "bench-dragon: indexed %d/%d documents (%d unchanged)\n", indexed+skipped, len(docs), skipped)
-			}
-		}
-		if err := bundle.updater.EndBulk(ctx); err != nil {
-			fmt.Fprintf(stderr, "bench-dragon: finalize graph communities: %v\n", err)
+		if err := benchDragonIndexTexts(ctx, bundle, texts, stdout); err != nil {
+			fmt.Fprintf(stderr, "bench-dragon: %v\n", err)
 			return 1
 		}
 	}
@@ -124,6 +126,16 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 		return 1
 	}
 	questions := dragon.ToQuestions(rawQuestions)
+	if *docLimit > 0 {
+		gold, err := dragon.FetchGoldQA(ctx, httpClient, *baseURL, dragon.HistGoldDataset)
+		if err != nil {
+			fmt.Fprintf(stderr, "bench-dragon: %v\n", err)
+			return 1
+		}
+		matched, malformed := dragon.FilterQuestions(gold, questions, keptDocIDs)
+		fmt.Fprintf(stdout, "bench-dragon: matched %d/%d questions to doc subset (%d malformed gold entries skipped)\n", len(matched), len(questions), malformed)
+		questions = matched
+	}
 	if *limit > 0 && *limit < len(questions) {
 		questions = questions[:*limit]
 	}
@@ -168,6 +180,28 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 	return 0
 }
 
+func benchDragonIndexTexts(ctx context.Context, bundle *engineBundle, texts []dragon.Text, stdout io.Writer) error {
+	docs := dragon.ToDocuments(texts)
+	bundle.updater.BeginBulk()
+	indexed := 0
+	skipped := 0
+	for _, doc := range docs {
+		changed, indexErr := bundle.indexer.IndexDocumentIfChanged(ctx, doc)
+		if indexErr != nil {
+			return fmt.Errorf("index %s: %w", doc.ID, indexErr)
+		}
+		if changed {
+			indexed++
+		} else {
+			skipped++
+		}
+		if (indexed+skipped)%25 == 0 || indexed+skipped == len(docs) {
+			fmt.Fprintf(stdout, "bench-dragon: indexed %d/%d documents (%d unchanged)\n", indexed+skipped, len(docs), skipped)
+		}
+	}
+	return bundle.updater.EndBulk(ctx)
+}
+
 func benchDragonReuseIndex(ctx context.Context, db *sqlite.DB, persistDir string, forceReindex bool, stdout io.Writer) (bool, error) {
 	if persistDir == "" || forceReindex {
 		return false, nil
@@ -181,6 +215,62 @@ func benchDragonReuseIndex(ctx context.Context, db *sqlite.DB, persistDir string
 		return true, nil
 	}
 	return false, nil
+}
+
+func runBenchDragonCalibrateCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
+	fset := flag.NewFlagSet("bench-dragon calibrate", flag.ContinueOnError)
+	fset.SetOutput(stderr)
+	sample := fset.Int("sample", 15, "number of docs to index for the calibration measurement")
+	budget := fset.Duration("budget", 45*time.Minute, "indexing budget the recommended -doc-limit must fit under")
+	baseURL := fset.String("hf-base-url", dragon.DefaultBaseURL, "HuggingFace datasets-server base URL")
+	if err := fset.Parse(args); err != nil {
+		return 2
+	}
+
+	env.IndexGraph = true
+
+	benchEnv, cleanup, err := benchIsolatedEnv(env, "")
+	if err != nil {
+		fmt.Fprintf(stderr, "bench-dragon calibrate: create temporary persist dir: %v\n", err)
+		return 1
+	}
+	defer cleanup()
+
+	bundle, err := newEngineBundle(benchEnv)
+	if err != nil {
+		fmt.Fprintf(stderr, "bench-dragon calibrate: opening db: %v\n", err)
+		return 1
+	}
+	defer bundle.close()
+
+	ctx := context.Background()
+	httpClient := &http.Client{}
+
+	fmt.Fprintln(stdout, "bench-dragon calibrate: fetching corpus from HuggingFace...")
+	texts, err := dragon.FetchTexts(ctx, httpClient, *baseURL, dragon.HistTextsDataset)
+	if err != nil {
+		fmt.Fprintf(stderr, "bench-dragon calibrate: %v\n", err)
+		return 1
+	}
+	texts = dragon.LimitTexts(texts, *sample)
+	if len(texts) == 0 {
+		fmt.Fprintln(stderr, "bench-dragon calibrate: no texts to index")
+		return 1
+	}
+	fmt.Fprintf(stdout, "bench-dragon calibrate: indexing %d docs (graph enabled)...\n", len(texts))
+
+	start := time.Now()
+	if err := benchDragonIndexTexts(ctx, bundle, texts, stdout); err != nil {
+		fmt.Fprintf(stderr, "bench-dragon calibrate: %v\n", err)
+		return 1
+	}
+	elapsed := time.Since(start)
+
+	secondsPerDoc := elapsed.Seconds() / float64(len(texts))
+	recommended := dragon.MaxDocLimit(secondsPerDoc, *budget)
+	fmt.Fprintf(stdout, "bench-dragon calibrate: indexed %d docs in %s (%.2f s/doc)\n", len(texts), elapsed.Round(time.Second), secondsPerDoc)
+	fmt.Fprintf(stdout, "bench-dragon calibrate: largest -doc-limit under %s budget: %d\n", (*budget).Round(time.Second), recommended)
+	return 0
 }
 
 func runBenchDragonScoreCmd(args []string, stdout, stderr io.Writer) int {

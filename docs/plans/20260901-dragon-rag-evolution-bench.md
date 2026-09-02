@@ -132,27 +132,27 @@ precedent).
 
 ### Task 2: Fixed doc/question subset with calibrated `-doc-limit`
 
-- [ ] add `-doc-limit N` to `runBenchDragonCmd`: after fetching `texts`,
+- [x] add `-doc-limit N` to `runBenchDragonCmd`: after fetching `texts`,
       keep only the first N (deterministic order as returned by HF)
-- [ ] when `-doc-limit` is set, also fetch `dragon.FetchGoldQA` (currently
+- [x] when `-doc-limit` is set, also fetch `dragon.FetchGoldQA` (currently
       only fetched by `bench-dragon score`) and filter `questions` to
       those whose `GoldQA.TextIDs` (parsed with the existing bracket-list
       parser from the `set`-answer scorer fix, extended/reused, not
       reimplemented) are fully contained in the kept doc IDs — this is
       the "matched question set" for a fair subset comparison
       (`-doc-limit` implies `-hist`, since gold QA only exists for hist)
-- [ ] log how many docs/questions were kept after filtering
-- [ ] write a small standalone calibration helper (could be a `-calibrate`
+- [x] log how many docs/questions were kept after filtering
+- [x] write a small standalone calibration helper (could be a `-calibrate`
       flag or a tiny separate `kb bench-dragon calibrate` mode): indexes a
       small fixed sample (e.g. 15 docs) with `KB_INDEX_GRAPH=true`
       (worst-case per-doc cost), reports measured seconds/doc, and prints
       the largest `-doc-limit` that keeps a full graph-enabled indexing
       pass under a configurable budget (default 45 min, leaving headroom
       under the 2h/run ceiling)
-- [ ] write tests for the doc-limit truncation, the TextIDs-based question
+- [x] write tests for the doc-limit truncation, the TextIDs-based question
       filter (cover: fully-contained, partially-contained/excluded,
       malformed TextIDs), and the budget-from-measured-rate calculation
-- [ ] run `go test ./cmd/... ./internal/bench/...` — must pass before task 3
+- [x] run `go test ./cmd/... ./internal/bench/...` — must pass before task 3
 
 ### Task 3: Naive (non-GoT) single-call answer path
 
