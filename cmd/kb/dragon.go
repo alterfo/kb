@@ -36,6 +36,7 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 	forceReindex := fset.Bool("force-reindex", false, "reindex the corpus even when a persisted index already exists")
 	docLimit := fset.Int("doc-limit", 0, "keep only the first N fetched texts (0 = all)")
 	smoke := fset.Bool("smoke", false, "use a small fixed subset for a one-minute sanity run")
+	answerMode := fset.String("answer-mode", "got", "answering path: got (Graph-of-Thoughts, default) or naive (single-shot retrieval + one chat call)")
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
@@ -46,6 +47,10 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 		if *limit == 0 {
 			*limit = 5
 		}
+	}
+	if *answerMode != "got" && *answerMode != "naive" {
+		fmt.Fprintf(stderr, "bench-dragon: invalid -answer-mode %q (want got|naive)\n", *answerMode)
+		return 2
 	}
 	if *docLimit > 0 {
 		*hist = true
@@ -146,26 +151,11 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 	fmt.Fprintf(stdout, "bench-dragon: %d questions selected\n", len(questions))
 
 	r := benchRetriever(env, bundle)
-	orch := got.New(got.Config{
-		Retriever:         retriever.Adapter{Retriever: r},
-		Chat:              bundle.chat,
-		Model:             env.LLMModel,
-		K:                 *topK,
-		RollingMemory:     env.AskRollingWindow,
-		ExtractQualifiers: env.QualifierFilter,
-		AbstainThreshold:  env.AbstainThreshold,
-	})
+	ask := benchDragonAsk(env, r, bundle.chat, *answerMode, *topK)
 
 	fmt.Fprintln(stdout, "bench-dragon: answering questions...")
 	total := len(questions)
-	entries := dragon.RunQuestions(ctx, questions, *concurrency, func(ctx context.Context, q corpus.Question) (string, []string) {
-		g := orch.Run(ctx, q.Text)
-		docIDs := make([]string, 0, len(g.Sources))
-		for _, s := range g.Sources {
-			docIDs = append(docIDs, s.DocID)
-		}
-		return g.FinalAnswer, runbench.CorpusDocumentIDs(docIDs)
-	}, func(done int) {
+	entries := dragon.RunQuestions(ctx, questions, *concurrency, ask, func(done int) {
 		if done%25 == 0 || done == total {
 			fmt.Fprintf(stdout, "bench-dragon: answered %d/%d questions\n", done, total)
 		}
@@ -200,6 +190,35 @@ func benchDragonIndexTexts(ctx context.Context, bundle *engineBundle, texts []dr
 		}
 	}
 	return bundle.updater.EndBulk(ctx)
+}
+
+func benchDragonAsk(env config.Env, r *retriever.Retriever, chat dragon.ChatClient, answerMode string, topK int) dragon.AskFunc {
+	if answerMode == "naive" {
+		return func(ctx context.Context, q corpus.Question) (string, []string) {
+			answer, docIDs, err := dragon.NaiveAnswer(ctx, r, chat, env.LLMModel, topK, q.Text)
+			if err != nil {
+				return "", nil
+			}
+			return answer, runbench.CorpusDocumentIDs(docIDs)
+		}
+	}
+	orch := got.New(got.Config{
+		Retriever:         retriever.Adapter{Retriever: r},
+		Chat:              chat,
+		Model:             env.LLMModel,
+		K:                 topK,
+		RollingMemory:     env.AskRollingWindow,
+		ExtractQualifiers: env.QualifierFilter,
+		AbstainThreshold:  env.AbstainThreshold,
+	})
+	return func(ctx context.Context, q corpus.Question) (string, []string) {
+		g := orch.Run(ctx, q.Text)
+		docIDs := make([]string, 0, len(g.Sources))
+		for _, s := range g.Sources {
+			docIDs = append(docIDs, s.DocID)
+		}
+		return g.FinalAnswer, runbench.CorpusDocumentIDs(docIDs)
+	}
 }
 
 func benchDragonReuseIndex(ctx context.Context, db *sqlite.DB, persistDir string, forceReindex bool, stdout io.Writer) (bool, error) {

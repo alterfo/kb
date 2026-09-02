@@ -156,24 +156,24 @@ precedent).
 
 ### Task 3: Naive (non-GoT) single-call answer path
 
-- [ ] add a small `naiveAnswer(ctx, retriever *retriever.Retriever, chat
+- [x] add a small `naiveAnswer(ctx, retriever *retriever.Retriever, chat
       *llm.Client, model string, k int, query string) (answer string,
       docIDs []string, err error)` (new file, e.g.
       `internal/bench/dragon/naive.go`): call `retriever.Retrieve` once,
       build a minimal "answer using these sources" prompt from the
       returned chunks, one non-streaming `chat.Chat()` call, return the
       answer text and the source doc IDs
-- [ ] wire a `-answer-mode naive|got` flag into `runBenchDragonCmd`
+- [x] wire a `-answer-mode naive|got` flag into `runBenchDragonCmd`
       (default `got`, i.e. today's behavior unchanged); `naive` skips
       constructing `got.Orchestrator` entirely and calls `naiveAnswer` per
       question instead
-- [ ] write tests for `naiveAnswer` with a fake retriever/chat (covers:
+- [x] write tests for `naiveAnswer` with a fake retriever/chat (covers:
       normal answer, empty retrieval result, chat error propagation)
-- [ ] write a test that `-answer-mode naive` in `runBenchDragonCmd` does
+- [x] write a test that `-answer-mode naive` in `runBenchDragonCmd` does
       not construct a `got.Orchestrator` (e.g. via a retriever/chat fake
       that would fail the test if GoT-specific calls like decompose were
       made)
-- [ ] run `go test ./...` — must pass before task 4
+- [x] run `go test ./...` — must pass before task 4
 
 ### Task 4: Stage-config table + budget-fitting question count
 

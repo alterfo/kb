@@ -8,7 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alterfo/kb/internal/bench/corpus"
 	"github.com/alterfo/kb/internal/config"
+	"github.com/alterfo/kb/internal/engine/retriever"
+	"github.com/alterfo/kb/internal/llm"
 	"github.com/alterfo/kb/internal/store/sqlite"
 	"github.com/alterfo/kb/internal/store/vector"
 )
@@ -140,5 +143,53 @@ func TestBenchDragonReuseIndexNoPersistDir(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+type decomposeCountingChat struct {
+	chatCalls      int
+	decomposeCalls int
+	resp           string
+}
+
+func (c *decomposeCountingChat) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
+	c.chatCalls++
+	hay := strings.ToLower(messageHaystackForTest(req.Messages))
+	if strings.Contains(hay, "break a user question") {
+		c.decomposeCalls++
+		return llm.ChatResponse{Content: "[]", FinishReason: "stop"}, nil
+	}
+	return llm.ChatResponse{Content: c.resp, FinishReason: "stop"}, nil
+}
+
+func messageHaystackForTest(messages []llm.ChatMessage) string {
+	contents := make([]string, len(messages))
+	for i, m := range messages {
+		contents[i] = m.Content
+	}
+	return strings.Join(contents, "\n")
+}
+
+func TestBenchDragonAskNaiveSkipsOrchestrator(t *testing.T) {
+	db := openDragonTestDB(t)
+	vs := sqlite.NewVectorStore(db)
+	r := retriever.New(retriever.Config{Vector: vs})
+
+	chat := &decomposeCountingChat{resp: "naive answer"}
+	ask := benchDragonAsk(config.Env{LLMModel: "test-model"}, r, chat, "naive", 5)
+
+	answer, docIDs := ask(context.Background(), corpus.Question{ID: "1", Text: "what is kb"})
+
+	if answer != "naive answer" {
+		t.Errorf("answer = %q, want %q", answer, "naive answer")
+	}
+	if chat.chatCalls != 1 {
+		t.Errorf("chat calls = %d, want 1", chat.chatCalls)
+	}
+	if chat.decomposeCalls != 0 {
+		t.Errorf("decompose calls = %d, want 0 (got.Orchestrator was constructed)", chat.decomposeCalls)
+	}
+	if len(docIDs) != 0 {
+		t.Errorf("docIDs = %v, want empty (no retrieval legs configured)", docIDs)
 	}
 }
