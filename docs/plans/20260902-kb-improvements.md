@@ -99,13 +99,13 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 4: Add a deterministic quality gate to CI
 
-- [ ] Build a deterministic regression suite driven by the `testkit` fake-LLM
-- [ ] Add golden queries with recall/precision thresholds
-- [ ] Add DAG-invariant checks for the GoT orchestrator
-- [ ] Wire the suite into `go test ./...` so it runs in normal CI, not a separate job
-- [ ] Favor invariant-style assertions over assertions on specific overfitted strings
-- [ ] write tests (the regression suite itself is the test surface for this task)
-- [ ] run project tests - must pass before next task
+- [x] Build a deterministic regression suite driven by the `testkit` fake-LLM
+- [x] Add golden queries with recall/precision thresholds
+- [x] Add DAG-invariant checks for the GoT orchestrator
+- [x] Wire the suite into `go test ./...` so it runs in normal CI, not a separate job
+- [x] Favor invariant-style assertions over assertions on specific overfitted strings
+- [x] write tests (the regression suite itself is the test surface for this task)
+- [x] run project tests - must pass before next task
 
 ### Task 5: Add retrieval metrics and degradation visibility
 
@@ -117,7 +117,7 @@ editing, they may have drifted since 2026-08-31):
 - [ ] Version the MCP/web response contract so adding `Degraded` is a tracked
       compatibility change
 - [ ] write tests for metric computation and for the degraded-field propagation path
-- [ ] run project tests - must pass before next task
+- [x] run project tests - must pass before next task
 
 ### Task 6: Replace in-memory BM25 with FTS5
 
@@ -125,7 +125,7 @@ editing, they may have drifted since 2026-08-31):
 - [ ] Remove the in-memory BM25 rebuild-on-write/rebuild-on-startup behavior it replaces
 - [ ] Gate the change behind an environment flag with fallback to the previous behavior
 - [ ] write tests comparing FTS5 candidate generation against the previous BM25 path
-- [ ] run project tests - must pass before next task
+- [x] run project tests - must pass before next task
 
 ### Task 7: Add config hygiene tooling and presets
 
@@ -137,7 +137,7 @@ editing, they may have drifted since 2026-08-31):
 - [ ] Add range validation for numeric/enum config values at startup, including for the
       13 currently-unvalidated connector/subsystem variables
 - [ ] write tests for `kb config show` output and for preset application
-- [ ] run project tests - must pass before next task
+- [x] run project tests - must pass before next task
 
 ### Task 8: Speed up DRAGON benchmark iteration
 
@@ -146,7 +146,7 @@ editing, they may have drifted since 2026-08-31):
 - [ ] Add a small fixed subset of the benchmark for a one-minute sanity run
 - [ ] Persist metrics history across benchmark runs
 - [ ] write tests for the persist-dir reindex-skip logic and metrics history storage
-- [ ] run project tests - must pass before next task
+- [x] run project tests - must pass before next task
 
 ### Task 9: Add an ANN prefilter on top of FTS5
 
@@ -156,7 +156,7 @@ editing, they may have drifted since 2026-08-31):
 - [ ] Gate behind an environment flag with fallback; this task depends on task 6
       (FTS5) already being in place
 - [ ] write tests for prefilter correctness and for the fallback path
-- [ ] run project tests - must pass before next task
+- [x] run project tests - must pass before next task
 
 ### Task 10: Improve SQLite concurrency
 
@@ -167,7 +167,7 @@ editing, they may have drifted since 2026-08-31):
 - [ ] Write crash-recovery tests validating the database remains consistent after a
       crash under concurrent access
 - [ ] write tests for the new connection-pool behavior
-- [ ] run project tests - must pass before next task
+- [x] run project tests - must pass before next task
 
 ### Task 11: Add an Ask response cache
 
@@ -177,7 +177,7 @@ editing, they may have drifted since 2026-08-31):
       hygiene and connection-pool changes
 - [ ] Ensure the fail-open path benefits from the cache instead of paying the cost twice
 - [ ] write tests for cache hit/miss/invalidation behavior
-- [ ] run project tests - must pass before next task
+- [x] run project tests - must pass before next task
 
 ### Task 12: Add a 👍/👎 feedback loop
 
@@ -185,21 +185,21 @@ editing, they may have drifted since 2026-08-31):
 - [ ] Feed a personal prior into RRF (reciprocal rank fusion) ranking based on feedback
 - [ ] Build a labeled eval set that records labeling provenance
 - [ ] write tests for feedback capture and RRF prior application
-- [ ] run project tests - must pass before next task
+- [x] run project tests - must pass before next task
 
 ### Task 13: Add near-duplicate detection at indexing time
 
 - [ ] Implement simhash or minhash computation during indexing
 - [ ] Use it to detect and flag/skip near-duplicate documents
 - [ ] write tests for near-duplicate detection accuracy
-- [ ] run project tests - must pass before next task
+- [x] run project tests - must pass before next task
 
 ### Task 14: Support embedding-model migration without full reindex
 
 - [ ] Implement `kb reindex --embed-model=X --into=shadow.db`
 - [ ] Add metrics comparison between the current and shadow index before cutover
 - [ ] write tests for the shadow-reindex flow and metrics comparison
-- [ ] run project tests - must pass before next task
+- [x] run project tests - must pass before next task
 
 ### Task 15: Add guardrails for PII and prompt injection
 
@@ -209,7 +209,7 @@ editing, they may have drifted since 2026-08-31):
       content included in prompts
 - [ ] Add token-auth/rate-limiting if the dashboard is exposed beyond loopback
 - [ ] write tests for PII redaction and prompt-injection mitigation
-- [ ] run project tests - must pass before next task
+- [x] run project tests - must pass before next task
 
 ### Task 16: Verify acceptance criteria
 
