@@ -32,6 +32,12 @@ type ScoredChunk struct {
 	Score float64
 }
 
+type DocumentFingerprint struct {
+	RefDocID    string
+	Fingerprint uint64
+	DuplicateOf string
+}
+
 // Filter selects chunks by source (virtual collection) and/or arbitrary
 // frontmatter key/value pairs (e.g. project=X, space=Y). All conditions
 // must match (AND). In allows OR within one field; TimeRange and Numeric

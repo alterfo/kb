@@ -280,10 +280,74 @@ func (s *VectorStore) DeleteByDoc(ctx context.Context, docID string) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM doc_hashes WHERE ref_doc_id = ?`, docID); err != nil {
 		return fmt.Errorf("sqlite: DeleteByDoc: delete hash: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM doc_fingerprints WHERE ref_doc_id = ?`, docID); err != nil {
+		return fmt.Errorf("sqlite: DeleteByDoc: delete fingerprint: %w", err)
+	}
 	if err := bumpCorpusVersion(ctx, tx); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *VectorStore) SetDocumentFingerprint(ctx context.Context, docID string, fingerprint uint64, duplicateOf string) error {
+	_, err := s.db.sql.ExecContext(ctx, `
+		INSERT INTO doc_fingerprints (ref_doc_id, fingerprint, duplicate_of) VALUES (?, ?, ?)
+		ON CONFLICT(ref_doc_id) DO UPDATE SET
+			fingerprint = excluded.fingerprint,
+			duplicate_of = excluded.duplicate_of
+	`, docID, int64(fingerprint), duplicateOf)
+	if err != nil {
+		return fmt.Errorf("sqlite: SetDocumentFingerprint: %w", err)
+	}
+	return nil
+}
+
+func (s *VectorStore) DocumentFingerprint(ctx context.Context, docID string) (vector.DocumentFingerprint, bool, error) {
+	var fingerprint int64
+	var duplicateOf string
+	err := s.db.sql.QueryRowContext(ctx, `
+		SELECT fingerprint, duplicate_of FROM doc_fingerprints WHERE ref_doc_id = ?
+	`, docID).Scan(&fingerprint, &duplicateOf)
+	if err == sql.ErrNoRows {
+		return vector.DocumentFingerprint{}, false, nil
+	}
+	if err != nil {
+		return vector.DocumentFingerprint{}, false, fmt.Errorf("sqlite: DocumentFingerprint: %w", err)
+	}
+	return vector.DocumentFingerprint{
+		RefDocID:    docID,
+		Fingerprint: uint64(fingerprint),
+		DuplicateOf: duplicateOf,
+	}, true, nil
+}
+
+func (s *VectorStore) ListDocumentFingerprints(ctx context.Context) ([]vector.DocumentFingerprint, error) {
+	rows, err := s.db.sql.QueryContext(ctx, `
+		SELECT ref_doc_id, fingerprint, duplicate_of FROM doc_fingerprints ORDER BY ref_doc_id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: ListDocumentFingerprints: %w", err)
+	}
+	defer rows.Close()
+
+	var out []vector.DocumentFingerprint
+	for rows.Next() {
+		var refDocID string
+		var fingerprint int64
+		var duplicateOf string
+		if err := rows.Scan(&refDocID, &fingerprint, &duplicateOf); err != nil {
+			return nil, fmt.Errorf("sqlite: ListDocumentFingerprints: scan: %w", err)
+		}
+		out = append(out, vector.DocumentFingerprint{
+			RefDocID:    refDocID,
+			Fingerprint: uint64(fingerprint),
+			DuplicateOf: duplicateOf,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: ListDocumentFingerprints: %w", err)
+	}
+	return out, nil
 }
 
 // DocHash returns the last-recorded content hash for docID, if any.

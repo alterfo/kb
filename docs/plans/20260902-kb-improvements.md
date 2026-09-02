@@ -189,9 +189,9 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 13: Add near-duplicate detection at indexing time
 
-- [ ] Implement simhash or minhash computation during indexing
-- [ ] Use it to detect and flag/skip near-duplicate documents
-- [ ] write tests for near-duplicate detection accuracy
+- [x] Implement simhash or minhash computation during indexing
+- [x] Use it to detect and flag/skip near-duplicate documents
+- [x] write tests for near-duplicate detection accuracy
 - [x] run project tests - must pass before next task
 
 ### Task 14: Support embedding-model migration without full reindex

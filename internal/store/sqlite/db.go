@@ -42,6 +42,12 @@ CREATE TABLE IF NOT EXISTS doc_hashes (
 	hash TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS doc_fingerprints (
+	ref_doc_id TEXT PRIMARY KEY,
+	fingerprint INTEGER NOT NULL,
+	duplicate_of TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS entities (
 	id TEXT PRIMARY KEY,
 	name TEXT NOT NULL,

@@ -152,16 +152,30 @@ func (ix *Indexer) indexDocumentLocked(ctx context.Context, doc connector.Docume
 	rel := doc.Source + "/" + sanitizeID(doc.ID) + ".md"
 	refDocID := DocRefID(rel)
 	hashable := doc.Kind != "message"
+	dupDecision := ix.nearDuplicateDecisionFor(ctx, doc, refDocID)
 	if hashable && skipUnchanged {
 		hash := documentContentHash(doc)
 		if prev, ok, err := ix.vector.DocHash(ctx, refDocID); err == nil && ok && prev == hash {
+			if dupDecision.available {
+				dupDecision.duplicateOf = ""
+				ix.recordDocumentFingerprint(ctx, refDocID, dupDecision)
+			}
 			ix.apiRefs[refDocID] = struct{}{}
 			return false, nil
 		}
 	}
+	if dupDecision.skip {
+		ix.recordDocumentFingerprint(ctx, refDocID, dupDecision)
+		ix.apiRefs[refDocID] = struct{}{}
+		return false, nil
+	}
 	vectorsOK, err := ix.indexParsedDocument(ctx, rel, doc, true)
 	if err != nil {
 		return false, err
+	}
+	if dupDecision.available {
+		dupDecision.duplicateOf = ""
+		ix.recordDocumentFingerprint(ctx, refDocID, dupDecision)
 	}
 	if hashable && vectorsOK {
 		if err := ix.vector.SetDocHash(ctx, refDocID, documentContentHash(doc)); err != nil {
@@ -450,17 +464,31 @@ func (ix *Indexer) addOrUpdateAbs(ctx context.Context, abs string) (bool, error)
 
 	refDocID := DocRefID(rel)
 	hashable := doc.Kind != "message"
+	dupDecision := ix.nearDuplicateDecisionFor(ctx, doc, refDocID)
 	var hash string
 	if hashable {
 		hash = contentHash(data)
 		if prev, ok, err := ix.vector.DocHash(ctx, refDocID); err == nil && ok && prev == hash {
+			if dupDecision.available {
+				dupDecision.duplicateOf = ""
+				ix.recordDocumentFingerprint(ctx, refDocID, dupDecision)
+			}
 			return true, nil
 		}
+	}
+
+	if dupDecision.skip {
+		ix.recordDocumentFingerprint(ctx, refDocID, dupDecision)
+		return true, nil
 	}
 
 	vectorsOK, err := ix.indexParsedDocument(ctx, rel, doc, false)
 	if err != nil {
 		return false, err
+	}
+	if dupDecision.available {
+		dupDecision.duplicateOf = ""
+		ix.recordDocumentFingerprint(ctx, refDocID, dupDecision)
 	}
 	if hashable && vectorsOK {
 		if err := ix.vector.SetDocHash(ctx, refDocID, hash); err != nil {
