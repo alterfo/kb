@@ -612,3 +612,52 @@ func TestRunGapExpansionSkippedWhenCoverageHigh(t *testing.T) {
 		}
 	}
 }
+
+func TestRunReportsMetricsAndDegraded(t *testing.T) {
+	relevantChunk := vector.ScoredChunk{
+		Chunk: vector.Chunk{ID: "c1", RefDocID: "notes/relevant", FileName: "relevant.md", Text: "text"},
+		Score: 0.9,
+	}
+	retriever := fakeRetriever{byQuery: map[string][]vector.ScoredChunk{"sub1": {relevantChunk}}}
+	chat := scriptedChat{byPrompt: map[string]llm.ChatResponse{
+		"You break a user question":         {Content: `["sub1"]`},
+		"Given the original question":       {Content: `[]`},
+		"You combine sub-answers":           {Content: "final answer"},
+		"You answer a focused sub-question": {Content: "sub answer"},
+	}}
+	cfg := baseConfig()
+	cfg.Retriever = retriever
+	cfg.Chat = chat
+	cfg.RelevantIDs = []string{"notes/relevant"}
+	g := New(cfg).Run(context.Background(), "original question")
+
+	if g.Metrics.LatencyMS < 0 {
+		t.Fatalf("LatencyMS = %d, want >= 0", g.Metrics.LatencyMS)
+	}
+	if g.Metrics.RecallAtK != 1 {
+		t.Fatalf("RecallAtK = %v, want 1", g.Metrics.RecallAtK)
+	}
+	if g.Metrics.Cost.PromptTokens == 0 || g.Metrics.Cost.CompletionTokens == 0 {
+		t.Fatalf("expected chat token cost to be recorded, got %+v", g.Metrics.Cost)
+	}
+}
+
+func TestRunReportsDegradedWhenRetrieverUnavailable(t *testing.T) {
+	cfg := baseConfig()
+	cfg.Chat = nil
+	cfg.Retriever = nil
+	g := New(cfg).Run(context.Background(), "q")
+
+	if len(g.Degraded) == 0 {
+		t.Fatal("expected degraded field to be populated when retriever is unavailable")
+	}
+	found := false
+	for _, d := range g.Degraded {
+		if strings.Contains(d, "retriever unavailable") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Degraded = %v, want retriever unavailable", g.Degraded)
+	}
+}

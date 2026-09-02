@@ -31,6 +31,9 @@ func TestSearch_ReturnsIndexedChunk(t *testing.T) {
 	if out.Results[0].FilePath != "notes/doc1.md" {
 		t.Fatalf("search: FilePath = %q, want %q", out.Results[0].FilePath, "notes/doc1.md")
 	}
+	if out.ContractVersion != ResponseContractVersion {
+		t.Fatalf("search: ContractVersion = %d, want %d", out.ContractVersion, ResponseContractVersion)
+	}
 }
 
 func TestSearch_SourceFilterExcludesOtherSources(t *testing.T) {

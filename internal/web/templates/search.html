@@ -46,6 +46,10 @@
 </section>
 {{end}}
 {{end}}
+{{range .Data.Degraded}}
+<div class="alert alert-warning">Degraded: {{.}}</div>
+{{end}}
+<p class="muted">latency {{.Data.Metrics.LatencyMS}}ms · prompt {{.Data.Metrics.Cost.PromptTokens}} tokens · completion {{.Data.Metrics.Cost.CompletionTokens}} tokens{{if .Data.Metrics.RecallAtK}} · recall@k {{printf "%.3f" .Data.Metrics.RecallAtK}}{{end}}</p>
 {{with .Data.Path}}
 <p class="muted">chunks for document <a href="/documents/view?path={{. | urlquery}}">{{.}}</a></p>
 {{end}}

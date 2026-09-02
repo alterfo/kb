@@ -6,6 +6,7 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/alterfo/kb/internal/config"
+	"github.com/alterfo/kb/internal/engine/metrics"
 	"github.com/alterfo/kb/internal/engine/retriever"
 	"github.com/alterfo/kb/internal/store/vector"
 )
@@ -26,7 +27,10 @@ type searchResult struct {
 }
 
 type searchOut struct {
-	Results []searchResult `json:"results"`
+	Results         []searchResult `json:"results"`
+	Metrics         metrics.Values `json:"metrics"`
+	Degraded        []string       `json:"degraded,omitempty"`
+	ContractVersion int            `json:"contract_version"`
 }
 
 func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in searchIn) (*sdk.CallToolResult, searchOut, error) {
@@ -42,11 +46,13 @@ func (s *Server) search(ctx context.Context, _ *sdk.CallToolRequest, in searchIn
 		}
 	}
 
-	chunks, err := s.retriever.Retrieve(ctx, in.Query, retriever.Options{K: in.K, Filter: filter})
-	if err != nil {
-		return nil, searchOut{}, err
-	}
-	return nil, searchOut{Results: toSearchResults(chunks)}, nil
+	result := s.retriever.RetrieveWithResult(ctx, in.Query, retriever.Options{K: in.K, Filter: filter})
+	return nil, searchOut{
+		Results:         toSearchResults(result.Chunks),
+		Metrics:         result.Metrics,
+		Degraded:        result.Degraded,
+		ContractVersion: ResponseContractVersion,
+	}, nil
 }
 
 // expandSources resolves a virtual collection name to the concrete source

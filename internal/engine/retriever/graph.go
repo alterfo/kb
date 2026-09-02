@@ -67,6 +67,7 @@ func linkEntities(ctx context.Context, gs GraphStore, query string) []graphstore
 	}
 	entities, err := gs.MatchEntities(ctx, candidates)
 	if err != nil {
+		addDegraded(ctx, "graph entity linking unavailable: "+err.Error())
 		return nil
 	}
 	return entities
@@ -119,6 +120,7 @@ func (r *Retriever) neighborChunkList(ctx context.Context, linked []graphstore.E
 	for _, e := range linked {
 		neighbors, relations, err := r.cfg.Graph.Neighbors(ctx, e.ID, r.cfg.GraphHops)
 		if err != nil {
+			addDegraded(ctx, "graph neighbor expansion unavailable for entity "+e.ID+": "+err.Error())
 			continue
 		}
 		for _, n := range neighbors {
@@ -190,6 +192,9 @@ func (r *Retriever) communityChunkList(ctx context.Context, linked []graphstore.
 
 	communities, err := r.cfg.Graph.CommunitiesFor(ctx, linkedIDs)
 	if err != nil || len(communities) == 0 {
+		if err != nil {
+			addDegraded(ctx, "graph community lookup unavailable: "+err.Error())
+		}
 		return nil
 	}
 

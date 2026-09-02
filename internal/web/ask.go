@@ -327,14 +327,20 @@ func (s *Server) handleAskStatus(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown run: " + id})
 		return
 	}
-	writeJSON(w, http.StatusOK, askStatusView{ID: id, Done: done, Graph: g})
+	writeJSON(w, http.StatusOK, askStatusView{ID: id, Done: done, Graph: g, ContractVersion: webResponseContractVersion})
 }
 
 type askStatusView struct {
-	ID    string           `json:"id"`
-	Done  bool             `json:"done"`
-	Graph got.ThoughtGraph `json:"graph"`
+	ID              string           `json:"id"`
+	Done            bool             `json:"done"`
+	Graph           got.ThoughtGraph `json:"graph"`
+	ContractVersion int              `json:"contract_version"`
 }
+
+// webResponseContractVersion tracks JSON response shape changes for the
+// dashboard. Version 2 adds metrics and degraded observability fields to
+// the ask status response (and to the graph payload embedded in it).
+const webResponseContractVersion = 2
 
 func (s *Server) handleAskEvents(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")

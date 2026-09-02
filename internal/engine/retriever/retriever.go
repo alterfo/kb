@@ -2,11 +2,12 @@ package retriever
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/alterfo/kb/internal/engine/metrics"
 	"github.com/alterfo/kb/internal/engine/rerank"
 	"github.com/alterfo/kb/internal/store/bm25"
 	"github.com/alterfo/kb/internal/store/vector"
@@ -43,6 +44,43 @@ type Options struct {
 	K      int
 	Filter vector.Filter
 	Mode   Mode
+	// RelevantIDs, when non-empty, enables recall@k in Result.Metrics.
+	RelevantIDs []string
+}
+
+// Result is a retrieval outcome with observability metadata. It exists so
+// fail-open degradation and per-run metrics can be returned without
+// changing the existing chunks+error API.
+type Result struct {
+	Chunks   []vector.ScoredChunk `json:"chunks"`
+	Metrics  metrics.Values       `json:"metrics"`
+	Degraded []string             `json:"degraded,omitempty"`
+}
+
+type degradedContextKey struct{}
+
+func withDegradedCollector(ctx context.Context, degraded *[]string) context.Context {
+	return context.WithValue(ctx, degradedContextKey{}, degraded)
+}
+
+func addDegraded(ctx context.Context, msg string) {
+	degraded, ok := ctx.Value(degradedContextKey{}).(*[]string)
+	if ok && degraded != nil {
+		*degraded = append(*degraded, msg)
+	}
+}
+
+type costContextKey struct{}
+
+func withCostCollector(ctx context.Context, cost *metrics.Cost) context.Context {
+	return context.WithValue(ctx, costContextKey{}, cost)
+}
+
+func addCost(ctx context.Context, cost metrics.Cost) {
+	total, ok := ctx.Value(costContextKey{}).(*metrics.Cost)
+	if ok && total != nil {
+		total.Add(cost)
+	}
 }
 
 // Config wires the retriever's dependencies and tunables. Every dependency
@@ -119,7 +157,8 @@ func (r *Retriever) refreshStaleCommunities(ctx context.Context) {
 	if r.lastCommunityRefresh.IsZero() || elapsed >= staleCommunityMinInterval {
 		n, err := r.cfg.Graph.StaleCommunityCount(ctx)
 		if err != nil {
-			log.Printf("retriever: stale community count: %v (continuing)", err)
+			slog.Error("stale community count failed; continuing", "error", err)
+			addDegraded(ctx, "stale community count unavailable: "+err.Error())
 			r.mu.Unlock()
 			return
 		}
@@ -131,7 +170,8 @@ func (r *Retriever) refreshStaleCommunities(ctx context.Context) {
 		r.lastCommunityRefresh = now()
 		r.mu.Unlock()
 		if _, err := r.cfg.Graph.RefreshStaleCommunities(ctx); err != nil {
-			log.Printf("retriever: refresh stale communities: %v (continuing)", err)
+			slog.Error("refresh stale communities failed; continuing", "error", err)
+			addDegraded(ctx, "stale community refresh unavailable: "+err.Error())
 		}
 		return
 	}
@@ -148,6 +188,40 @@ func (r *Retriever) refreshStaleCommunities(ctx context.Context) {
 // on failure; Retrieve only returns an error for cases outside retrieval
 // itself (currently: never).
 func (r *Retriever) Retrieve(ctx context.Context, query string, opt Options) ([]vector.ScoredChunk, error) {
+	chunks, _, err := r.retrieve(ctx, query, opt)
+	return chunks, err
+}
+
+// RetrieveWithResult is Retrieve plus the observability metadata needed by
+// the MCP/web response contract: latency, optional recall@k, estimated
+// retrieval cost, and any fail-open degradations encountered during the
+// call.
+func (r *Retriever) RetrieveWithResult(ctx context.Context, query string, opt Options) Result {
+	var degraded []string
+	var cost metrics.Cost
+	ctx = withDegradedCollector(ctx, &degraded)
+	ctx = withCostCollector(ctx, &cost)
+
+	start := time.Now()
+	chunks, _, err := r.retrieve(ctx, query, opt)
+	res := Result{Chunks: chunks, Degraded: degraded}
+	res.Metrics.LatencyMS = metrics.LatencyMS(start)
+	res.Metrics.Cost = cost
+	if err != nil {
+		res.Degraded = append(res.Degraded, "retrieval error: "+err.Error())
+	}
+	if len(opt.RelevantIDs) > 0 {
+		k := opt.K
+		if k <= 0 {
+			k = r.cfg.DefaultK
+		}
+		res.Metrics.RecallAtK = metrics.ComputeRecallAtK(chunks, metrics.RelevantSet(opt.RelevantIDs), k)
+	}
+	return res
+}
+
+// retrieve is the shared dispatch path for Retrieve and RetrieveWithResult.
+func (r *Retriever) retrieve(ctx context.Context, query string, opt Options) ([]vector.ScoredChunk, []string, error) {
 	k := opt.K
 	if k <= 0 {
 		k = r.cfg.DefaultK
@@ -155,13 +229,17 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opt Options) ([]
 	r.refreshStaleCommunities(ctx)
 	switch opt.Mode {
 	case ModeGlobal:
-		return r.retrieveGlobal(ctx, query, opt, k)
+		chunks, err := r.retrieveGlobal(ctx, query, opt, k)
+		return chunks, nil, err
 	case ModeDrift:
-		return r.retrieveDrift(ctx, query, opt, k)
+		chunks, err := r.retrieveDrift(ctx, query, opt, k)
+		return chunks, nil, err
 	case ModeSet:
-		return r.retrieveSet(ctx, query, opt, k)
+		chunks, err := r.retrieveSet(ctx, query, opt, k)
+		return chunks, nil, err
 	default:
-		return r.retrieveLocal(ctx, query, opt, k)
+		chunks, err := r.retrieveLocal(ctx, query, opt, k)
+		return chunks, nil, err
 	}
 }
 
@@ -169,6 +247,7 @@ func (r *Retriever) retrieveLocal(ctx context.Context, query string, opt Options
 	chunkByID := make(map[string]vector.Chunk)
 	rankLists := r.localLegs(ctx, query, opt.Filter, chunkByID)
 	if len(rankLists) == 0 {
+		addDegraded(ctx, "all retrieval legs unavailable for local query")
 		return nil, nil
 	}
 	scored := r.fuseRankLists(ctx, query, opt, k, chunkByID, rankLists)
@@ -270,6 +349,7 @@ func (r *Retriever) denseRankLists(ctx context.Context, subqueries []string, fil
 
 	vecs, err := r.cfg.Embed.Embed(ctx, r.cfg.EmbedModel, subqueries)
 	if err != nil {
+		addDegraded(ctx, "dense retrieval unavailable: "+err.Error())
 		return nil
 	}
 
@@ -280,6 +360,7 @@ func (r *Retriever) denseRankLists(ctx context.Context, subqueries []string, fil
 		}
 		results, err := r.cfg.Vector.Query(ctx, vec, r.cfg.CandidateK, filter)
 		if err != nil {
+			addDegraded(ctx, "dense vector query failed: "+err.Error())
 			continue
 		}
 		ids := make([]string, 0, len(results))

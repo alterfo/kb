@@ -109,14 +109,14 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 5: Add retrieval metrics and degradation visibility
 
-- [ ] Compute recall@k, latency, and cost metrics for retrieval/Ask
-- [ ] Add a structured `Degraded []string` field to GoT/retriever responses so
+- [x] Compute recall@k, latency, and cost metrics for retrieval/Ask
+- [x] Add a structured `Degraded []string` field to GoT/retriever responses so
       fail-open behavior is observable instead of silent
-- [ ] Surface the `Degraded` field in the UI and MCP responses
-- [ ] Unify logging on `slog` across the affected packages
-- [ ] Version the MCP/web response contract so adding `Degraded` is a tracked
+- [x] Surface the `Degraded` field in the UI and MCP responses
+- [x] Unify logging on `slog` across the affected packages
+- [x] Version the MCP/web response contract so adding `Degraded` is a tracked
       compatibility change
-- [ ] write tests for metric computation and for the degraded-field propagation path
+- [x] write tests for metric computation and for the degraded-field propagation path
 - [x] run project tests - must pass before next task
 
 ### Task 6: Replace in-memory BM25 with FTS5

@@ -1,6 +1,10 @@
 package got
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/alterfo/kb/internal/engine/metrics"
+)
 
 // Node types.
 const (
@@ -60,11 +64,13 @@ type Node struct {
 // produced plus the final answer and its sources. It has no unexported
 // fields, so it marshals to JSON directly and copies safely by value.
 type ThoughtGraph struct {
-	Query       string   `json:"query"`
-	Nodes       []Node   `json:"nodes"`
-	Refined     bool     `json:"refined"`
-	FinalAnswer string   `json:"final_answer,omitempty"`
-	Sources     []Source `json:"sources,omitempty"`
+	Query       string         `json:"query"`
+	Nodes       []Node         `json:"nodes"`
+	Refined     bool           `json:"refined"`
+	FinalAnswer string         `json:"final_answer,omitempty"`
+	Sources     []Source       `json:"sources,omitempty"`
+	Degraded    []string       `json:"degraded,omitempty"`
+	Metrics     metrics.Values `json:"metrics"`
 }
 
 // ProgressFunc receives a snapshot of the ThoughtGraph after every node
@@ -136,6 +142,8 @@ func (b *graphBuilder) snapshotLocked() ThoughtGraph {
 		Refined:     b.g.Refined,
 		FinalAnswer: b.g.FinalAnswer,
 		Sources:     append([]Source(nil), b.g.Sources...),
+		Degraded:    append([]string(nil), b.g.Degraded...),
+		Metrics:     b.g.Metrics,
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/alterfo/kb/internal/store/bm25"
@@ -485,5 +486,51 @@ func TestBM25RefreshDropsClosedChunksOnCorpusVersionBump(t *testing.T) {
 		if res.ID == "old" {
 			t.Fatalf("closed chunk still indexed after corpus_version bump: %+v", results)
 		}
+	}
+}
+
+func TestRetrieveWithResultReportsMetricsAndDegraded(t *testing.T) {
+	chunks := []vector.Chunk{
+		{ID: "a", RefDocID: "doc-a", Text: "apple", FilePath: "notes/a.md", Embedding: []float32{1, 0}},
+	}
+	r := New(Config{
+		Vector: &fakeVectorStore{chunks: chunks},
+		Chat:   fakeChat{err: errors.New("llm down")},
+		Embed:  fakeEmbedder{vec: constVec([]float32{1, 0})},
+		Hybrid: false,
+	})
+
+	result := r.RetrieveWithResult(context.Background(), "apple", Options{K: 5, RelevantIDs: []string{"doc-a"}})
+	if len(result.Chunks) != 1 || result.Chunks[0].Chunk.ID != "a" {
+		t.Fatalf("expected chunk a, got %+v", result.Chunks)
+	}
+	if result.Metrics.LatencyMS < 0 {
+		t.Fatalf("LatencyMS = %d, want >= 0", result.Metrics.LatencyMS)
+	}
+	if result.Metrics.RecallAtK != 1 {
+		t.Fatalf("RecallAtK = %v, want 1", result.Metrics.RecallAtK)
+	}
+	if len(result.Degraded) == 0 {
+		t.Fatal("expected query-expansion failure to be reported in Degraded")
+	}
+	found := false
+	for _, d := range result.Degraded {
+		if strings.Contains(d, "query expansion failed") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Degraded = %v, want query expansion failure", result.Degraded)
+	}
+}
+
+func TestRetrieveWithResultReportsNoLegsDegraded(t *testing.T) {
+	r := New(Config{})
+	result := r.RetrieveWithResult(context.Background(), "q", Options{K: 3})
+	if len(result.Chunks) != 0 {
+		t.Fatalf("expected no chunks, got %+v", result.Chunks)
+	}
+	if len(result.Degraded) == 0 {
+		t.Fatal("expected degraded message when all retrieval legs are unavailable")
 	}
 }

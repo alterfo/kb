@@ -56,6 +56,19 @@
       }
       html += "</div>";
     });
+    if (g.degraded && g.degraded.length) {
+      html += '<div class="alert alert-warning">Degraded: ' + escapeHTML(g.degraded.join("; ")) + "</div>";
+    }
+    if (g.metrics) {
+      html += '<p class="muted">latency ' + (g.metrics.latency_ms || 0) + 'ms';
+      if (g.metrics.cost) {
+        html += ' · prompt ' + (g.metrics.cost.prompt_tokens || 0) + ' tokens · completion ' + (g.metrics.cost.completion_tokens || 0) + ' tokens';
+      }
+      if (g.metrics.recall_at_k) {
+        html += ' · recall@k ' + g.metrics.recall_at_k;
+      }
+      html += "</p>";
+    }
     if (g.final_answer) {
       html += '<div class="ask-final"><h3>Final answer</h3><p>' + escapeHTML(g.final_answer) + "</p></div>";
     }

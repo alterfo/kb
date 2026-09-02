@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/alterfo/kb/internal/engine/metrics"
 	"github.com/alterfo/kb/internal/llm"
 )
 
@@ -22,10 +23,19 @@ const maxSubqueries = 5
 // expandQuery asks the LLM for 3-5 sub-queries covering the intent of query.
 // It fails open to []string{query} on any error, empty response, or nil chat.
 func expandQuery(ctx context.Context, chat ChatClient, model, query string) []string {
+	subqueries, _ := expandQueryWithCost(ctx, chat, model, query)
+	return subqueries
+}
+
+// expandQueryWithCost is expandQuery with the estimated token cost recorded
+// on the context cost collector when one is present (RetrieveWithResult).
+func expandQueryWithCost(ctx context.Context, chat ChatClient, model, query string) ([]string, metrics.Cost) {
+	zero := metrics.Cost{}
 	if chat == nil || strings.TrimSpace(query) == "" {
-		return []string{query}
+		return []string{query}, zero
 	}
 
+	prompt := expandSystemPrompt + "\n" + query
 	resp, err := chat.Chat(ctx, llm.ChatRequest{
 		Model: model,
 		Messages: []llm.ChatMessage{
@@ -34,17 +44,23 @@ func expandQuery(ctx context.Context, chat ChatClient, model, query string) []st
 		},
 	})
 	if err != nil {
-		return []string{query}
+		cost := metrics.EstimateChatCost(prompt, "")
+		addCost(ctx, cost)
+		addDegraded(ctx, "query expansion failed; using original query: "+err.Error())
+		return []string{query}, cost
 	}
 
+	cost := metrics.EstimateChatCost(prompt, resp.Content)
+	addCost(ctx, cost)
 	subqueries := parseSubqueries(resp.Content)
 	if len(subqueries) == 0 {
-		return []string{query}
+		addDegraded(ctx, "query expansion returned no subqueries; using original query")
+		return []string{query}, cost
 	}
 	if len(subqueries) > maxSubqueries {
 		subqueries = subqueries[:maxSubqueries]
 	}
-	return subqueries
+	return subqueries, cost
 }
 
 func parseSubqueries(content string) []string {

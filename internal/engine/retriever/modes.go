@@ -34,19 +34,23 @@ const globalReduceSystemPrompt = `You synthesize a final answer to a user questi
 // local pipeline.
 func (r *Retriever) retrieveGlobal(ctx context.Context, query string, opt Options, k int) ([]vector.ScoredChunk, error) {
 	if !isEmptyFilter(opt.Filter) {
+		addDegraded(ctx, "global mode is incompatible with filters; falling back to local retrieval")
 		return r.retrieveLocal(ctx, query, opt, k)
 	}
 	if r.cfg.Graph == nil || r.cfg.Chat == nil {
+		addDegraded(ctx, "global mode requires graph and chat; falling back to local retrieval")
 		return r.retrieveLocal(ctx, query, opt, k)
 	}
 	roots := r.rootCommunities(ctx)
 	if len(roots) == 0 {
+		addDegraded(ctx, "global mode found no summarized communities; falling back to local retrieval")
 		return r.retrieveLocal(ctx, query, opt, k)
 	}
 
 	partials := r.partialAnswers(ctx, query, roots)
 	reduced := r.reduceAnswers(ctx, query, partials)
 	if strings.TrimSpace(reduced) == "" {
+		addDegraded(ctx, "global reduce returned no answer; returning community summaries")
 		return communitySummaryChunks(roots, k), nil
 	}
 
@@ -166,6 +170,7 @@ func communitySummaryChunks(communities []graphstore.Community, k int) []vector.
 // a nil Graph or Embed, or no summarized communities, degrades to local.
 func (r *Retriever) retrieveDrift(ctx context.Context, query string, opt Options, k int) ([]vector.ScoredChunk, error) {
 	if r.cfg.Graph == nil || r.cfg.Embed == nil {
+		addDegraded(ctx, "drift mode requires graph and embeddings; falling back to local retrieval")
 		return r.retrieveLocal(ctx, query, opt, k)
 	}
 	chunkByID := make(map[string]vector.Chunk)

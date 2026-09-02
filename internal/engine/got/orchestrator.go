@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alterfo/kb/internal/engine/metrics"
 	"github.com/alterfo/kb/internal/engine/retriever"
 	"github.com/alterfo/kb/internal/llm"
 	"github.com/alterfo/kb/internal/store/vector"
@@ -55,6 +56,8 @@ type Config struct {
 	// ExtractQualifiers enables one LLM qualifier-extraction pass over the
 	// top-level question per Run; extracted qualifiers merge over Filter.
 	ExtractQualifiers bool
+	// RelevantIDs, when non-empty, enables recall@k in the run metrics.
+	RelevantIDs []string
 	// AbstainThreshold (0..1] enables the abstention verdict: when every
 	// subgoal ends uncovered and average coverage sits below the threshold,
 	// the run answers "not found" instead of a low-confidence draft. 0
@@ -81,6 +84,45 @@ type Config struct {
 	DetectContradictions  bool
 
 	Progress ProgressFunc
+}
+
+type runMetricsKey struct{}
+
+func withRunMetrics(ctx context.Context, m *metrics.Values) context.Context {
+	return context.WithValue(ctx, runMetricsKey{}, m)
+}
+
+func addRunCost(ctx context.Context, cost metrics.Cost) {
+	m, ok := ctx.Value(runMetricsKey{}).(*metrics.Values)
+	if ok && m != nil {
+		m.Cost.Add(cost)
+	}
+}
+
+type degradedContextKey struct{}
+
+func withDegradedCollector(ctx context.Context, degraded *[]string) context.Context {
+	return context.WithValue(ctx, degradedContextKey{}, degraded)
+}
+
+func addDegraded(ctx context.Context, msg string) {
+	degraded, ok := ctx.Value(degradedContextKey{}).(*[]string)
+	if ok && degraded != nil {
+		*degraded = append(*degraded, msg)
+	}
+}
+
+type retrievedChunksKey struct{}
+
+func withRetrievedChunks(ctx context.Context, chunks *[]vector.ScoredChunk) context.Context {
+	return context.WithValue(ctx, retrievedChunksKey{}, chunks)
+}
+
+func appendRetrievedChunks(ctx context.Context, chunks []vector.ScoredChunk) {
+	all, ok := ctx.Value(retrievedChunksKey{}).(*[]vector.ScoredChunk)
+	if ok && all != nil {
+		*all = append(*all, chunks...)
+	}
 }
 
 type Orchestrator struct {
@@ -148,6 +190,14 @@ type subgoalResult struct {
 // the returned ThoughtGraph always carries a FinalAnswer (possibly a
 // fail-open placeholder) and whatever Sources were found.
 func (o *Orchestrator) Run(ctx context.Context, query string) ThoughtGraph {
+	start := time.Now()
+	var degraded []string
+	var retrieved []vector.ScoredChunk
+	runMetrics := metrics.Values{}
+	ctx = withRunMetrics(ctx, &runMetrics)
+	ctx = withDegradedCollector(ctx, &degraded)
+	ctx = withRetrievedChunks(ctx, &retrieved)
+
 	b := newGraphBuilder(query, o.cfg.Progress)
 
 	b.setNode(Node{ID: NodeDecompose, Type: NodeDecompose, Query: query, Status: StatusRunning})
@@ -208,7 +258,14 @@ func (o *Orchestrator) Run(ctx context.Context, query string) ThoughtGraph {
 	b.setFinal(refined, finalAnswer, finalSources)
 	b.setNode(Node{ID: NodeFinalize, Type: NodeFinalize, Status: StatusDone, Answer: finalAnswer, Sources: finalSources})
 
-	return b.snapshot()
+	runMetrics.LatencyMS = metrics.LatencyMS(start)
+	if len(o.cfg.RelevantIDs) > 0 {
+		runMetrics.RecallAtK = metrics.ComputeRecallAtK(retrieved, metrics.RelevantSet(o.cfg.RelevantIDs), o.cfg.K)
+	}
+	g := b.snapshot()
+	g.Degraded = append([]string(nil), degraded...)
+	g.Metrics = runMetrics
+	return g
 }
 
 // planQuery renders the topo-ordered subproblem sequence for the plan node.
@@ -543,6 +600,7 @@ func (o *Orchestrator) runSubgoal(ctx context.Context, b *graphBuilder, id, pare
 
 	retrievalQuery := buildDependencyAwareQuery(spec.Query, deps)
 	chunks := o.retrieve(ctx, retrievalQuery, spec.Mode, filter)
+	appendRetrievedChunks(ctx, chunks)
 	contradictions := o.detectContradictions(ctx, spec.Query, chunks)
 
 	b.setStage(id, StageScoringCoverage)
@@ -567,6 +625,7 @@ func (o *Orchestrator) runSubgoal(ctx context.Context, b *graphBuilder, id, pare
 // chunks once retries are exhausted.
 func (o *Orchestrator) retrieve(ctx context.Context, query string, mode retriever.Mode, filter vector.Filter) []vector.ScoredChunk {
 	if o.cfg.Retriever == nil {
+		addDegraded(ctx, "retriever unavailable; sub-question answered without retrieval")
 		return nil
 	}
 	for attempt := 0; attempt <= o.cfg.MaxRetries; attempt++ {
@@ -578,6 +637,7 @@ func (o *Orchestrator) retrieve(ctx context.Context, query string, mode retrieve
 			break
 		}
 	}
+	addDegraded(ctx, "retriever failed after retries; sub-question answered without retrieval")
 	return nil
 }
 
@@ -592,12 +652,14 @@ func (o *Orchestrator) retrieverRetrieve(ctx context.Context, query string, mode
 // retries are exhausted.
 func (o *Orchestrator) chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, bool) {
 	if o.cfg.Chat == nil {
+		addDegraded(ctx, "chat client unavailable")
 		return llm.ChatResponse{}, false
 	}
 	var lastErr error
 	for attempt := 0; attempt <= o.cfg.MaxRetries; attempt++ {
 		resp, err := o.cfg.Chat.Chat(ctx, req)
 		if err == nil {
+			addRunCost(ctx, metrics.EstimateChatCost(chatPromptText(req), resp.Content))
 			return resp, true
 		}
 		lastErr = err
@@ -605,8 +667,21 @@ func (o *Orchestrator) chat(ctx context.Context, req llm.ChatRequest) (llm.ChatR
 			break
 		}
 	}
+	addRunCost(ctx, metrics.EstimateChatCost(chatPromptText(req), ""))
+	addDegraded(ctx, "chat request failed: "+lastErr.Error())
 	slog.Error("chat request failed", "error", lastErr)
 	return llm.ChatResponse{}, false
+}
+
+func chatPromptText(req llm.ChatRequest) string {
+	var b strings.Builder
+	for _, m := range req.Messages {
+		b.WriteString(m.Role)
+		b.WriteString(": ")
+		b.WriteString(m.Content)
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 func (o *Orchestrator) wait(ctx context.Context, attempt int) bool {

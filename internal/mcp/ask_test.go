@@ -36,4 +36,7 @@ func TestAsk_EmptyCorpusStillReturnsSomeAnswer(t *testing.T) {
 	if len(out.Sources) != 0 {
 		t.Fatalf("ask: sources = %+v, want none on empty corpus", out.Sources)
 	}
+	if out.ContractVersion != ResponseContractVersion {
+		t.Fatalf("ask: ContractVersion = %d, want %d", out.ContractVersion, ResponseContractVersion)
+	}
 }

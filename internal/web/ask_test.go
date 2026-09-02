@@ -86,6 +86,9 @@ func TestAsk_StartStatusDegrade(t *testing.T) {
 	if !strings.Contains(body, `"final_answer"`) {
 		t.Errorf("status missing final answer: %s", body)
 	}
+	if !strings.Contains(body, `"contract_version":2`) {
+		t.Errorf("status missing contract_version: %s", body)
+	}
 }
 
 func TestAsk_UnknownRunRejected(t *testing.T) {

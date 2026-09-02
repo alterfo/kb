@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/alterfo/kb/internal/config"
+	"github.com/alterfo/kb/internal/engine/metrics"
 	"github.com/alterfo/kb/internal/engine/report"
 	"github.com/alterfo/kb/internal/engine/retriever"
 	"github.com/alterfo/kb/internal/store/vector"
@@ -57,6 +58,8 @@ type searchData struct {
 	Saved                   *savedSearchView
 	Results                 []searchResult
 	History                 []searchHistoryView
+	Degraded                []string
+	Metrics                 metrics.Values
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -87,18 +90,13 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		filter.Sources = s.expandSources(source)
 	}
 	start := s.deps.Now()
-	var (
-		chunks []vector.ScoredChunk
-		err    error
-	)
+	var result retriever.Result
 	if s.retriever != nil {
-		chunks, err = s.retriever.Retrieve(ctx, q, retriever.Options{Filter: filter})
+		result = s.retriever.RetrieveWithResult(ctx, q, retriever.Options{Filter: filter})
 	}
-	if err != nil {
-		s.renderSearch(w, r, http.StatusOK, []Alert{{Kind: "error", Message: "search failed: " + err.Error()}}, data)
-		return
-	}
-	for _, c := range chunks {
+	data.Degraded = result.Degraded
+	data.Metrics = result.Metrics
+	for _, c := range result.Chunks {
 		data.Results = append(data.Results, searchResult{
 			FilePath:   c.FilePath,
 			FileName:   c.FileName,
@@ -108,7 +106,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			Text:       c.Text,
 		})
 	}
-	answer, fallback, reason := report.SynthesizeResult(ctx, s.deps.Chat, s.deps.LLMModel, q, chunks)
+	answer, fallback, reason := report.SynthesizeResult(ctx, s.deps.Chat, s.deps.LLMModel, q, result.Chunks)
 	stored := answer
 	if fallback {
 		data.SynthesisFallback = true
