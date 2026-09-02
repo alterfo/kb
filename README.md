@@ -254,6 +254,13 @@ unzip all_documents.zip -d /data/erb/corpus
   --questions questions.jsonl \
   --out answers.jsonl \
   --limit 50 --types constrained,conflicting_info,completeness,info_not_found
+
+# one-minute sanity run on the checked-in bilingual subset
+./bin/kb bench --smoke
+
+# reuse a persisted index and accumulate metrics history
+./bin/kb bench --corpus /data/erb/corpus --questions questions.jsonl \
+  --persist-dir /data/erb/persist --history /data/erb/bench-history.json
 ```
 
 Outputs: `answers.jsonl` in the official submission format
@@ -262,7 +269,10 @@ Outputs: `answers.jsonl` in the official submission format
 citation coverage. Bench-specific knobs: `KB_QUALIFIER_FILTER`,
 `KB_SUPERSEDE_MODE`, `KB_ABSTAIN_THRESHOLD`, `KB_SET_MAX_ROUNDS`,
 `KB_CANDIDATE_K`, `KB_PER_DOC_CAP`, `KB_INTRA_DOC_BUDGET` (see table above).
-The command needs a live LLM endpoint.
+`--smoke` uses the checked-in `testdata/lang-bench` subset (16 docs, 20
+questions). `--persist-dir` reuses a corpus index and skips unchanged docs via
+`doc_hashes`; `--history` (or the default next to the report) appends each
+run's metrics report. The command needs a live LLM endpoint.
 
 #### Comparing embedders (RU vs EN)
 
@@ -306,6 +316,8 @@ the full GraphRAG + Graph-of-Thoughts pipeline:
 ```sh
 ./bin/kb bench-dragon --limit 5           # quick smoke run
 
+./bin/kb bench-dragon --smoke --persist-dir /tmp/dragon-persist
+
 # full 526-doc / 600-question run
 ./bin/kb bench-dragon --out answers.dragon.json --concurrency 3
 ```
@@ -319,8 +331,12 @@ run lives at `docs/bench/dragon-answers.json` (full 600-question set, indexed
 with graph extraction on). Flags: `--limit` (cap the question count),
 `--concurrency` (parallel questions), `--top-k` (chunks per subgoal, default
 `KB_TOP_K`), `--hf-base-url` (override the HuggingFace datasets-server
-endpoint, mainly for testing). The command needs a live LLM endpoint and
-network access to `datasets-server.huggingface.co`.
+endpoint, mainly for testing), `--persist-dir`/`--force-reindex` (reuse or
+rebuild a persisted index), `--doc-limit` (keep only the first N fetched
+texts), and `--smoke` (a fixed 12-doc/5-question sanity subset). `bench-dragon
+score --history PATH` appends each score report to a metrics history. The
+command needs a live LLM endpoint and network access to
+`datasets-server.huggingface.co`.
 
 The `verify` command needs a live LLM endpoint (retrieval + synthesis);
 integration tests for the QA harness are gated behind

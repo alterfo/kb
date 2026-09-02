@@ -141,11 +141,11 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 8: Speed up DRAGON benchmark iteration
 
-- [ ] Add `--persist-dir` support that skips reindexing via existing `doc_hashes`
+- [x] Add `--persist-dir` support that skips reindexing via existing `doc_hashes`
       tracking
-- [ ] Add a small fixed subset of the benchmark for a one-minute sanity run
-- [ ] Persist metrics history across benchmark runs
-- [ ] write tests for the persist-dir reindex-skip logic and metrics history storage
+- [x] Add a small fixed subset of the benchmark for a one-minute sanity run
+- [x] Persist metrics history across benchmark runs
+- [x] write tests for the persist-dir reindex-skip logic and metrics history storage
 - [x] run project tests - must pass before next task
 
 ### Task 9: Add an ANN prefilter on top of FTS5

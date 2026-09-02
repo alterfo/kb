@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -131,18 +132,58 @@ func (ix *Indexer) RemoveDocument(ctx context.Context, path string) error {
 func (ix *Indexer) IndexDocument(ctx context.Context, doc connector.Document) error {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
+	_, err := ix.indexDocumentLocked(ctx, doc, false)
+	return err
+}
+
+func (ix *Indexer) IndexDocumentIfChanged(ctx context.Context, doc connector.Document) (bool, error) {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	return ix.indexDocumentLocked(ctx, doc, true)
+}
+
+func (ix *Indexer) indexDocumentLocked(ctx context.Context, doc connector.Document, skipUnchanged bool) (bool, error) {
 	if doc.Source == "" {
-		return fmt.Errorf("engine: IndexDocument: document missing source (id=%q)", doc.ID)
+		return false, fmt.Errorf("engine: IndexDocument: document missing source (id=%q)", doc.ID)
 	}
 	if doc.ID == "" {
-		return fmt.Errorf("engine: IndexDocument: document missing id (source=%q)", doc.Source)
+		return false, fmt.Errorf("engine: IndexDocument: document missing id (source=%q)", doc.Source)
 	}
 	rel := doc.Source + "/" + sanitizeID(doc.ID) + ".md"
-	if _, err := ix.indexParsedDocument(ctx, rel, doc, true); err != nil {
-		return err
+	refDocID := DocRefID(rel)
+	hashable := doc.Kind != "message"
+	if hashable && skipUnchanged {
+		hash := documentContentHash(doc)
+		if prev, ok, err := ix.vector.DocHash(ctx, refDocID); err == nil && ok && prev == hash {
+			ix.apiRefs[refDocID] = struct{}{}
+			return false, nil
+		}
 	}
-	ix.apiRefs[DocRefID(rel)] = struct{}{}
-	return nil
+	vectorsOK, err := ix.indexParsedDocument(ctx, rel, doc, true)
+	if err != nil {
+		return false, err
+	}
+	if hashable && vectorsOK {
+		if err := ix.vector.SetDocHash(ctx, refDocID, documentContentHash(doc)); err != nil {
+			return false, fmt.Errorf("engine: IndexDocument: record content hash: %w", err)
+		}
+	}
+	ix.apiRefs[refDocID] = struct{}{}
+	return true, nil
+}
+
+func documentContentHash(doc connector.Document) string {
+	payload := struct {
+		Kind        string
+		Body        string
+		Frontmatter map[string]any
+	}{doc.Kind, doc.Body, doc.Frontmatter}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		data = []byte(fmt.Sprintf("%s\x00%s\x00%v", doc.Kind, doc.Body, doc.Frontmatter))
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // RemoveDocumentBySourceID removes the document with the given source and

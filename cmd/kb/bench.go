@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/alterfo/kb/internal/bench/corpus"
@@ -29,8 +30,19 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 	typesCSV := fset.String("types", "", "comma-separated question types to include (empty = all)")
 	concurrency := fset.Int("concurrency", 1, "questions evaluated in parallel")
 	topK := fset.Int("top-k", env.TopK, "chunks retrieved per subgoal")
+	persistDir := fset.String("persist-dir", "", "reuse this persist/root dir instead of a temporary one; unchanged docs skip reindexing via doc_hashes")
+	historyPath := fset.String("history", "", "metrics history JSON path (default: persist-dir/bench-history.json, or out.history.json)")
+	smoke := fset.Bool("smoke", false, "use the checked-in testdata/lang-bench subset for a one-minute sanity run")
 	if err := fset.Parse(args); err != nil {
 		return 2
+	}
+	if *smoke {
+		if *corpusDir == "" {
+			*corpusDir = filepath.Join("testdata", "lang-bench", "corpus")
+		}
+		if *questionsPath == "" {
+			*questionsPath = filepath.Join("testdata", "lang-bench", "questions.jsonl")
+		}
 	}
 	if *corpusDir == "" || *questionsPath == "" {
 		fmt.Fprintln(stderr, "bench: -corpus and -questions are required")
@@ -61,7 +73,7 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	benchEnv, cleanup, err := benchIsolatedEnv(env)
+	benchEnv, cleanup, err := benchIsolatedEnv(env, *persistDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "bench: create temporary persist dir: %v\n", err)
 		return 1
@@ -77,18 +89,24 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 
 	bundle.updater.BeginBulk()
 	indexed := 0
+	skipped := 0
 	for _, d := range docs {
-		if err := bundle.indexer.IndexDocument(ctx, d.ToDocument()); err != nil {
+		changed, err := bundle.indexer.IndexDocumentIfChanged(ctx, d.ToDocument())
+		if err != nil {
 			fmt.Fprintf(stderr, "bench: index %s: %v\n", d.ID, err)
 			return 1
 		}
-		indexed++
+		if changed {
+			indexed++
+		} else {
+			skipped++
+		}
 	}
 	if err := bundle.updater.EndBulk(ctx); err != nil {
 		fmt.Fprintf(stderr, "bench: finalize graph communities: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "bench: indexed %d documents\n", indexed)
+	fmt.Fprintf(stdout, "bench: indexed %d documents, skipped %d unchanged\n", indexed, skipped)
 
 	if err := bundle.bm25.Refresh(ctx, bundle.db, bundle.vector); err != nil {
 		fmt.Fprintf(stderr, "bench: refresh bm25: %v\n", err)
@@ -137,9 +155,23 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	metricsHistoryPath := *historyPath
+	if metricsHistoryPath == "" {
+		if *persistDir != "" {
+			metricsHistoryPath = filepath.Join(*persistDir, "bench-history.json")
+		} else {
+			metricsHistoryPath = *out + ".history.json"
+		}
+	}
+	if err := runbench.AppendReportHistory(metricsHistoryPath, rep); err != nil {
+		fmt.Fprintf(stderr, "bench: %v\n", err)
+		return 1
+	}
+
 	fmt.Fprintf(stdout, "bench: %s\n", rep.Summary())
 	fmt.Fprintf(stdout, "bench: answers written to %s\n", *out)
 	fmt.Fprintf(stdout, "bench: report written to %s\n", reportPath)
+	fmt.Fprintf(stdout, "bench: metrics history written to %s\n", metricsHistoryPath)
 	return 0
 }
 
@@ -165,7 +197,15 @@ func benchRetriever(env config.Env, bundle *engineBundle) *retriever.Retriever {
 	})
 }
 
-func benchIsolatedEnv(env config.Env) (config.Env, func(), error) {
+func benchIsolatedEnv(env config.Env, persistDir string) (config.Env, func(), error) {
+	if persistDir != "" {
+		if err := os.MkdirAll(persistDir, 0o755); err != nil {
+			return env, func() {}, err
+		}
+		env.PersistDir = persistDir
+		env.KBRoot = persistDir
+		return env, func() {}, nil
+	}
 	dir, err := os.MkdirTemp("", "kb-bench-*")
 	if err != nil {
 		return env, func() {}, err

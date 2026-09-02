@@ -27,8 +27,20 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 	topK := fset.Int("top-k", env.TopK, "chunks retrieved per subgoal")
 	baseURL := fset.String("hf-base-url", dragon.DefaultBaseURL, "HuggingFace datasets-server base URL")
 	hist := fset.Bool("hist", false, "use the hist-* DRAGON variant (has an ungated gold set for local scoring via 'bench-dragon score')")
+	persistDir := fset.String("persist-dir", "", "reuse this persist/root dir instead of a temporary one; unchanged docs skip reindexing via doc_hashes")
+	forceReindex := fset.Bool("force-reindex", false, "reindex the corpus even when a persisted index already exists")
+	docLimit := fset.Int("doc-limit", 0, "keep only the first N fetched texts (0 = all)")
+	smoke := fset.Bool("smoke", false, "use a small fixed subset for a one-minute sanity run")
 	if err := fset.Parse(args); err != nil {
 		return 2
+	}
+	if *smoke {
+		if *docLimit == 0 {
+			*docLimit = 12
+		}
+		if *limit == 0 {
+			*limit = 5
+		}
 	}
 
 	textsDataset, questionsDataset := dragon.TextsDataset, dragon.QuestionsDataset
@@ -39,13 +51,76 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 	ctx := context.Background()
 	httpClient := &http.Client{}
 
-	fmt.Fprintln(stdout, "bench-dragon: fetching corpus from HuggingFace...")
-	texts, err := dragon.FetchTexts(ctx, httpClient, *baseURL, textsDataset)
+	benchEnv, cleanup, err := benchIsolatedEnv(env, *persistDir)
 	if err != nil {
-		fmt.Fprintf(stderr, "bench-dragon: %v\n", err)
+		fmt.Fprintf(stderr, "bench-dragon: create temporary persist dir: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "bench-dragon: fetched %d texts\n", len(texts))
+	defer cleanup()
+
+	bundle, err := newEngineBundle(benchEnv)
+	if err != nil {
+		fmt.Fprintf(stderr, "bench-dragon: opening db: %v\n", err)
+		return 1
+	}
+	defer bundle.close()
+
+	reuseIndex := false
+	if *persistDir != "" && !*forceReindex {
+		chunkCount, countErr := bundle.db.ChunkCount(ctx)
+		if countErr != nil {
+			fmt.Fprintf(stderr, "bench-dragon: count persisted chunks: %v\n", countErr)
+			return 1
+		}
+		if chunkCount > 0 {
+			reuseIndex = true
+			fmt.Fprintf(stdout, "bench-dragon: reusing persisted index at %s (%d chunks)\n", *persistDir, chunkCount)
+		}
+	}
+
+	if reuseIndex {
+		fmt.Fprintln(stdout, "bench-dragon: skipping corpus fetch and indexing")
+	} else {
+		fmt.Fprintln(stdout, "bench-dragon: fetching corpus from HuggingFace...")
+		texts, err := dragon.FetchTexts(ctx, httpClient, *baseURL, textsDataset)
+		if err != nil {
+			fmt.Fprintf(stderr, "bench-dragon: %v\n", err)
+			return 1
+		}
+		if *docLimit > 0 && *docLimit < len(texts) {
+			texts = texts[:*docLimit]
+		}
+		fmt.Fprintf(stdout, "bench-dragon: fetched %d texts\n", len(texts))
+
+		bundle.updater.BeginBulk()
+		docs := dragon.ToDocuments(texts)
+		indexed := 0
+		skipped := 0
+		for _, doc := range docs {
+			changed, indexErr := bundle.indexer.IndexDocumentIfChanged(ctx, doc)
+			if indexErr != nil {
+				fmt.Fprintf(stderr, "bench-dragon: index %s: %v\n", doc.ID, indexErr)
+				return 1
+			}
+			if changed {
+				indexed++
+			} else {
+				skipped++
+			}
+			if (indexed+skipped)%25 == 0 || indexed+skipped == len(docs) {
+				fmt.Fprintf(stdout, "bench-dragon: indexed %d/%d documents (%d unchanged)\n", indexed+skipped, len(docs), skipped)
+			}
+		}
+		if err := bundle.updater.EndBulk(ctx); err != nil {
+			fmt.Fprintf(stderr, "bench-dragon: finalize graph communities: %v\n", err)
+			return 1
+		}
+	}
+
+	if err := bundle.bm25.Refresh(ctx, bundle.db, bundle.vector); err != nil {
+		fmt.Fprintf(stderr, "bench-dragon: refresh bm25: %v\n", err)
+		return 1
+	}
 
 	fmt.Fprintln(stdout, "bench-dragon: fetching questions from HuggingFace...")
 	rawQuestions, err := dragon.FetchQuestions(ctx, httpClient, *baseURL, questionsDataset)
@@ -62,43 +137,6 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 		return 0
 	}
 	fmt.Fprintf(stdout, "bench-dragon: %d questions selected\n", len(questions))
-
-	benchEnv, cleanup, err := benchIsolatedEnv(env)
-	if err != nil {
-		fmt.Fprintf(stderr, "bench-dragon: create temporary persist dir: %v\n", err)
-		return 1
-	}
-	defer cleanup()
-
-	bundle, err := newEngineBundle(benchEnv)
-	if err != nil {
-		fmt.Fprintf(stderr, "bench-dragon: opening db: %v\n", err)
-		return 1
-	}
-	defer bundle.close()
-
-	bundle.updater.BeginBulk()
-	docs := dragon.ToDocuments(texts)
-	indexed := 0
-	for _, doc := range docs {
-		if err := bundle.indexer.IndexDocument(ctx, doc); err != nil {
-			fmt.Fprintf(stderr, "bench-dragon: index %s: %v\n", doc.ID, err)
-			return 1
-		}
-		indexed++
-		if indexed%25 == 0 || indexed == len(docs) {
-			fmt.Fprintf(stdout, "bench-dragon: indexed %d/%d documents\n", indexed, len(docs))
-		}
-	}
-	if err := bundle.updater.EndBulk(ctx); err != nil {
-		fmt.Fprintf(stderr, "bench-dragon: finalize graph communities: %v\n", err)
-		return 1
-	}
-
-	if err := bundle.bm25.Refresh(ctx, bundle.db, bundle.vector); err != nil {
-		fmt.Fprintf(stderr, "bench-dragon: refresh bm25: %v\n", err)
-		return 1
-	}
 
 	r := benchRetriever(env, bundle)
 	orch := got.New(got.Config{
@@ -140,6 +178,7 @@ func runBenchDragonScoreCmd(args []string, stdout, stderr io.Writer) int {
 	fset.SetOutput(stderr)
 	out := fset.String("out", "", "optional score report JSON output path")
 	baseURL := fset.String("hf-base-url", dragon.DefaultBaseURL, "HuggingFace datasets-server base URL")
+	historyPath := fset.String("history", "", "score metrics history JSON path (default: out.history.json or dragon-score-history.json)")
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
@@ -179,5 +218,18 @@ func runBenchDragonScoreCmd(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintf(stdout, "bench-dragon score: report written to %s\n", *out)
 	}
+	scoreHistoryPath := *historyPath
+	if scoreHistoryPath == "" {
+		if *out != "" {
+			scoreHistoryPath = *out + ".history.json"
+		} else {
+			scoreHistoryPath = "dragon-score-history.json"
+		}
+	}
+	if err := dragon.AppendScoreHistory(scoreHistoryPath, rep); err != nil {
+		fmt.Fprintf(stderr, "bench-dragon score: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "bench-dragon score: metrics history written to %s\n", scoreHistoryPath)
 	return 0
 }

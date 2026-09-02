@@ -1039,6 +1039,77 @@ func TestIndexDocumentRequiresSourceAndID(t *testing.T) {
 	}
 }
 
+func TestIndexDocumentIfChangedSkipsUnchangedContent(t *testing.T) {
+	db := openTestDB(t)
+	vs := sqlite.NewVectorStore(db)
+	embed := &fakeEmbedder{dim: 4}
+	ix := NewIndexer(Config{Root: t.TempDir(), Vector: vs, Embed: embed, EmbedModel: "test-embed", ChunkSize: 64})
+	ctx := context.Background()
+	doc := connector.Document{
+		ID:          "d1",
+		Source:      "notes",
+		Body:        "First sentence about apples. Second sentence about bananas.",
+		Frontmatter: map[string]any{"language": "en"},
+	}
+
+	changed, err := ix.IndexDocumentIfChanged(ctx, doc)
+	if err != nil {
+		t.Fatalf("first IndexDocumentIfChanged: %v", err)
+	}
+	if !changed {
+		t.Fatal("first IndexDocumentIfChanged reported unchanged, want changed")
+	}
+	if embed.calls != 1 {
+		t.Fatalf("embed calls after first index = %d, want 1", embed.calls)
+	}
+	if _, ok, err := vs.DocHash(ctx, "notes/d1"); err != nil || !ok {
+		t.Fatalf("doc hash should be recorded after first index, got ok=%v err=%v", ok, err)
+	}
+
+	changed, err = ix.IndexDocumentIfChanged(ctx, doc)
+	if err != nil {
+		t.Fatalf("second IndexDocumentIfChanged: %v", err)
+	}
+	if changed {
+		t.Fatal("second IndexDocumentIfChanged reported changed, want unchanged")
+	}
+	if embed.calls != 1 {
+		t.Fatalf("embed calls after unchanged index = %d, want 1", embed.calls)
+	}
+
+	doc.Body = "Updated content that no longer matches the recorded hash."
+	changed, err = ix.IndexDocumentIfChanged(ctx, doc)
+	if err != nil {
+		t.Fatalf("updated IndexDocumentIfChanged: %v", err)
+	}
+	if !changed {
+		t.Fatal("updated IndexDocumentIfChanged reported unchanged, want changed")
+	}
+	if embed.calls != 2 {
+		t.Fatalf("embed calls after updated index = %d, want 2", embed.calls)
+	}
+}
+
+func TestIndexDocumentIfChangedDoesNotHashMessageDocuments(t *testing.T) {
+	db := openTestDB(t)
+	vs := sqlite.NewVectorStore(db)
+	embed := &fakeEmbedder{dim: 4}
+	ix := NewIndexer(Config{Root: t.TempDir(), Vector: vs, Embed: embed, EmbedModel: "test-embed", ChunkSize: 64})
+	ctx := context.Background()
+	doc := connector.Document{ID: "m1", Source: "telegram", Kind: "message", Body: "hello"}
+
+	changed, err := ix.IndexDocumentIfChanged(ctx, doc)
+	if err != nil {
+		t.Fatalf("IndexDocumentIfChanged message: %v", err)
+	}
+	if !changed {
+		t.Fatal("message document reported unchanged, want changed")
+	}
+	if _, ok, err := vs.DocHash(ctx, "telegram/m1"); err != nil || ok {
+		t.Fatalf("message document must not be hashed, got ok=%v err=%v", ok, err)
+	}
+}
+
 func TestIndexDocumentRoutesGoContentToCodeGraph(t *testing.T) {
 	root := t.TempDir()
 	db := openTestDB(t)
