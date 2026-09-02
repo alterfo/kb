@@ -121,10 +121,10 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 6: Replace in-memory BM25 with FTS5
 
-- [ ] Add an FTS5-backed candidate generator as the primary retrieval path
-- [ ] Remove the in-memory BM25 rebuild-on-write/rebuild-on-startup behavior it replaces
-- [ ] Gate the change behind an environment flag with fallback to the previous behavior
-- [ ] write tests comparing FTS5 candidate generation against the previous BM25 path
+- [x] Add an FTS5-backed candidate generator as the primary retrieval path
+- [x] Remove the in-memory BM25 rebuild-on-write/rebuild-on-startup behavior it replaces
+- [x] Gate the change behind an environment flag with fallback to the previous behavior
+- [x] write tests comparing FTS5 candidate generation against the previous BM25 path
 - [x] run project tests - must pass before next task
 
 ### Task 7: Add config hygiene tooling and presets

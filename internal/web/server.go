@@ -47,7 +47,7 @@ type Deps struct {
 
 	Vector       vector.Store
 	Versioner    CorpusVersioner
-	BM25         *bm25.Index
+	BM25         bm25.Indexer
 	Graph        graphstore.Store
 	GraphUpdater *graph.GraphUpdater
 	Indexer      *engine.Indexer

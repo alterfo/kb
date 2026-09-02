@@ -44,6 +44,7 @@ type Env struct {
 	LLMMaxTokens         int
 	LLMNoThink           bool
 	IndexGraph           bool
+	FTS5                 bool
 }
 
 // DefaultLocalLLMURL is the local LLM. It is pinned to the local
@@ -84,6 +85,7 @@ func Defaults() Env {
 		MaxSubgoals:      5,
 		MaxGapQueries:    3,
 		IndexGraph:       true,
+		FTS5:             true,
 	}
 }
 
@@ -297,6 +299,13 @@ func LoadEnv(lookup EnvLookup) (Env, error) {
 			return Env{}, fmt.Errorf("KB_INDEX_GRAPH: invalid bool %q: %w", v, err)
 		}
 		e.IndexGraph = b
+	}
+	if v, ok := lookup("KB_FTS5"); ok && v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return Env{}, fmt.Errorf("KB_FTS5: invalid bool %q: %w", v, err)
+		}
+		e.FTS5 = b
 	}
 
 	return e, nil

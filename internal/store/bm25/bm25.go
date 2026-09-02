@@ -19,6 +19,16 @@ type ChunkLister interface {
 	AllForBM25(ctx context.Context) ([]vector.Chunk, error)
 }
 
+// Indexer is the lexical-search dependency shared by the retriever and the
+// web/MCP servers. *Index (the legacy in-memory BM25 implementation) and
+// *sqlite.FTS5Index both satisfy it, so callers can switch backends behind
+// the KB_FTS5 flag without changing the rest of the wiring.
+type Indexer interface {
+	Search(query string, k int) []ScoredID
+	Chunk(id string) (vector.Chunk, bool)
+	Refresh(ctx context.Context, versioner CorpusVersioner, chunks ChunkLister) error
+}
+
 const (
 	k1 = 1.2
 	b  = 0.75

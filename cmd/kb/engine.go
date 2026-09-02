@@ -21,7 +21,7 @@ type engineBundle struct {
 	vector     *sqlite.VectorStore
 	graph      *sqlite.GraphStore
 	history    *sqlite.HistoryStore
-	bm25       *bm25.Index
+	bm25       bm25.Indexer
 	indexer    *engine.Indexer
 	updater    *graph.GraphUpdater
 }
@@ -72,7 +72,12 @@ func newEngineBundle(env config.Env) (*engineBundle, error) {
 	vectorStore := sqlite.NewVectorStore(db)
 	graphStore := sqlite.NewGraphStore(db)
 	historyStore := sqlite.NewHistoryStore(db)
-	bm25idx := bm25.New()
+	var bm25idx bm25.Indexer
+	if env.FTS5 {
+		bm25idx = sqlite.NewFTS5Index(db)
+	} else {
+		bm25idx = bm25.New()
+	}
 	chatExtractor := graph.NewChatExtractor(chat, env.LLMModel)
 	chatExtractor.Classify = true
 	updater := graph.NewGraphUpdater(graphStore, graph.NewExtractor(chat, env.LLMModel), graph.NewSummarizer(chat, env.LLMModel)).

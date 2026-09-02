@@ -45,7 +45,7 @@ type Deps struct {
 	Root       string
 	Vector     vector.Store
 	Versioner  CorpusVersioner
-	BM25       *bm25.Index
+	BM25       bm25.Indexer
 	Graph      graphstore.Store
 	Indexer    *engine.Indexer
 	Chat       ChatClient

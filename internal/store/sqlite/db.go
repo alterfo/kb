@@ -10,7 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
+	"github.com/ncruces/go-sqlite3/driver"
+	"github.com/ncruces/go-sqlite3/ext/fts5"
 	_ "github.com/ncruces/go-sqlite3/vfs/memdb"
 )
 
@@ -96,6 +97,8 @@ CREATE TABLE IF NOT EXISTS ask_runs (
 	finished_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_ask_runs_created_at ON ask_runs(created_at);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(id UNINDEXED, text);
 `
 
 const (
@@ -111,7 +114,7 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("sqlite: create persist dir for %q: %w", path, err)
 	}
-	db, err := sql.Open("sqlite3", path)
+	db, err := driver.Open(path, fts5.Register)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: open %q: %w", path, err)
 	}

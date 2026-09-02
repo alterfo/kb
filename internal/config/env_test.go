@@ -46,6 +46,9 @@ func TestLoadEnv_Defaults(t *testing.T) {
 	if !reflect.DeepEqual(e.NoProxy, []string{"127.0.0.1"}) {
 		t.Errorf("NoProxy = %v, want [127.0.0.1]", e.NoProxy)
 	}
+	if !e.FTS5 {
+		t.Errorf("FTS5 = %v, want true", e.FTS5)
+	}
 	if e.AuthorityBonus["notes/"] != 0.15 || e.AuthorityBonus["notes/approved/"] != 0.30 {
 		t.Errorf("AuthorityBonus = %v, want defaults", e.AuthorityBonus)
 	}
@@ -82,6 +85,7 @@ func TestLoadEnv_Overrides(t *testing.T) {
 		"KB_MAX_SUBGOALS":          "3",
 		"KB_MAX_GAP_QUERIES":       "2",
 		"KB_LLM_NO_THINK":          "true",
+		"KB_FTS5":                  "false",
 	}
 	e, err := LoadEnv(fakeLookup(m))
 	if err != nil {
@@ -176,6 +180,9 @@ func TestLoadEnv_Overrides(t *testing.T) {
 	if !e.LLMNoThink {
 		t.Errorf("LLMNoThink = %v, want true", e.LLMNoThink)
 	}
+	if e.FTS5 {
+		t.Errorf("FTS5 = %v, want false", e.FTS5)
+	}
 }
 
 func TestLoadEnv_InvalidValues(t *testing.T) {
@@ -225,6 +232,7 @@ func TestLoadEnv_InvalidValues(t *testing.T) {
 		{"bad max gap queries not a number", "KB_MAX_GAP_QUERIES", "many"},
 		{"bad max gap queries zero", "KB_MAX_GAP_QUERIES", "0"},
 		{"bad llm no think bool", "KB_LLM_NO_THINK", "notabool"},
+		{"bad fts5 bool", "KB_FTS5", "notabool"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
