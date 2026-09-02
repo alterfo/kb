@@ -497,9 +497,27 @@ func TestDependencyAnswersSkipsInvalidIndices(t *testing.T) {
 		{ID: "subgoal:1", Query: "b", Answer: "answer b"},
 	}
 	spec := subgoalSpec{DependsOn: []string{"0", "2", "-1", "not-a-number", "1"}}
-	got := dependencyAnswers(spec, results)
+	got := dependencyAnswers(spec, results, -1)
 	if len(got) != 2 || got[0].Answer != "answer a" || got[1].Answer != "answer b" {
 		t.Fatalf("got %+v, want only valid deps in declaration order", got)
+	}
+}
+
+func TestDependencyAnswersSkipsSelfAndUnresolved(t *testing.T) {
+	results := []subgoalResult{
+		{ID: "subgoal:0", Query: "a", Answer: "answer a"},
+		{},
+	}
+	spec := subgoalSpec{DependsOn: []string{"0", "1"}}
+	got := dependencyAnswers(spec, results, 1)
+	if len(got) != 1 || got[0].Answer != "answer a" {
+		t.Fatalf("got %+v, want only the resolved dependency", got)
+	}
+
+	selfSpec := subgoalSpec{DependsOn: []string{"0"}}
+	got = dependencyAnswers(selfSpec, results, 0)
+	if len(got) != 0 {
+		t.Fatalf("got %+v, want self dependency dropped", got)
 	}
 }
 

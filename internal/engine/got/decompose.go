@@ -200,11 +200,47 @@ func rawIndex(raw json.RawMessage) (string, bool) {
 
 func cleanSubgoalItems(items []decomposeItem) []subgoalSpec {
 	out := make([]subgoalSpec, 0, len(items))
-	for _, it := range items {
+	remap := make(map[int]int, len(items))
+	for i, it := range items {
 		if strings.TrimSpace(it.Subquestion) == "" {
 			continue
 		}
-		out = append(out, subgoalSpec{Query: strings.TrimSpace(it.Subquestion), DependsOn: it.DependsOn})
+		remap[i] = len(out)
+		out = append(out, subgoalSpec{Query: strings.TrimSpace(it.Subquestion)})
+	}
+	for origIdx, it := range items {
+		if strings.TrimSpace(it.Subquestion) == "" {
+			continue
+		}
+		out[remap[origIdx]].DependsOn = remapDependsOn(it.DependsOn, origIdx, remap, len(items))
+	}
+	return out
+}
+
+// remapDependsOn maps zero-based indices from the original decomposed item
+// slice into the cleaned slice. Dependencies that point at removed items,
+// out-of-range indices, the item itself, or duplicates are dropped. An empty
+// result is nil so no-dependency specs match the legacy string-array shape.
+func remapDependsOn(deps []string, self int, remap map[int]int, originalLen int) []string {
+	var out []string
+	seen := make(map[int]struct{}, len(deps))
+	for _, dep := range deps {
+		idx, err := strconv.Atoi(strings.TrimSpace(dep))
+		if err != nil || idx < 0 || idx >= originalLen || idx == self {
+			continue
+		}
+		newIdx, ok := remap[idx]
+		if !ok {
+			continue
+		}
+		if _, dup := seen[newIdx]; dup {
+			continue
+		}
+		seen[newIdx] = struct{}{}
+		out = append(out, strconv.Itoa(newIdx))
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

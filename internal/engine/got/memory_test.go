@@ -43,6 +43,20 @@ func TestRollingMemorySnapshotIsCopy(t *testing.T) {
 	}
 }
 
+func TestRollingMemoryDropsDependentInjections(t *testing.T) {
+	m := newRollingMemory(3)
+	m.add(subgoalResult{ID: "dep", Query: "dep", Answer: "dep answer", Deps: []string{"0"}})
+	if got := m.snapshot(); got != nil {
+		t.Fatalf("dependent injection leaked into rolling memory: %+v", got)
+	}
+
+	m.add(subgoalResult{ID: "root", Query: "root", Answer: "root answer"})
+	got := m.snapshot()
+	if len(got) != 1 || got[0].ID != "root" {
+		t.Fatalf("got %+v, want only the independent subgoal in memory", got)
+	}
+}
+
 func TestMergeRollingMemoryPinsDepsBeforeOthers(t *testing.T) {
 	deps := []subgoalResult{{ID: "dep", Query: "dependency", Answer: "dep answer"}}
 	memory := []subgoalResult{

@@ -15,7 +15,7 @@ func newRollingMemory(window int) *rollingMemory {
 }
 
 func (m *rollingMemory) add(r subgoalResult) {
-	if m.window <= 0 {
+	if m.window <= 0 || len(r.Deps) > 0 {
 		return
 	}
 	m.entries = append(m.entries, r)

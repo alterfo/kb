@@ -471,7 +471,7 @@ func (o *Orchestrator) runSubgoalLevel(ctx context.Context, b *graphBuilder, par
 			defer func() { <-sem }()
 			spec := subgoals[i]
 			id := fmt.Sprintf("%s:%d", nodeType, i)
-			deps := dependencyAnswers(spec, results)
+			deps := dependencyAnswers(spec, results, i)
 			results[i] = o.runSubgoal(ctx, b, id, parentID, nodeType, spec, deps, memory, filter)
 		}(i)
 	}
@@ -493,11 +493,14 @@ func (o *Orchestrator) runSubgoalsSequential(ctx context.Context, b *graphBuilde
 // dependencyAnswers resolves spec.DependsOn (zero-based indices into the
 // subgoal slice) into the already-computed results, in declaration order.
 // Invalid, out-of-range and self indices are skipped (fail-open).
-func dependencyAnswers(spec subgoalSpec, results []subgoalResult) []subgoalResult {
+func dependencyAnswers(spec subgoalSpec, results []subgoalResult, self int) []subgoalResult {
 	var out []subgoalResult
 	for _, dep := range spec.DependsOn {
 		idx, err := strconv.Atoi(strings.TrimSpace(dep))
-		if err != nil || idx < 0 || idx >= len(results) {
+		if err != nil || idx < 0 || idx >= len(results) || idx == self {
+			continue
+		}
+		if results[idx].ID == "" {
 			continue
 		}
 		out = append(out, results[idx])
@@ -508,12 +511,19 @@ func dependencyAnswers(spec subgoalSpec, results []subgoalResult) []subgoalResul
 // formatDependencyContext renders resolved dependency answers for injection
 // into retrieval and synthesis prompts. It is empty when there are no deps.
 func formatDependencyContext(deps []subgoalResult) string {
-	if len(deps) == 0 {
+	resolved := make([]subgoalResult, 0, len(deps))
+	for _, d := range deps {
+		if d.ID == "" && d.Query == "" {
+			continue
+		}
+		resolved = append(resolved, d)
+	}
+	if len(resolved) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString("Previously resolved sub-answers:\n")
-	for _, d := range deps {
+	for _, d := range resolved {
 		fmt.Fprintf(&b, "- %s: %s\n", d.Query, d.Answer)
 	}
 	return b.String()
