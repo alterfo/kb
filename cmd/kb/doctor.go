@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/alterfo/kb/internal/config"
@@ -117,6 +118,17 @@ func reportIndex(ctx context.Context, env config.Env, stdout io.Writer) bool {
 	defer db.Close()
 
 	failed := false
+	integrity, err := db.IntegrityCheck(ctx)
+	if err != nil {
+		fmt.Fprintf(stdout, "  integrity: FAILED (%v)\n", err)
+		failed = true
+	} else if integrity != "ok" {
+		fmt.Fprintf(stdout, "  integrity: FAILED (%s)\n", strings.ReplaceAll(integrity, "\n", "; "))
+		failed = true
+	} else {
+		fmt.Fprintln(stdout, "  integrity: ok")
+	}
+
 	ver, err := db.CorpusVersion(ctx)
 	if err != nil {
 		fmt.Fprintf(stdout, "  corpus_version: FAILED (%v)\n", err)

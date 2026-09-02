@@ -410,3 +410,61 @@ func TestMigrateOnClosedDBFails(t *testing.T) {
 		t.Fatal("migrateCommunitiesStale on closed DB should fail")
 	}
 }
+
+func TestBackupToCreatesUsableCopy(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+	if _, err := db.sql.ExecContext(ctx, `INSERT INTO chunks (id, ref_doc_id, text, file_path, file_name, source, token_count, chunk_index) VALUES ('c1','doc1','hello','p','f','src',1,0)`); err != nil {
+		t.Fatalf("seed chunk: %v", err)
+	}
+	if err := db.setMetaInt(ctx, metaKeyCorpusVersion, 4); err != nil {
+		t.Fatalf("set meta: %v", err)
+	}
+
+	dest := filepath.Join(t.TempDir(), "backups", "kb.db")
+	if err := db.BackupTo(ctx, dest); err != nil {
+		t.Fatalf("BackupTo: %v", err)
+	}
+
+	copyDB, err := Open(ctx, dest)
+	if err != nil {
+		t.Fatalf("Open backup: %v", err)
+	}
+	defer copyDB.Close()
+
+	n, err := copyDB.ChunkCount(ctx)
+	if err != nil {
+		t.Fatalf("ChunkCount backup: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("backup chunk count = %d, want 1", n)
+	}
+	v, err := copyDB.CorpusVersion(ctx)
+	if err != nil || v != 4 {
+		t.Fatalf("backup corpus version = (%d,%v), want (4,nil)", v, err)
+	}
+}
+
+func TestBackupToRefusesExistingDestination(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t)
+
+	dest := filepath.Join(t.TempDir(), "kb.db")
+	if err := os.WriteFile(dest, []byte("existing"), 0o644); err != nil {
+		t.Fatalf("write dest: %v", err)
+	}
+	if err := db.BackupTo(ctx, dest); err == nil {
+		t.Fatal("BackupTo over an existing file should fail")
+	}
+}
+
+func TestIntegrityCheckReturnsOK(t *testing.T) {
+	db := openTestDB(t)
+	got, err := db.IntegrityCheck(context.Background())
+	if err != nil {
+		t.Fatalf("IntegrityCheck: %v", err)
+	}
+	if got != "ok" {
+		t.Fatalf("IntegrityCheck = %q, want %q", got, "ok")
+	}
+}

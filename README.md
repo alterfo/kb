@@ -128,13 +128,30 @@ go build -o bin/kb ./cmd/kb
 ### doctor
 
 Health and sync-health report: LLM endpoint reachability (embed dimension + chat
-round-trip), index version/dimension, and a presence-only per-source report
-(which secret env vars are set, last sync time, staleness vs `KB_STALE_AFTER`,
-last sync error).
+round-trip), index version/dimension, a `PRAGMA integrity_check` on `kb.db`, and
+a presence-only per-source report (which secret env vars are set, last sync
+time, staleness vs `KB_STALE_AFTER`, last sync error).
 
 ```sh
 ./bin/kb doctor
 ```
+
+### backup
+
+Creates a consistent SQLite backup of `$PERSIST_DIR/kb.db` using
+`VACUUM INTO`. If no destination is given, the backup is written to
+`$PERSIST_DIR/backups/kb-<UTC-timestamp>.db`; pass an explicit path to control
+the location. The command refuses to overwrite an existing destination.
+
+```sh
+./bin/kb backup
+./bin/kb backup /backups/kb-$(date -u +%Y%m%dT%H%M%SZ).db
+```
+
+To recover, stop the running server, replace `$PERSIST_DIR/kb.db` with the
+backup file, then run `./bin/kb doctor` to verify the restored database. Keep
+backup files off the same disk as `$PERSIST_DIR` when possible so a single
+drive failure cannot take both the live index and the recovery copy.
 
 ### sync
 

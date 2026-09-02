@@ -3,9 +3,12 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
 	_ "github.com/ncruces/go-sqlite3/vfs/memdb"
@@ -292,6 +295,48 @@ func (d *DB) tableColumns(ctx context.Context, table string) (map[string]bool, e
 
 func (d *DB) Close() error {
 	return d.sql.Close()
+}
+
+func (d *DB) BackupTo(ctx context.Context, dest string) error {
+	if dest == "" {
+		return fmt.Errorf("sqlite: backup destination is empty")
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return fmt.Errorf("sqlite: create backup dir for %q: %w", dest, err)
+	}
+	if _, err := os.Stat(dest); err == nil {
+		return fmt.Errorf("sqlite: backup destination %q already exists", dest)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("sqlite: inspect backup destination %q: %w", dest, err)
+	}
+	if _, err := d.sql.ExecContext(ctx, `VACUUM INTO ?`, dest); err != nil {
+		return fmt.Errorf("sqlite: backup to %q: %w", dest, err)
+	}
+	return nil
+}
+
+func (d *DB) IntegrityCheck(ctx context.Context) (string, error) {
+	rows, err := d.sql.QueryContext(ctx, `PRAGMA integrity_check`)
+	if err != nil {
+		return "", fmt.Errorf("sqlite: integrity_check: %w", err)
+	}
+	defer rows.Close()
+
+	var results []string
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return "", fmt.Errorf("sqlite: integrity_check scan: %w", err)
+		}
+		results = append(results, value)
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("sqlite: integrity_check iterate: %w", err)
+	}
+	if len(results) == 0 {
+		return "ok", nil
+	}
+	return strings.Join(results, "\n"), nil
 }
 
 func (d *DB) CorpusVersion(ctx context.Context) (int, error) {

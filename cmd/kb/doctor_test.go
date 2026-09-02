@@ -160,6 +160,7 @@ func TestDoctor_HealthyReport(t *testing.T) {
 		"query embed dim: ok (2)",
 		"index embed dim: ok (2)",
 		"chat: ok",
+		"integrity: ok",
 		"status: ok (corpus_version=",
 		"embed_dim=2",
 		"chunks=2",

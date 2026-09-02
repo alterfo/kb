@@ -81,12 +81,12 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 2: Add backup and disaster recovery for kb.db
 
-- [ ] Implement `kb backup` using SQLite `VACUUM INTO`
-- [ ] Add `PRAGMA integrity_check` to `kb doctor`
-- [ ] Document the backup/recovery procedure in README (the corpus, graph, and history
+- [x] Implement `kb backup` using SQLite `VACUUM INTO`
+- [x] Add `PRAGMA integrity_check` to `kb doctor`
+- [x] Document the backup/recovery procedure in README (the corpus, graph, and history
       currently live in a single SQLite file with no recovery path)
-- [ ] write tests for backup creation and integrity-check reporting
-- [ ] run project tests - must pass before next task
+- [x] write tests for backup creation and integrity-check reporting
+- [x] run project tests - must pass before next task
 
 ### Task 3: Fix broken architecture-review documentation link
 
