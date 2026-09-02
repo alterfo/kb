@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alterfo/kb/internal/guardrails"
 	"github.com/alterfo/kb/internal/llm"
 	"github.com/alterfo/kb/internal/store/vector"
 )
@@ -180,7 +181,7 @@ func TestBuildSynthesizePromptMarksSupersededChunk(t *testing.T) {
 		{Chunk: vector.Chunk{ID: "c2", FileName: "b.md", Text: "new fact"}, Score: 1},
 	}
 	prompt := buildSynthesizePrompt("q", chunks, nil, nil)
-	if !strings.Contains(prompt, "(a.md) [superseded] old fact") {
+	if !strings.Contains(prompt, "(a.md) [superseded] "+guardrails.DataBlock("old fact")) {
 		t.Fatalf("expected superseded marker on a.md excerpt, got:\n%s", prompt)
 	}
 	if strings.Contains(prompt, "(b.md) [superseded]") {

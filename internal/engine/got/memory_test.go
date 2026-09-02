@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alterfo/kb/internal/guardrails"
 	"github.com/alterfo/kb/internal/store/vector"
 )
 
@@ -76,10 +77,10 @@ func TestMergeRollingMemoryPinsDepsBeforeOthers(t *testing.T) {
 	}
 }
 
-func TestBuildSynthesizePromptEmptyWindowMatchesLegacy(t *testing.T) {
+func TestBuildSynthesizePromptWrapsExcerpts(t *testing.T) {
 	chunks := []vector.ScoredChunk{{Chunk: vector.Chunk{FileName: "a.md", Text: "fact"}}}
 	got := buildSynthesizePrompt("q", chunks, nil, nil)
-	want := "Sub-question: q\n\nExcerpts:\n- (a.md) fact\n"
+	want := "Sub-question: q\n\nExcerpts:\n- (a.md) " + guardrails.DataBlock("fact") + "\n"
 	if got != want {
 		t.Fatalf("prompt changed with empty memory:\n got %q\nwant %q", got, want)
 	}
@@ -93,7 +94,7 @@ func TestBuildSynthesizePromptRollingWindowGolden(t *testing.T) {
 		{ID: "3", Query: "q3", Answer: "a3"},
 	}
 	got := buildSynthesizePrompt("q", chunks, deps, memory)
-	want := "Previously resolved sub-answers:\n- q1: a1\n- q2: a2\n- q3: a3\n\nSub-question: q\n\nExcerpts:\n- (a.md) fact\n"
+	want := "Previously resolved sub-answers:\n- q1: a1\n- q2: a2\n- q3: a3\n\nSub-question: q\n\nExcerpts:\n- (a.md) " + guardrails.DataBlock("fact") + "\n"
 	if got != want {
 		t.Fatalf("rolling memory prompt mismatch:\n got %q\nwant %q", got, want)
 	}

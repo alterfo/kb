@@ -95,9 +95,10 @@ func TestValidateDirectEnv(t *testing.T) {
 func TestEffectiveVarsRedactsSecrets(t *testing.T) {
 	env := Defaults()
 	lookup := fakeLookup(map[string]string{
-		"KB_DISCORD_TOKEN": "discord-secret",
-		"GITHUB_TOKEN":     "github-secret",
-		"KB_SOCKS_PROXY":   "socks5://127.0.0.1:3333",
+		"KB_DISCORD_TOKEN":  "discord-secret",
+		"GITHUB_TOKEN":      "github-secret",
+		"KB_WEB_AUTH_TOKEN": "web-secret",
+		"KB_SOCKS_PROXY":    "socks5://127.0.0.1:3333",
 	})
 	vars := EffectiveVars(env, lookup)
 
@@ -108,6 +109,10 @@ func TestEffectiveVarsRedactsSecrets(t *testing.T) {
 	github := findVar(vars, "GITHUB_TOKEN")
 	if github == nil || github.Value != "<set>" {
 		t.Fatalf("GITHUB_TOKEN = %#v, want <set>", github)
+	}
+	webAuth := findVar(vars, "KB_WEB_AUTH_TOKEN")
+	if webAuth == nil || webAuth.Value != "<set>" {
+		t.Fatalf("KB_WEB_AUTH_TOKEN = %#v, want <set>", webAuth)
 	}
 	socks := findVar(vars, "KB_SOCKS_PROXY")
 	if socks == nil || socks.Value != "socks5://127.0.0.1:3333" {

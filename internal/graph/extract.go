@@ -64,7 +64,7 @@ func (e *Extractor) ExtractChunk(ctx context.Context, text string) (Extraction, 
 
 	messages := []llm.ChatMessage{
 		{Role: "system", Content: extractionSystemPrompt},
-		{Role: "user", Content: text},
+		{Role: "user", Content: text, Untrusted: true},
 	}
 	resp, err := e.Chat.Chat(ctx, llm.ChatRequest{Model: e.Model, Messages: messages})
 	if err != nil {

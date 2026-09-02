@@ -76,7 +76,7 @@ func (e *LegalExtractor) extract(ctx context.Context, systemPrompt, text string)
 		Model: e.Model,
 		Messages: []llm.ChatMessage{
 			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: text},
+			{Role: "user", Content: text, Untrusted: true},
 		},
 	})
 	if err != nil {

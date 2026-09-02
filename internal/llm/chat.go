@@ -16,6 +16,7 @@ type ChatMessage struct {
 	Content    string     `json:"content,omitempty"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Untrusted  bool       `json:"-"`
 }
 
 type ChatRequest struct {
@@ -99,6 +100,7 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest) (ChatResponse, error
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 
+	req = c.prepareRequest(req)
 	if c.noThink && len(req.Tools) == 0 {
 		return c.nativeChatNoThink(ctx, req)
 	}
@@ -157,6 +159,7 @@ func (c *Client) nativeChatNoThink(ctx context.Context, req ChatRequest) (ChatRe
 }
 
 func (c *Client) ChatStream(ctx context.Context, req ChatRequest) (iter.Seq2[ChatChunk, error], error) {
+	req = c.prepareRequest(req)
 	payload := c.chatPayload(req, true)
 	resp, err := c.postJSON(ctx, "/v1/chat/completions", payload)
 	if err != nil {

@@ -82,6 +82,9 @@ type Deps struct {
 	StatePath   string
 	StaleAfter  time.Duration
 	Now         func() time.Time
+	AuthToken   string
+	RequireAuth bool
+	RateLimit   int
 	EnvLookup   func(key string) (string, bool)
 	Spawn       func(func())
 
@@ -97,6 +100,7 @@ type Server struct {
 	tmplErr   error
 	asks      *askManager
 	asksSem   chan struct{}
+	limiter   *clientRateLimiter
 }
 
 func NewServer(deps Deps) *Server {
@@ -130,6 +134,7 @@ func NewServer(deps Deps) *Server {
 	if deps.BaseCtx == nil {
 		deps.BaseCtx = context.Background()
 	}
+	limiter := newClientRateLimiter(deps.RateLimit, deps.Now)
 
 	if deps.History != nil {
 		// A run still "running" in the history table when the server starts
@@ -147,6 +152,7 @@ func NewServer(deps Deps) *Server {
 		tmplErr: err,
 		asks:    newAskManager(deps.Spawn),
 		asksSem: make(chan struct{}, maxConcurrentAsks),
+		limiter: limiter,
 	}
 	r := retriever.New(retriever.Config{
 		Vector:         deps.Vector,
@@ -227,7 +233,7 @@ func (s *Server) Handler() http.Handler {
 	static, _ := fs.Sub(assets, "static")
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
 
-	return s.sameOrigin(mux)
+	return s.guard(s.sameOrigin(mux))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -236,7 +242,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) sameOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !safeMethod(r.Method) && !sameOriginRequest(r) {
+		if !safeMethod(r.Method) && !s.sameOriginRequest(r) {
 			http.Error(w, "cross-origin request blocked", http.StatusForbidden)
 			return
 		}
@@ -252,7 +258,7 @@ func safeMethod(m string) bool {
 	return false
 }
 
-func sameOriginRequest(r *http.Request) bool {
+func (s *Server) sameOriginRequest(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		origin = r.Header.Get("Referer")
@@ -260,7 +266,7 @@ func sameOriginRequest(r *http.Request) bool {
 	if origin == "" {
 		return true
 	}
-	if !isLoopbackHost(r.Host) {
+	if !isLoopbackHost(r.Host) && !s.deps.RequireAuth {
 		return false
 	}
 	return sameHost(origin, r.Host)

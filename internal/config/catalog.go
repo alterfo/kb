@@ -73,6 +73,7 @@ var directKBVars = []DirectVarSpec{
 	{Name: "KB_MCP_TEST_STDIO_HELPER"},
 	{Name: "KB_PLAN_RUN_ID"},
 	{Name: "KB_PLAN_TARGET"},
+	{Name: "KB_WEB_AUTH_TOKEN", Sensitive: true},
 }
 
 var directSecretVars = []DirectVarSpec{
@@ -171,6 +172,9 @@ func validateEnv(e Env) error {
 	}
 	if e.MaxGapQueries <= 0 {
 		return fmt.Errorf("KB_MAX_GAP_QUERIES: must be positive")
+	}
+	if e.WebRateLimit < 0 {
+		return fmt.Errorf("KB_WEB_RATE_LIMIT: must be non-negative")
 	}
 	return nil
 }
@@ -278,6 +282,8 @@ func envVars(e Env) []EffectiveVar {
 		{Name: "KB_INDEX_GRAPH", Value: strconv.FormatBool(e.IndexGraph), Default: "true"},
 		{Name: "KB_FTS5", Value: strconv.FormatBool(e.FTS5), Default: "true"},
 		{Name: "KB_ANN_PREFILTER", Value: strconv.FormatBool(e.ANNPrefilter), Default: "false"},
+		{Name: "KB_PII_REDACT", Value: strconv.FormatBool(e.PIIRedact), Default: "false"},
+		{Name: "KB_WEB_RATE_LIMIT", Value: strconv.Itoa(e.WebRateLimit), Default: "0"},
 	}
 }
 

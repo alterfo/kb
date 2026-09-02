@@ -52,6 +52,12 @@ func TestLoadEnv_Defaults(t *testing.T) {
 	if e.ANNPrefilter {
 		t.Errorf("ANNPrefilter = %v, want false", e.ANNPrefilter)
 	}
+	if e.PIIRedact {
+		t.Errorf("PIIRedact = %v, want false", e.PIIRedact)
+	}
+	if e.WebRateLimit != 0 {
+		t.Errorf("WebRateLimit = %d, want 0", e.WebRateLimit)
+	}
 	if e.AuthorityBonus["notes/"] != 0.15 || e.AuthorityBonus["notes/approved/"] != 0.30 {
 		t.Errorf("AuthorityBonus = %v, want defaults", e.AuthorityBonus)
 	}
@@ -90,6 +96,8 @@ func TestLoadEnv_Overrides(t *testing.T) {
 		"KB_LLM_NO_THINK":          "true",
 		"KB_FTS5":                  "false",
 		"KB_ANN_PREFILTER":         "true",
+		"KB_PII_REDACT":            "true",
+		"KB_WEB_RATE_LIMIT":        "30",
 	}
 	e, err := LoadEnv(fakeLookup(m))
 	if err != nil {
@@ -190,6 +198,12 @@ func TestLoadEnv_Overrides(t *testing.T) {
 	if !e.ANNPrefilter {
 		t.Errorf("ANNPrefilter = %v, want true", e.ANNPrefilter)
 	}
+	if !e.PIIRedact {
+		t.Errorf("PIIRedact = %v, want true", e.PIIRedact)
+	}
+	if e.WebRateLimit != 30 {
+		t.Errorf("WebRateLimit = %d, want 30", e.WebRateLimit)
+	}
 }
 
 func TestLoadEnv_InvalidValues(t *testing.T) {
@@ -241,6 +255,8 @@ func TestLoadEnv_InvalidValues(t *testing.T) {
 		{"bad llm no think bool", "KB_LLM_NO_THINK", "notabool"},
 		{"bad fts5 bool", "KB_FTS5", "notabool"},
 		{"bad ann prefilter bool", "KB_ANN_PREFILTER", "notabool"},
+		{"bad pii redact bool", "KB_PII_REDACT", "notabool"},
+		{"bad web rate limit", "KB_WEB_RATE_LIMIT", "-1"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -203,12 +203,12 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 15: Add guardrails for PII and prompt injection
 
-- [ ] Add optional PII redaction before sending content to an external LLM (opt-in, not
+- [x] Add optional PII redaction before sending content to an external LLM (opt-in, not
       default, due to overhead)
-- [ ] Add lightweight protection against indirect prompt injection from connector
+- [x] Add lightweight protection against indirect prompt injection from connector
       content included in prompts
-- [ ] Add token-auth/rate-limiting if the dashboard is exposed beyond loopback
-- [ ] write tests for PII redaction and prompt-injection mitigation
+- [x] Add token-auth/rate-limiting if the dashboard is exposed beyond loopback
+- [x] write tests for PII redaction and prompt-injection mitigation
 - [x] run project tests - must pass before next task
 
 ### Task 16: Verify acceptance criteria

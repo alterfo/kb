@@ -47,6 +47,7 @@ func reportLLMHealth(ctx context.Context, env config.Env, stdout io.Writer) bool
 		NoProxyHosts:      env.NoProxy,
 		DefaultEmbedModel: env.EmbedModel,
 		RequestTimeout:    env.LLMTimeout,
+		RedactPII:         env.PIIRedact,
 	})
 	queryEmbedURL := env.EmbedBaseURL
 	if queryEmbedURL == "" {

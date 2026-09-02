@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alterfo/kb/internal/guardrails"
 	"github.com/alterfo/kb/internal/transport"
 )
 
@@ -30,6 +31,7 @@ type Config struct {
 	MaxTokens         int
 	DefaultEmbedModel string
 	NoThink           bool
+	RedactPII         bool
 	Sleep             func(ctx context.Context, d time.Duration) error
 	JitterFunc        func() float64
 }
@@ -45,6 +47,7 @@ type Client struct {
 	maxTokens  int
 	embedModel string
 	noThink    bool
+	redactPII  bool
 	sleep      func(ctx context.Context, d time.Duration) error
 	jitter     func() float64
 }
@@ -82,6 +85,7 @@ func NewClient(cfg Config) *Client {
 		maxTokens:  cfg.MaxTokens,
 		embedModel: cfg.DefaultEmbedModel,
 		noThink:    cfg.NoThink,
+		redactPII:  cfg.RedactPII,
 		sleep:      cfg.Sleep,
 		jitter:     cfg.JitterFunc,
 	}
@@ -145,4 +149,31 @@ func (c *Client) doWithRetry(ctx context.Context, method, path string, body []by
 		lastErr = ctx.Err()
 	}
 	return nil, lastErr
+}
+
+func (c *Client) prepareRequest(req ChatRequest) ChatRequest {
+	if !c.redactPII && !hasUntrusted(req.Messages) {
+		return req
+	}
+	messages := make([]ChatMessage, len(req.Messages))
+	for i, msg := range req.Messages {
+		if msg.Untrusted {
+			msg.Content = guardrails.DataBlock(msg.Content)
+		}
+		if c.redactPII {
+			msg.Content = guardrails.RedactPII(msg.Content)
+		}
+		messages[i] = msg
+	}
+	req.Messages = messages
+	return req
+}
+
+func hasUntrusted(messages []ChatMessage) bool {
+	for _, msg := range messages {
+		if msg.Untrusted {
+			return true
+		}
+	}
+	return false
 }

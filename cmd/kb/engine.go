@@ -44,6 +44,7 @@ func newEngineBundleAt(env config.Env, dbPath string) (*engineBundle, error) {
 		RequestTimeout:    env.LLMTimeout,
 		MaxTokens:         env.LLMMaxTokens,
 		NoThink:           env.LLMNoThink,
+		RedactPII:         env.PIIRedact,
 	})
 
 	// Query-time embeddings (retrieval) use KB_EMBED_BASE_URL — pinned to the

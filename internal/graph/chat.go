@@ -226,7 +226,7 @@ func (e *ChatExtractor) classifySmallTalk(ctx context.Context, text string) (boo
 		Model: e.Model,
 		Messages: []llm.ChatMessage{
 			{Role: "system", Content: chatSmallTalkSystemPrompt},
-			{Role: "user", Content: text},
+			{Role: "user", Content: text, Untrusted: true},
 		},
 	})
 	if err != nil {
@@ -251,7 +251,7 @@ func (e *ChatExtractor) extractDecisions(ctx context.Context, text string) (Extr
 		Model: e.Model,
 		Messages: []llm.ChatMessage{
 			{Role: "system", Content: chatDecisionSystemPrompt},
-			{Role: "user", Content: text},
+			{Role: "user", Content: text, Untrusted: true},
 		},
 	})
 	if err != nil {

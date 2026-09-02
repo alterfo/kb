@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/alterfo/kb/internal/engine/report"
+	"github.com/alterfo/kb/internal/guardrails"
 	"github.com/alterfo/kb/internal/llm"
 	"github.com/alterfo/kb/internal/store/vector"
 )
@@ -133,7 +134,7 @@ func buildSynthesizePrompt(query string, chunks []vector.ScoredChunk, deps []sub
 		if c.SupersededBy != "" {
 			note = " [superseded]"
 		}
-		fmt.Fprintf(&b, "- (%s)%s %s\n", c.FileName, note, c.Text)
+		fmt.Fprintf(&b, "- (%s)%s %s\n", c.FileName, note, guardrails.DataBlock(c.Text))
 	}
 	if block := report.SupersessionBlock(chunks); block != "" {
 		b.WriteString("\n")

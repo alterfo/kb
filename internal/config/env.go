@@ -46,6 +46,8 @@ type Env struct {
 	IndexGraph           bool
 	FTS5                 bool
 	ANNPrefilter         bool
+	PIIRedact            bool
+	WebRateLimit         int
 }
 
 // DefaultLocalLLMURL is the local LLM. It is pinned to the local
@@ -92,6 +94,8 @@ func Defaults() Env {
 		IndexGraph:       true,
 		FTS5:             true,
 		ANNPrefilter:     false,
+		PIIRedact:        false,
+		WebRateLimit:     0,
 	}
 }
 
@@ -319,6 +323,20 @@ func LoadEnv(lookup EnvLookup) (Env, error) {
 			return Env{}, fmt.Errorf("KB_ANN_PREFILTER: invalid bool %q: %w", v, err)
 		}
 		e.ANNPrefilter = b
+	}
+	if v, ok := lookup("KB_PII_REDACT"); ok && v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return Env{}, fmt.Errorf("KB_PII_REDACT: invalid bool %q: %w", v, err)
+		}
+		e.PIIRedact = b
+	}
+	if v, ok := lookup("KB_WEB_RATE_LIMIT"); ok && v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return Env{}, fmt.Errorf("KB_WEB_RATE_LIMIT: invalid non-negative int %q", v)
+		}
+		e.WebRateLimit = n
 	}
 
 	if err := validateEnv(e); err != nil {

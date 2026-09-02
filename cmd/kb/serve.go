@@ -28,8 +28,9 @@ func runServeCmd(args []string, env config.Env, lookup config.EnvLookup, stdout,
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
-	if !isLoopbackAddr(*addr) {
-		fmt.Fprintln(stderr, "serve: refusing non-loopback listen address: the dashboard has no authentication and exposes destructive routes. Bind to 127.0.0.1 or [::1], or expose it via an SSH tunnel / reverse proxy instead")
+	webAuthToken, _ := lookup("KB_WEB_AUTH_TOKEN")
+	if !isLoopbackAddr(*addr) && webAuthToken == "" {
+		fmt.Fprintln(stderr, "serve: refusing non-loopback listen address without KB_WEB_AUTH_TOKEN: the dashboard exposes destructive routes. Set KB_WEB_AUTH_TOKEN to require bearer/token auth, or bind to 127.0.0.1/[::1]")
 		return 2
 	}
 
@@ -112,6 +113,9 @@ func runServeCmd(args []string, env config.Env, lookup config.EnvLookup, stdout,
 		StatePath:            filepath.Join(env.PersistDir, ".sync-state.json"),
 		StaleAfter:           env.StaleAfter,
 		EnvLookup:            os.LookupEnv,
+		AuthToken:            webAuthToken,
+		RequireAuth:          !isLoopbackAddr(*addr) && webAuthToken != "",
+		RateLimit:            webRateLimitForAddr(*addr, env.WebRateLimit),
 		Governance:           governance.New(env.KBRoot, bundle.indexer, bundle.chat, env.LLMModel),
 	})
 
@@ -133,6 +137,13 @@ func runServeCmd(args []string, env config.Env, lookup config.EnvLookup, stdout,
 		<-errCh
 		return 0
 	}
+}
+
+func webRateLimitForAddr(addr string, limit int) int {
+	if isLoopbackAddr(addr) {
+		return 0
+	}
+	return limit
 }
 
 func isLoopbackAddr(addr string) bool {
