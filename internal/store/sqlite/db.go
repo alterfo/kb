@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ncruces/go-sqlite3"
 	"github.com/ncruces/go-sqlite3/driver"
 	"github.com/ncruces/go-sqlite3/ext/fts5"
 	_ "github.com/ncruces/go-sqlite3/vfs/memdb"
@@ -104,6 +105,9 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(id UNINDEXED, text);
 const (
 	metaKeyEmbedDim      = "embed_dim"
 	metaKeyCorpusVersion = "corpus_version"
+
+	defaultMaxOpenConns = 8
+	defaultMaxIdleConns = 8
 )
 
 type DB struct {
@@ -114,15 +118,32 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("sqlite: create persist dir for %q: %w", path, err)
 	}
-	db, err := driver.Open(path, fts5.Register)
+	init := func(c *sqlite3.Conn) error {
+		if err := fts5.Register(c); err != nil {
+			return err
+		}
+		for _, stmt := range []string{
+			`PRAGMA foreign_keys = ON`,
+			`PRAGMA busy_timeout = 30000`,
+			`PRAGMA synchronous = NORMAL`,
+		} {
+			if err := c.Exec(stmt); err != nil {
+				return fmt.Errorf("sqlite: apply %s: %w", stmt, err)
+			}
+		}
+		return nil
+	}
+
+	db, err := driver.Open(path, init)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: open %q: %w", path, err)
 	}
-	db.SetMaxOpenConns(1)
+	db.SetMaxOpenConns(defaultMaxOpenConns)
+	db.SetMaxIdleConns(defaultMaxIdleConns)
 
-	if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+	if _, err := db.ExecContext(ctx, `PRAGMA journal_mode = WAL`); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("sqlite: enable foreign_keys: %w", err)
+		return nil, fmt.Errorf("sqlite: enable WAL: %w", err)
 	}
 
 	d := &DB{sql: db}
@@ -153,6 +174,13 @@ func (d *DB) migrate(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// beginWriteTx starts a serializable write transaction. The SQLite driver
+// maps sql.LevelSerializable to BEGIN IMMEDIATE, so at most one writer is
+// active while WAL readers continue to use the rest of the pool.
+func (d *DB) beginWriteTx(ctx context.Context) (*sql.Tx, error) {
+	return d.sql.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 }
 
 // migrateSearchHistoryAnswer adds the answer column to search_history tables

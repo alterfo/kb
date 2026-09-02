@@ -160,13 +160,13 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 10: Improve SQLite concurrency
 
-- [ ] Profile current contention caused by `SetMaxOpenConns(1)` serializing sync and
+- [x] Profile current contention caused by `SetMaxOpenConns(1)` serializing sync and
       dashboard access
-- [ ] Switch to WAL mode with a read-only connection pool and a single writer
+- [x] Switch to WAL mode with a read-only connection pool and a single writer
       connection
-- [ ] Write crash-recovery tests validating the database remains consistent after a
+- [x] Write crash-recovery tests validating the database remains consistent after a
       crash under concurrent access
-- [ ] write tests for the new connection-pool behavior
+- [x] write tests for the new connection-pool behavior
 - [x] run project tests - must pass before next task
 
 ### Task 11: Add an Ask response cache

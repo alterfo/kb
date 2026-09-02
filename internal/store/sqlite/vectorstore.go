@@ -44,7 +44,7 @@ func (s *VectorStore) EnsureDim(ctx context.Context, dim int) error {
 // Reembed clears the recorded embedding dimension and all stored embeddings,
 // allowing a subsequent EnsureDim with a different dimension to succeed.
 func (s *VectorStore) Reembed(ctx context.Context) error {
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: Reembed: begin: %w", err)
 	}
@@ -75,7 +75,7 @@ func (s *VectorStore) Upsert(ctx context.Context, chunks []vector.Chunk) error {
 		return err
 	}
 
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: Upsert: begin: %w", err)
 	}
@@ -100,7 +100,7 @@ func (s *VectorStore) ReplaceByDoc(ctx context.Context, docID string, chunks []v
 		return err
 	}
 
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: ReplaceByDoc: begin: %w", err)
 	}
@@ -182,7 +182,7 @@ func (s *VectorStore) upsertChunks(ctx context.Context, tx *sql.Tx, chunks []vec
 // keeping the rows as version history instead of deleting them. The chunk
 // lifecycle columns of already-closed versions are left untouched.
 func (s *VectorStore) SoftCloseByDoc(ctx context.Context, docID string) error {
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: SoftCloseByDoc: begin: %w", err)
 	}
@@ -205,7 +205,7 @@ func (s *VectorStore) SetSuperseded(ctx context.Context, chunkIDs []string, byRe
 	if len(chunkIDs) == 0 {
 		return nil
 	}
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: SetSuperseded: begin: %w", err)
 	}
@@ -231,7 +231,7 @@ func (s *VectorStore) SetSuperseded(ctx context.Context, chunkIDs []string, byRe
 // ClearSupersededBy resets superseded_by on every chunk previously marked
 // by refDocID, e.g. when the superseding document is removed.
 func (s *VectorStore) ClearSupersededBy(ctx context.Context, refDocID string) error {
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: ClearSupersededBy: begin: %w", err)
 	}
@@ -249,7 +249,7 @@ func (s *VectorStore) ClearSupersededBy(ctx context.Context, refDocID string) er
 }
 
 func (s *VectorStore) ClearSupersededOnDoc(ctx context.Context, docID string) error {
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: ClearSupersededOnDoc: begin: %w", err)
 	}
@@ -268,7 +268,7 @@ func (s *VectorStore) ClearSupersededOnDoc(ctx context.Context, docID string) er
 }
 
 func (s *VectorStore) DeleteByDoc(ctx context.Context, docID string) error {
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: DeleteByDoc: begin: %w", err)
 	}

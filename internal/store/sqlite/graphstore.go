@@ -29,7 +29,7 @@ func (s *GraphStore) UpsertEntities(ctx context.Context, entities []graphstore.E
 	if len(entities) == 0 {
 		return nil
 	}
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: UpsertEntities: begin: %w", err)
 	}
@@ -69,7 +69,7 @@ func (s *GraphStore) PutEntity(ctx context.Context, e graphstore.Entity) error {
 	if e.ID == "" {
 		return fmt.Errorf("sqlite: PutEntity: entity missing id (name=%q)", e.Name)
 	}
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: PutEntity: begin: %w", err)
 	}
@@ -89,7 +89,7 @@ func (s *GraphStore) UpsertRelations(ctx context.Context, relations []graphstore
 	if len(relations) == 0 {
 		return nil
 	}
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: UpsertRelations: begin: %w", err)
 	}
@@ -175,7 +175,7 @@ func (s *GraphStore) PutRelation(ctx context.Context, r graphstore.Relation) err
 	if r.ID == "" {
 		return fmt.Errorf("sqlite: PutRelation: relation missing id (src=%q dst=%q)", r.Src, r.Dst)
 	}
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: PutRelation: begin: %w", err)
 	}
@@ -349,7 +349,7 @@ func (s *GraphStore) UpsertCommunities(ctx context.Context, communities []graphs
 	if len(communities) == 0 {
 		return nil
 	}
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: UpsertCommunities: begin: %w", err)
 	}
@@ -421,7 +421,7 @@ func (s *GraphStore) CommunitiesFor(ctx context.Context, ids []string) ([]graphs
 }
 
 func (s *GraphStore) PruneOrphans(ctx context.Context) error {
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: PruneOrphans: begin: %w", err)
 	}
@@ -619,7 +619,7 @@ func (s *GraphStore) RemoveChunks(ctx context.Context, chunkIDs []string) ([]str
 		remove[id] = struct{}{}
 	}
 
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: RemoveChunks: begin: %w", err)
 	}
@@ -728,7 +728,7 @@ func (s *GraphStore) ReplaceRelation(ctx context.Context, oldID string, rel grap
 	if oldID == "" || rel.ID == "" {
 		return fmt.Errorf("sqlite: ReplaceRelation: oldID and rel.ID are required")
 	}
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: ReplaceRelation: begin: %w", err)
 	}
@@ -831,7 +831,7 @@ func (s *GraphStore) DeleteEntity(ctx context.Context, id string) error {
 	if id == "" {
 		return nil
 	}
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: DeleteEntity: begin: %w", err)
 	}
@@ -886,7 +886,7 @@ func (s *GraphStore) DeleteRelation(ctx context.Context, id string) error {
 	if id == "" {
 		return nil
 	}
-	tx, err := s.db.sql.BeginTx(ctx, nil)
+	tx, err := s.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: DeleteRelation: begin: %w", err)
 	}

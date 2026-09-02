@@ -95,7 +95,7 @@ func TestCorpusVersionStartsAtZeroAndBumps(t *testing.T) {
 		t.Fatalf("initial CorpusVersion = (%d,%v), want (0,nil)", v, err)
 	}
 
-	tx, err := db.sql.BeginTx(ctx, nil)
+	tx, err := db.beginWriteTx(ctx)
 	if err != nil {
 		t.Fatalf("BeginTx: %v", err)
 	}

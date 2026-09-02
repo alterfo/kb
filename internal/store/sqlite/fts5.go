@@ -41,7 +41,7 @@ func (i *FTS5Index) Refresh(ctx context.Context, versioner bm25.CorpusVersioner,
 		return nil
 	}
 
-	tx, err := i.db.sql.BeginTx(ctx, nil)
+	tx, err := i.db.beginWriteTx(ctx)
 	if err != nil {
 		return fmt.Errorf("sqlite: fts5 rebuild begin: %w", err)
 	}
