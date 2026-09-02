@@ -13,6 +13,7 @@ import (
 	"github.com/alterfo/kb/internal/config"
 	"github.com/alterfo/kb/internal/engine/got"
 	"github.com/alterfo/kb/internal/engine/retriever"
+	"github.com/alterfo/kb/internal/store/sqlite"
 )
 
 func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
@@ -65,22 +66,16 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 	}
 	defer bundle.close()
 
-	reuseIndex := false
-	if *persistDir != "" && !*forceReindex {
-		chunkCount, countErr := bundle.db.ChunkCount(ctx)
-		if countErr != nil {
-			fmt.Fprintf(stderr, "bench-dragon: count persisted chunks: %v\n", countErr)
-			return 1
-		}
-		if chunkCount > 0 {
-			reuseIndex = true
-			fmt.Fprintf(stdout, "bench-dragon: reusing persisted index at %s (%d chunks)\n", *persistDir, chunkCount)
-		}
+	reuseIndex, err := benchDragonReuseIndex(ctx, bundle.db, *persistDir, *forceReindex, stdout)
+	if err != nil {
+		fmt.Fprintf(stderr, "bench-dragon: count persisted chunks: %v\n", err)
+		return 1
 	}
 
 	if reuseIndex {
 		fmt.Fprintln(stdout, "bench-dragon: skipping corpus fetch and indexing")
 	} else {
+		fmt.Fprintf(stdout, "bench-dragon: indexing into %s\n", benchEnv.PersistDir)
 		fmt.Fprintln(stdout, "bench-dragon: fetching corpus from HuggingFace...")
 		texts, err := dragon.FetchTexts(ctx, httpClient, *baseURL, textsDataset)
 		if err != nil {
@@ -171,6 +166,21 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 	fmt.Fprintf(stdout, "bench-dragon: submission written to %s (%d answers)\n", *out, len(entries))
 	fmt.Fprintln(stdout, "bench-dragon: this is a self-run submission file (kb's own found_ids/model_answer), not an official DRAGON leaderboard score")
 	return 0
+}
+
+func benchDragonReuseIndex(ctx context.Context, db *sqlite.DB, persistDir string, forceReindex bool, stdout io.Writer) (bool, error) {
+	if persistDir == "" || forceReindex {
+		return false, nil
+	}
+	chunkCount, err := db.ChunkCount(ctx)
+	if err != nil {
+		return false, err
+	}
+	if chunkCount > 0 {
+		fmt.Fprintf(stdout, "bench-dragon: reusing persisted index at %s (%d chunks)\n", persistDir, chunkCount)
+		return true, nil
+	}
+	return false, nil
 }
 
 func runBenchDragonScoreCmd(args []string, stdout, stderr io.Writer) int {

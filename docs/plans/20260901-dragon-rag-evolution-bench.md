@@ -117,18 +117,18 @@ precedent).
 
 ### Task 1: `-persist-dir` / `-force-reindex` for `kb bench-dragon`
 
-- [ ] add `-persist-dir` flag to `runBenchDragonCmd` (`cmd/kb/dragon.go`):
+- [x] add `-persist-dir` flag to `runBenchDragonCmd` (`cmd/kb/dragon.go`):
       when set, use that directory instead of `benchIsolatedEnv`'s tempdir
       and do not delete it on exit; create it if missing
-- [ ] when `-persist-dir` is set and `bundle.db.ChunkCount(ctx) > 0`, skip
+- [x] when `-persist-dir` is set and `bundle.db.ChunkCount(ctx) > 0`, skip
       fetch-texts/index/BM25-refresh and go straight to answering
-- [ ] add `-force-reindex` to bypass that skip and reindex anyway
-- [ ] log which path was taken ("reusing persisted index at %s (%d
+- [x] add `-force-reindex` to bypass that skip and reindex anyway
+- [x] log which path was taken ("reusing persisted index at %s (%d
       chunks)" vs "indexing into %s")
-- [ ] write tests in `cmd/kb/dragon_test.go`: fresh persist-dir indexes;
+- [x] write tests in `cmd/kb/dragon_test.go`: fresh persist-dir indexes;
       second run against same dir skips indexing; `-force-reindex`
       overrides; default (no `-persist-dir`) behavior unchanged
-- [ ] run `go test ./cmd/...` — must pass before task 2
+- [x] run `go test ./cmd/...` — must pass before task 2
 
 ### Task 2: Fixed doc/question subset with calibrated `-doc-limit`
 
