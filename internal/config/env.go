@@ -79,6 +79,10 @@ func Defaults() Env {
 		ChunkOverlap:     512,
 		RRFK:             60,
 		CommunityAlgo:    "louvain",
+		CandidateK:       20,
+		PerDocCap:        2,
+		SetMaxRounds:     3,
+		SupersedeMode:    "soft",
 		AskRollingWindow: 3,
 		StaleAfter:       24 * time.Hour,
 		LLMTimeout:       60 * time.Second,
@@ -306,6 +310,13 @@ func LoadEnv(lookup EnvLookup) (Env, error) {
 			return Env{}, fmt.Errorf("KB_FTS5: invalid bool %q: %w", v, err)
 		}
 		e.FTS5 = b
+	}
+
+	if err := validateEnv(e); err != nil {
+		return Env{}, err
+	}
+	if err := validateDirectEnv(lookup); err != nil {
+		return Env{}, err
 	}
 
 	return e, nil

@@ -129,14 +129,14 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 7: Add config hygiene tooling and presets
 
-- [ ] Add `kb config show` to dump the effective configuration (all ~46 `KB_*`
+- [x] Add `kb config show` to dump the effective configuration (all ~46 `KB_*`
       variables: the 33 already validated in `internal/config/env.go` plus the 13 read
       directly by connectors/subsystems without central validation)
-- [ ] Add named presets (`fast`, `quality`) codifying the tuning learned from the
+- [x] Add named presets (`fast`, `quality`) codifying the tuning learned from the
       DRAGON report
-- [ ] Add range validation for numeric/enum config values at startup, including for the
+- [x] Add range validation for numeric/enum config values at startup, including for the
       13 currently-unvalidated connector/subsystem variables
-- [ ] write tests for `kb config show` output and for preset application
+- [x] write tests for `kb config show` output and for preset application
 - [x] run project tests - must pass before next task
 
 ### Task 8: Speed up DRAGON benchmark iteration

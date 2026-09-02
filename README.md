@@ -134,6 +134,22 @@ time, staleness vs `KB_STALE_AFTER`, last sync error).
 ./bin/kb doctor
 ```
 
+### config
+
+Dumps the effective runtime configuration as `NAME=VALUE` lines, including
+connector/subsystem variables that are read directly instead of going through
+`internal/config`. Secret values are redacted to `<set>` / `(unset)`.
+
+```sh
+./bin/kb config show                 # current effective configuration
+./bin/kb config show --preset fast   # low-latency DRAGON-tuned preset
+./bin/kb config show --preset quality # higher-recall DRAGON-tuned preset
+```
+
+Numeric and enum configuration values are validated at startup, including
+direct connector/subsystem variables such as `KB_SOCKS_PROXY` and the
+benchmark/verification thresholds.
+
 ### backup
 
 Creates a consistent SQLite backup of `$PERSIST_DIR/kb.db` using
