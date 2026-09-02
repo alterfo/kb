@@ -181,10 +181,10 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 12: Add a 👍/👎 feedback loop
 
-- [ ] Capture per-query thumbs-up/thumbs-down feedback
-- [ ] Feed a personal prior into RRF (reciprocal rank fusion) ranking based on feedback
-- [ ] Build a labeled eval set that records labeling provenance
-- [ ] write tests for feedback capture and RRF prior application
+- [x] Capture per-query thumbs-up/thumbs-down feedback
+- [x] Feed a personal prior into RRF (reciprocal rank fusion) ranking based on feedback
+- [x] Build a labeled eval set that records labeling provenance
+- [x] write tests for feedback capture and RRF prior application
 - [x] run project tests - must pass before next task
 
 ### Task 13: Add near-duplicate detection at indexing time

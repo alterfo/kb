@@ -103,3 +103,6 @@ button.danger { background: var(--err); }
 .node-view details summary { cursor: pointer; color: var(--accent); }
 .node-view details ul { margin: 8px 0 4px 18px; padding: 0; }
 .inferred-edge { border-left: 2px dashed var(--warn); padding-left: 8px; margin: 8px 0; }
+.feedback, .feedback-inline { display: inline; margin-left: 8px; }
+.feedback button, .feedback-inline button { padding: 2px 6px; font-size: 14px; background: transparent; }
+.feedback button.active, .feedback-inline button.active { background: var(--panel); border: 1px solid var(--accent); }

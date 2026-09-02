@@ -324,3 +324,149 @@ func TestHistoryStoreSearchHistoryOrdersByCreatedAt(t *testing.T) {
 		t.Fatalf("SearchHistory: ordered by id, want by created_at: %+v", got)
 	}
 }
+
+func TestHistoryStoreRecordSearchDocumentIDs(t *testing.T) {
+	db := openTestDB(t)
+	s := NewHistoryStore(db)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+
+	if err := s.RecordSearch(ctx, "q", "", 2, "", 0, now, "doc-a", "doc-b"); err != nil {
+		t.Fatalf("RecordSearch: %v", err)
+	}
+
+	got, err := s.SearchHistory(ctx, 10)
+	if err != nil {
+		t.Fatalf("SearchHistory: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("SearchHistory: got %d entries, want 1", len(got))
+	}
+	if len(got[0].DocumentIDs) != 2 || got[0].DocumentIDs[0] != "doc-a" || got[0].DocumentIDs[1] != "doc-b" {
+		t.Fatalf("DocumentIDs = %v, want [doc-a doc-b]", got[0].DocumentIDs)
+	}
+	if got[0].Feedback != history.FeedbackNone {
+		t.Fatalf("Feedback = %d, want none", got[0].Feedback)
+	}
+}
+
+func TestHistoryStoreRecordFeedbackAndFeedbackByDoc(t *testing.T) {
+	db := openTestDB(t)
+	s := NewHistoryStore(db)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+
+	if err := s.RecordSearch(ctx, "up", "", 1, "", 0, now, "doc-a", "doc-b"); err != nil {
+		t.Fatalf("RecordSearch: %v", err)
+	}
+	if err := s.RecordSearch(ctx, "down", "", 1, "", 0, now, "doc-b", "doc-c"); err != nil {
+		t.Fatalf("RecordSearch: %v", err)
+	}
+	entries, err := s.SearchHistory(ctx, 10)
+	if err != nil {
+		t.Fatalf("SearchHistory: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("SearchHistory: got %d entries, want 2", len(entries))
+	}
+	for _, e := range entries {
+		switch e.Query {
+		case "up":
+			if err := s.RecordFeedback(ctx, e.ID, history.FeedbackUp, now); err != nil {
+				t.Fatalf("RecordFeedback up: %v", err)
+			}
+		case "down":
+			if err := s.RecordFeedback(ctx, e.ID, history.FeedbackDown, now); err != nil {
+				t.Fatalf("RecordFeedback down: %v", err)
+			}
+		}
+	}
+
+	prior, err := s.FeedbackByDoc(ctx)
+	if err != nil {
+		t.Fatalf("FeedbackByDoc: %v", err)
+	}
+	if prior["doc-a"] != 1 {
+		t.Errorf("prior[doc-a] = %v, want 1", prior["doc-a"])
+	}
+	if prior["doc-b"] != 0 {
+		t.Errorf("prior[doc-b] = %v, want 0 (up+down cancels)", prior["doc-b"])
+	}
+	if prior["doc-c"] != -1 {
+		t.Errorf("prior[doc-c] = %v, want -1", prior["doc-c"])
+	}
+}
+
+func TestHistoryStoreRecordFeedbackInvalidValue(t *testing.T) {
+	db := openTestDB(t)
+	s := NewHistoryStore(db)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+
+	if err := s.RecordSearch(ctx, "q", "", 0, "", 0, now); err != nil {
+		t.Fatalf("RecordSearch: %v", err)
+	}
+	entries, err := s.SearchHistory(ctx, 10)
+	if err != nil {
+		t.Fatalf("SearchHistory: %v", err)
+	}
+	if err := s.RecordFeedback(ctx, entries[0].ID, 2, now); err == nil {
+		t.Fatal("RecordFeedback with feedback=2 should fail")
+	}
+}
+
+func TestHistoryStoreLabeledEval(t *testing.T) {
+	db := openTestDB(t)
+	s := NewHistoryStore(db)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+
+	if err := s.RecordSearch(ctx, "relevant query", "", 1, "", 0, now, "doc-a"); err != nil {
+		t.Fatalf("RecordSearch: %v", err)
+	}
+	if err := s.RecordSearch(ctx, "irrelevant query", "", 1, "", 0, now, "doc-b"); err != nil {
+		t.Fatalf("RecordSearch: %v", err)
+	}
+	if err := s.RecordSearch(ctx, "unrated query", "", 1, "", 0, now, "doc-c"); err != nil {
+		t.Fatalf("RecordSearch: %v", err)
+	}
+	entries, err := s.SearchHistory(ctx, 10)
+	if err != nil {
+		t.Fatalf("SearchHistory: %v", err)
+	}
+	for _, e := range entries {
+		switch e.Query {
+		case "relevant query":
+			if err := s.RecordFeedback(ctx, e.ID, history.FeedbackUp, now); err != nil {
+				t.Fatalf("RecordFeedback up: %v", err)
+			}
+		case "irrelevant query":
+			if err := s.RecordFeedback(ctx, e.ID, history.FeedbackDown, now); err != nil {
+				t.Fatalf("RecordFeedback down: %v", err)
+			}
+		}
+	}
+
+	examples, err := s.LabeledEval(ctx)
+	if err != nil {
+		t.Fatalf("LabeledEval: %v", err)
+	}
+	if len(examples) != 2 {
+		t.Fatalf("LabeledEval: got %d examples, want 2", len(examples))
+	}
+	labels := map[string]string{examples[0].Query: examples[0].Label, examples[1].Query: examples[1].Label}
+	if labels["relevant query"] != history.LabelRelevant {
+		t.Errorf("relevant query label = %q", labels["relevant query"])
+	}
+	if labels["irrelevant query"] != history.LabelNotRelevant {
+		t.Errorf("irrelevant query label = %q", labels["irrelevant query"])
+	}
+	for _, e := range examples {
+		if e.Provenance != "user-feedback" {
+			t.Errorf("provenance = %q, want user-feedback", e.Provenance)
+		}
+		if e.LabeledAt.IsZero() {
+			t.Errorf("LabeledAt should be set for %q", e.Query)
+		}
+	}
+}

@@ -97,6 +97,8 @@ type Config struct {
 	EmbedModel     string
 	Hybrid         bool
 	AuthorityBonus map[string]float64
+	Feedback       FeedbackPrior
+	FeedbackBonus  float64
 	RRFK           int
 	PerDocCap      int
 	DefaultK       int
@@ -290,6 +292,7 @@ func (r *Retriever) localLegs(ctx context.Context, query string, filter vector.F
 func (r *Retriever) fuseRankLists(ctx context.Context, query string, opt Options, k int, chunkByID map[string]vector.Chunk, rankLists [][]string) []vector.ScoredChunk {
 	fused := rrfScores(rankLists, r.cfg.RRFK)
 	normalized := minMaxNormalize(fused)
+	prior := r.personalPrior(ctx)
 
 	scored := make([]vector.ScoredChunk, 0, len(fused))
 	for id, chunk := range chunkByID {
@@ -299,7 +302,7 @@ func (r *Retriever) fuseRankLists(ctx context.Context, query string, opt Options
 		if !opt.Filter.Matches(chunk.Source, chunk.Metadata) {
 			continue
 		}
-		final := (normalized[id] + authorityBonus(chunk.FilePath, r.cfg.AuthorityBonus)) * supersededPenalty(chunk.SupersededBy)
+		final := (normalized[id] + authorityBonus(chunk.FilePath, r.cfg.AuthorityBonus) + feedbackPrior(prior, r.cfg.FeedbackBonus, chunk.RefDocID)) * supersededPenalty(chunk.SupersededBy)
 		scored = append(scored, vector.ScoredChunk{Chunk: chunk, Score: final})
 	}
 

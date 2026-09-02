@@ -85,7 +85,10 @@ CREATE TABLE IF NOT EXISTS search_history (
 	results_count INTEGER NOT NULL DEFAULT 0,
 	answer TEXT NOT NULL DEFAULT '',
 	duration_ms INTEGER NOT NULL DEFAULT 0,
-	created_at TEXT NOT NULL
+	created_at TEXT NOT NULL,
+	document_ids TEXT NOT NULL DEFAULT '[]',
+	feedback INTEGER NOT NULL DEFAULT 0,
+	feedback_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_search_history_created_at ON search_history(created_at);
 
@@ -180,6 +183,9 @@ func (d *DB) migrate(ctx context.Context) error {
 	if err := d.migrateSearchHistoryAnswer(ctx); err != nil {
 		return err
 	}
+	if err := d.migrateSearchHistoryFeedback(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -203,6 +209,30 @@ func (d *DB) migrateSearchHistoryAnswer(ctx context.Context) error {
 	}
 	if _, err := d.sql.ExecContext(ctx, `ALTER TABLE search_history ADD COLUMN answer TEXT NOT NULL DEFAULT ''`); err != nil {
 		return fmt.Errorf("sqlite: migrate search_history: add column answer: %w", err)
+	}
+	return nil
+}
+
+// migrateSearchHistoryFeedback adds the feedback and document_ids columns to
+// search_history tables created before the thumbs-up/down feedback loop
+// existed. Old rows stay unrated and carry no retrieved-document list.
+func (d *DB) migrateSearchHistoryFeedback(ctx context.Context) error {
+	cols, err := d.tableColumns(ctx, "search_history")
+	if err != nil {
+		return fmt.Errorf("sqlite: migrate search_history feedback: %w", err)
+	}
+
+	for _, col := range []struct{ name, decl string }{
+		{"document_ids", "TEXT NOT NULL DEFAULT '[]'"},
+		{"feedback", "INTEGER NOT NULL DEFAULT 0"},
+		{"feedback_at", "TEXT"},
+	} {
+		if cols[col.name] {
+			continue
+		}
+		if _, err := d.sql.ExecContext(ctx, `ALTER TABLE search_history ADD COLUMN `+col.name+` `+col.decl); err != nil {
+			return fmt.Errorf("sqlite: migrate search_history: add column %s: %w", col.name, err)
+		}
 	}
 	return nil
 }

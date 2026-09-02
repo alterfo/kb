@@ -33,6 +33,11 @@
   <div class="markdown">{{.}}</div>
   {{end}}
   <p class="muted">{{.ResultsCount}} results · {{.DurationMS}}ms · {{.CreatedAt}}</p>
+  <form method="post" action="/search/feedback" class="feedback">
+    <input type="hidden" name="id" value="{{.ID}}">
+    <button type="submit" name="feedback" value="1" title="Helpful"{{if eq .Feedback 1}} class="active"{{end}}>👍</button>
+    <button type="submit" name="feedback" value="-1" title="Not helpful"{{if eq .Feedback -1}} class="active"{{end}}>👎</button>
+  </form>
   <p><a class="button" href="/search?q={{.Query | urlquery}}{{with .SourceFilter}}&amp;source={{. | urlquery}}{{end}}">Повторить поиск</a></p>
 </section>
 {{end}}
@@ -68,7 +73,13 @@
   <h2>Recent searches</h2>
   <ul class="history-list">
   {{range .Data.History}}
-    <li><a href="/search?id={{.ID}}">{{.Query}}</a> <span class="muted">{{.ResultsCount}} results · {{.DurationMS}}ms · {{.CreatedAt}}</span></li>
+    <li><a href="/search?id={{.ID}}">{{.Query}}</a> <span class="muted">{{.ResultsCount}} results · {{.DurationMS}}ms · {{.CreatedAt}}</span>
+      <form method="post" action="/search/feedback" class="feedback-inline">
+        <input type="hidden" name="id" value="{{.ID}}">
+        <button type="submit" name="feedback" value="1" title="Helpful"{{if eq .Feedback 1}} class="active"{{end}}>👍</button>
+        <button type="submit" name="feedback" value="-1" title="Not helpful"{{if eq .Feedback -1}} class="active"{{end}}>👎</button>
+      </form>
+    </li>
   {{end}}
   </ul>
 </section>

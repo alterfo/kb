@@ -14,6 +14,7 @@ import (
 	"github.com/alterfo/kb/internal/engine/metrics"
 	"github.com/alterfo/kb/internal/engine/report"
 	"github.com/alterfo/kb/internal/engine/retriever"
+	"github.com/alterfo/kb/internal/store/history"
 	"github.com/alterfo/kb/internal/store/vector"
 )
 
@@ -37,15 +38,18 @@ type searchHistoryView struct {
 	ResultsCount int
 	DurationMS   int64
 	CreatedAt    string
+	Feedback     int
 }
 
 type savedSearchView struct {
+	ID           int64
 	Query        string
 	SourceFilter string
 	Answer       template.HTML
 	ResultsCount int
 	DurationMS   int64
 	CreatedAt    string
+	Feedback     int
 }
 
 type searchData struct {
@@ -115,9 +119,52 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	} else {
 		data.Answer = renderMarkdown(answer)
 	}
-	s.recordSearch(ctx, q, source, len(data.Results), stored, s.deps.Now().Sub(start))
+	s.recordSearch(ctx, q, source, len(data.Results), stored, s.deps.Now().Sub(start), uniqueDocIDs(result.Chunks))
 	data.History = s.recentSearches(ctx)
 	s.renderSearch(w, r, http.StatusOK, nil, data)
+}
+
+// uniqueDocIDs returns the de-duplicated document ids of the retrieved
+// chunks, preserving first-seen order.
+func uniqueDocIDs(chunks []vector.ScoredChunk) []string {
+	seen := make(map[string]struct{}, len(chunks))
+	out := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		if c.RefDocID == "" {
+			continue
+		}
+		if _, ok := seen[c.RefDocID]; ok {
+			continue
+		}
+		seen[c.RefDocID] = struct{}{}
+		out = append(out, c.RefDocID)
+	}
+	return out
+}
+
+// handleSearchFeedback records a thumbs-up/thumbs-down rating on a saved
+// search and redirects back to the saved view. History is fail-open: a
+// missing row is a no-op rather than an error.
+func (s *Server) handleSearchFeedback(w http.ResponseWriter, r *http.Request) {
+	if s.deps.History == nil {
+		http.Error(w, "history unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	id, err := strconv.ParseInt(r.FormValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid search id", http.StatusBadRequest)
+		return
+	}
+	feedback, err := strconv.Atoi(r.FormValue("feedback"))
+	if err != nil || (feedback != history.FeedbackUp && feedback != history.FeedbackDown && feedback != history.FeedbackNone) {
+		http.Error(w, "invalid feedback value", http.StatusBadRequest)
+		return
+	}
+	if err := s.deps.History.RecordFeedback(r.Context(), id, feedback, s.deps.Now()); err != nil {
+		http.Error(w, "failed to record feedback", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/search?id="+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
 // renderSavedSearch shows a stored search snapshot without re-running
@@ -134,12 +181,14 @@ func (s *Server) renderSavedSearch(ctx context.Context, w http.ResponseWriter, r
 	data.Query = entry.Query
 	data.Source = entry.SourceFilter
 	data.Saved = &savedSearchView{
+		ID:           entry.ID,
 		Query:        entry.Query,
 		SourceFilter: entry.SourceFilter,
 		Answer:       renderMarkdown(entry.Answer),
 		ResultsCount: entry.ResultsCount,
 		DurationMS:   entry.DurationMS,
 		CreatedAt:    entry.CreatedAt.Format(time.RFC3339),
+		Feedback:     entry.Feedback,
 	}
 	s.renderSearch(w, r, http.StatusOK, nil, data)
 	return true
@@ -158,11 +207,11 @@ func (s *Server) renderSearch(w http.ResponseWriter, r *http.Request, status int
 
 // recordSearch is fail-open: history is diagnostic, not load-bearing, so a
 // write failure must never surface as a search error to the user.
-func (s *Server) recordSearch(ctx context.Context, query, source string, resultsCount int, answer string, duration time.Duration) {
+func (s *Server) recordSearch(ctx context.Context, query, source string, resultsCount int, answer string, duration time.Duration, documentIDs []string) {
 	if s.deps.History == nil {
 		return
 	}
-	_ = s.deps.History.RecordSearch(ctx, query, source, resultsCount, answer, duration, s.deps.Now())
+	_ = s.deps.History.RecordSearch(ctx, query, source, resultsCount, answer, duration, s.deps.Now(), documentIDs...)
 }
 
 // recentSearches is fail-open: a history read failure just means no recent
@@ -183,6 +232,7 @@ func (s *Server) recentSearches(ctx context.Context) []searchHistoryView {
 			ResultsCount: e.ResultsCount,
 			DurationMS:   e.DurationMS,
 			CreatedAt:    e.CreatedAt.Format(time.RFC3339),
+			Feedback:     e.Feedback,
 		})
 	}
 	return views

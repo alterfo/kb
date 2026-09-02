@@ -27,6 +27,7 @@ import (
 	"github.com/alterfo/kb/internal/store/vector"
 )
 
+const defaultFeedbackBonus = 0.1
 const defaultStaleAfter = 24 * time.Hour
 
 type ChatClient interface {
@@ -63,6 +64,7 @@ type Deps struct {
 	Hybrid               bool
 	AuthorityBonus       map[string]float64
 	RRFK                 int
+	FeedbackBonus        float64
 	DefaultK             int
 	DetectContradictions bool
 	RollingMemory        int
@@ -110,6 +112,9 @@ func NewServer(deps Deps) *Server {
 	if deps.StatePath == "" {
 		deps.StatePath = filepath.Join(deps.PersistDir, ".sync-state.json")
 	}
+	if deps.FeedbackBonus == 0 {
+		deps.FeedbackBonus = defaultFeedbackBonus
+	}
 	if deps.StaleAfter <= 0 {
 		deps.StaleAfter = defaultStaleAfter
 	}
@@ -153,6 +158,8 @@ func NewServer(deps Deps) *Server {
 		LLMModel:       deps.LLMModel,
 		EmbedModel:     deps.EmbedModel,
 		Hybrid:         deps.Hybrid,
+		Feedback:       deps.History,
+		FeedbackBonus:  deps.FeedbackBonus,
 		AuthorityBonus: deps.AuthorityBonus,
 		RRFK:           deps.RRFK,
 		DefaultK:       deps.DefaultK,
@@ -171,6 +178,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /{$}", s.handleHome)
+	mux.HandleFunc("POST /search/feedback", s.handleSearchFeedback)
 	mux.HandleFunc("GET /search", s.handleSearch)
 	mux.HandleFunc("GET /ask", s.handleAskPage)
 	mux.HandleFunc("GET /ask/history", s.handleAskHistory)

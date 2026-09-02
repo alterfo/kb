@@ -15,6 +15,7 @@ import (
 
 	"github.com/alterfo/kb/internal/connector"
 	"github.com/alterfo/kb/internal/llm"
+	"github.com/alterfo/kb/internal/store/history"
 )
 
 func doc(id, source, body string) connector.Document {
@@ -329,5 +330,72 @@ func TestSearch_UnknownHistoryIDFallsBackToSearch(t *testing.T) {
 	}
 	if !strings.Contains(body, "no results") {
 		t.Errorf("unknown id fallback missing normal search page: %q", body)
+	}
+}
+
+func TestSearch_RecordsDocumentIDs(t *testing.T) {
+	te := newTestEnv(t, nil)
+	writeDoc(t, te.root, "notes/rain.md", doc("rain", "notes", "The rain in Spain falls mainly on the plain."))
+	te.index(t, "notes/rain.md")
+
+	getPage(t, te.server.Handler(), "/search?q=rain+Spain")
+
+	entries, err := te.history.SearchHistory(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("SearchHistory: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("SearchHistory: got %d entries, want 1", len(entries))
+	}
+	if len(entries[0].DocumentIDs) != 1 || entries[0].DocumentIDs[0] != "notes/rain" {
+		t.Fatalf("DocumentIDs = %v, want [notes/rain]", entries[0].DocumentIDs)
+	}
+}
+
+func TestSearch_FeedbackEndpointRecordsRating(t *testing.T) {
+	te := newTestEnv(t, nil)
+	now := te.server.deps.Now()
+	if err := te.history.RecordSearch(context.Background(), "rated query", "notes", 1, "answer", 10*time.Millisecond, now, "rain"); err != nil {
+		t.Fatalf("RecordSearch: %v", err)
+	}
+	entries, err := te.history.SearchHistory(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("SearchHistory: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("SearchHistory: got %d entries, want 1", len(entries))
+	}
+	id := strconv.FormatInt(entries[0].ID, 10)
+
+	rr := postForm(t, te.server.Handler(), "/search/feedback", url.Values{"id": {id}, "feedback": {"1"}})
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", rr.Code)
+	}
+	if loc := rr.Header().Get("Location"); loc != "/search?id="+id {
+		t.Errorf("Location = %q, want /search?id=%s", loc, id)
+	}
+
+	entry, ok, err := te.history.SearchEntryByID(context.Background(), entries[0].ID)
+	if err != nil || !ok {
+		t.Fatalf("SearchEntryByID: ok=%v err=%v", ok, err)
+	}
+	if entry.Feedback != history.FeedbackUp {
+		t.Errorf("Feedback = %d, want up", entry.Feedback)
+	}
+}
+
+func TestSearch_FeedbackEndpointRejectsInvalidValue(t *testing.T) {
+	te := newTestEnv(t, nil)
+	now := te.server.deps.Now()
+	if err := te.history.RecordSearch(context.Background(), "q", "", 0, "", 0, now); err != nil {
+		t.Fatalf("RecordSearch: %v", err)
+	}
+	entries, err := te.history.SearchHistory(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("SearchHistory: %v", err)
+	}
+	rr := postForm(t, te.server.Handler(), "/search/feedback", url.Values{"id": {strconv.FormatInt(entries[0].ID, 10)}, "feedback": {"42"}})
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
 	}
 }
