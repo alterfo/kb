@@ -85,6 +85,7 @@ func runVerifyCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 		PerDocCap:      env.PerDocCap,
 		IntraDocBudget: env.IntraDocBudget,
 		SupersedeMode:  retriever.SupersedeMode(env.SupersedeMode),
+		ANNPrefilter:   env.ANNPrefilter,
 	})
 
 	ask := func(ctx context.Context, question string) (qa.Answer, error) {

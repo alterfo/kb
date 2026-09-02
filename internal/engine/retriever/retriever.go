@@ -105,7 +105,15 @@ type Config struct {
 	SetMaxRounds   int
 	SupersedeMode  SupersedeMode
 	IntraDocBudget int
+	ANNPrefilter   bool
 	Clock          func() time.Time
+}
+
+// candidateVectorStore is the optional vector-store capability used by the
+// ANN prefilter. *sqlite.VectorStore implements it; stores without it keep
+// the exhaustive Query path.
+type candidateVectorStore interface {
+	QueryCandidates(ctx context.Context, vec []float32, k int, candidateIDs []string, filter vector.Filter) ([]vector.ScoredChunk, error)
 }
 
 type Retriever struct {
@@ -261,7 +269,7 @@ func (r *Retriever) localLegs(ctx context.Context, query string, filter vector.F
 	var rankLists [][]string
 
 	subqueries := expandQuery(ctx, r.cfg.Chat, r.cfg.LLMModel, query)
-	if list := r.denseRankLists(ctx, subqueries, filter, chunkByID); len(list) > 0 {
+	if list := r.denseRankLists(ctx, query, subqueries, filter, chunkByID); len(list) > 0 {
 		rankLists = append(rankLists, list...)
 	}
 
@@ -342,7 +350,7 @@ func (r *Retriever) rerank(ctx context.Context, query string, scored []vector.Sc
 	return reranked
 }
 
-func (r *Retriever) denseRankLists(ctx context.Context, subqueries []string, filter vector.Filter, chunkByID map[string]vector.Chunk) [][]string {
+func (r *Retriever) denseRankLists(ctx context.Context, query string, subqueries []string, filter vector.Filter, chunkByID map[string]vector.Chunk) [][]string {
 	if r.cfg.Embed == nil || r.cfg.Vector == nil || len(subqueries) == 0 {
 		return nil
 	}
@@ -354,11 +362,15 @@ func (r *Retriever) denseRankLists(ctx context.Context, subqueries []string, fil
 	}
 
 	var lists [][]string
-	for _, vec := range vecs {
+	for i, vec := range vecs {
 		if len(vec) == 0 {
 			continue
 		}
-		results, err := r.cfg.Vector.Query(ctx, vec, r.cfg.CandidateK, filter)
+		subquery := query
+		if i < len(subqueries) {
+			subquery = subqueries[i]
+		}
+		results, err := r.queryDense(ctx, vec, subquery, filter)
 		if err != nil {
 			addDegraded(ctx, "dense vector query failed: "+err.Error())
 			continue
@@ -373,6 +385,73 @@ func (r *Retriever) denseRankLists(ctx context.Context, subqueries []string, fil
 		}
 	}
 	return lists
+}
+
+// queryDense scores one query vector against the corpus, using the ANN
+// prefilter candidate set when enabled. It falls back to exhaustive Query
+// on an empty candidate set, an unsupported store, or a prefilter error so
+// enabling the flag never removes the dense retrieval leg.
+func (r *Retriever) queryDense(ctx context.Context, vec []float32, query string, filter vector.Filter) ([]vector.ScoredChunk, error) {
+	if !r.cfg.ANNPrefilter {
+		return r.cfg.Vector.Query(ctx, vec, r.cfg.CandidateK, filter)
+	}
+
+	candidates := r.prefilterCandidates(ctx, query)
+	if len(candidates) == 0 {
+		addDegraded(ctx, "ANN prefilter produced no candidates; falling back to exhaustive vector search")
+		return r.cfg.Vector.Query(ctx, vec, r.cfg.CandidateK, filter)
+	}
+	store, ok := r.cfg.Vector.(candidateVectorStore)
+	if !ok {
+		addDegraded(ctx, "ANN prefilter requested but vector store lacks candidate query support; falling back to exhaustive vector search")
+		return r.cfg.Vector.Query(ctx, vec, r.cfg.CandidateK, filter)
+	}
+	results, err := store.QueryCandidates(ctx, vec, r.cfg.CandidateK, candidates, filter)
+	if err != nil {
+		addDegraded(ctx, "ANN prefilter query failed; falling back to exhaustive vector search: "+err.Error())
+		return r.cfg.Vector.Query(ctx, vec, r.cfg.CandidateK, filter)
+	}
+	return results, nil
+}
+
+// prefilterCandidates builds the small dense-retrieval candidate set from
+// FTS5 lexical hits plus source chunks of graph entities linked from the
+// query. It is capped to keep cosine scoring O(K) rather than O(N).
+func (r *Retriever) prefilterCandidates(ctx context.Context, query string) []string {
+	limit := r.cfg.CandidateK * 4
+	if limit < 64 {
+		limit = 64
+	}
+
+	seen := make(map[string]struct{})
+	var out []string
+	add := func(id string) {
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		if len(out) >= limit {
+			return
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+
+	if r.cfg.BM25 != nil {
+		for _, hit := range r.cfg.BM25.Search(query, r.cfg.CandidateK) {
+			add(hit.ID)
+		}
+	}
+	if r.cfg.Graph != nil {
+		for _, e := range linkEntities(ctx, r.cfg.Graph, query) {
+			for _, chunkID := range e.SourceChunks {
+				add(chunkID)
+			}
+		}
+	}
+	return out
 }
 
 func (r *Retriever) bm25RankList(query string, filter vector.Filter, chunkByID map[string]vector.Chunk) []string {

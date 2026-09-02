@@ -358,6 +358,81 @@ func (s *VectorStore) Query(ctx context.Context, vec []float32, k int, filter ve
 	return scored, nil
 }
 
+// QueryCandidates scores only the supplied candidate chunks instead of every
+// active embedding. It is the ANN-prefilter path: the retriever builds a
+// small candidate set from FTS5 plus entity-linking and then calls this to
+// compute cosine similarity over O(K) rows rather than O(N).
+func (s *VectorStore) QueryCandidates(ctx context.Context, vec []float32, k int, candidateIDs []string, filter vector.Filter) ([]vector.ScoredChunk, error) {
+	if k <= 0 || len(candidateIDs) == 0 {
+		return nil, nil
+	}
+
+	ids := dedupeStrings(candidateIDs)
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	query := `SELECT ` + chunkSelectCols + `
+		FROM chunks WHERE embedding IS NOT NULL AND valid_to IS NULL`
+	args := make([]any, 0, len(ids)+len(filter.Sources))
+	query += fmt.Sprintf(" AND id IN (%s)", strings.TrimSuffix(strings.Repeat("?,", len(ids)), ","))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	if len(filter.Sources) > 0 {
+		query += fmt.Sprintf(" AND source IN (%s)", strings.TrimSuffix(strings.Repeat("?,", len(filter.Sources)), ","))
+		for _, src := range filter.Sources {
+			args = append(args, src)
+		}
+	}
+
+	rows, err := s.db.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: QueryCandidates: %w", err)
+	}
+	defer rows.Close()
+
+	var scored []vector.ScoredChunk
+	for rows.Next() {
+		c, err := scanChunk(rows)
+		if err != nil {
+			return nil, fmt.Errorf("sqlite: QueryCandidates: scan: %w", err)
+		}
+		if !filter.Matches(c.Source, c.Metadata) {
+			continue
+		}
+		scored = append(scored, vector.ScoredChunk{
+			Chunk: c,
+			Score: cosineSimilarity(vec, c.Embedding),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: QueryCandidates: %w", err)
+	}
+
+	sort.SliceStable(scored, func(i, j int) bool { return scored[i].Score > scored[j].Score })
+	if len(scored) > k {
+		scored = scored[:k]
+	}
+	return scored, nil
+}
+
+func dedupeStrings(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
+}
+
 func (s *VectorStore) AllForBM25(ctx context.Context) ([]vector.Chunk, error) {
 	rows, err := s.db.sql.QueryContext(ctx, `SELECT `+chunkSelectCols+` FROM chunks WHERE valid_to IS NULL`)
 	if err != nil {

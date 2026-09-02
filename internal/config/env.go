@@ -45,6 +45,7 @@ type Env struct {
 	LLMNoThink           bool
 	IndexGraph           bool
 	FTS5                 bool
+	ANNPrefilter         bool
 }
 
 // DefaultLocalLLMURL is the local LLM. It is pinned to the local
@@ -90,6 +91,7 @@ func Defaults() Env {
 		MaxGapQueries:    3,
 		IndexGraph:       true,
 		FTS5:             true,
+		ANNPrefilter:     false,
 	}
 }
 
@@ -310,6 +312,13 @@ func LoadEnv(lookup EnvLookup) (Env, error) {
 			return Env{}, fmt.Errorf("KB_FTS5: invalid bool %q: %w", v, err)
 		}
 		e.FTS5 = b
+	}
+	if v, ok := lookup("KB_ANN_PREFILTER"); ok && v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return Env{}, fmt.Errorf("KB_ANN_PREFILTER: invalid bool %q: %w", v, err)
+		}
+		e.ANNPrefilter = b
 	}
 
 	if err := validateEnv(e); err != nil {

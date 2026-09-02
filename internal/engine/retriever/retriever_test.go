@@ -12,8 +12,12 @@ import (
 )
 
 type fakeVectorStore struct {
-	chunks   []vector.Chunk
-	queryErr error
+	chunks             []vector.Chunk
+	queryErr           error
+	candidateQueryErr  error
+	queryCalls         int
+	candidateQueryCall int
+	lastCandidates     []string
 }
 
 func (f *fakeVectorStore) EnsureDim(ctx context.Context, dim int) error            { return nil }
@@ -49,6 +53,7 @@ func (f *fakeVectorStore) DocHash(ctx context.Context, docID string) (string, bo
 func (f *fakeVectorStore) SetDocHash(ctx context.Context, docID, hash string) error { return nil }
 
 func (f *fakeVectorStore) Query(ctx context.Context, vec []float32, k int, filter vector.Filter) ([]vector.ScoredChunk, error) {
+	f.queryCalls++
 	if f.queryErr != nil {
 		return nil, f.queryErr
 	}
@@ -64,6 +69,40 @@ func (f *fakeVectorStore) Query(ctx context.Context, vec []float32, k int, filte
 		if score <= 0 {
 			// Mimics a real dense store: an unrelated/zero-signal chunk is
 			// not "found" by the query, only genuinely similar ones are.
+			continue
+		}
+		scored = append(scored, vector.ScoredChunk{Chunk: c, Score: score})
+	}
+	sort.SliceStable(scored, func(i, j int) bool { return scored[i].Score > scored[j].Score })
+	if len(scored) > k {
+		scored = scored[:k]
+	}
+	return scored, nil
+}
+
+func (f *fakeVectorStore) QueryCandidates(ctx context.Context, vec []float32, k int, candidateIDs []string, filter vector.Filter) ([]vector.ScoredChunk, error) {
+	f.candidateQueryCall++
+	f.lastCandidates = append([]string(nil), candidateIDs...)
+	if f.candidateQueryErr != nil {
+		return nil, f.candidateQueryErr
+	}
+	allowed := make(map[string]struct{}, len(candidateIDs))
+	for _, id := range candidateIDs {
+		allowed[id] = struct{}{}
+	}
+	var scored []vector.ScoredChunk
+	for _, c := range f.chunks {
+		if c.ValidTo != "" {
+			continue
+		}
+		if _, ok := allowed[c.ID]; !ok {
+			continue
+		}
+		if !filter.Matches(c.Source, c.Metadata) {
+			continue
+		}
+		score := cosine(vec, c.Embedding)
+		if score <= 0 {
 			continue
 		}
 		scored = append(scored, vector.ScoredChunk{Chunk: c, Score: score})

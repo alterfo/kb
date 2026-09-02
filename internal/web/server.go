@@ -72,6 +72,7 @@ type Deps struct {
 	AbstainThreshold     float64
 	SupersedeMode        string
 	QualifierFilter      bool
+	ANNPrefilter         bool
 
 	SourcesPath string
 	StatePath   string
@@ -158,6 +159,7 @@ func NewServer(deps Deps) *Server {
 		SetMaxRounds:   deps.SetMaxRounds,
 		IntraDocBudget: deps.IntraDocBudget,
 		SupersedeMode:  retriever.SupersedeMode(deps.SupersedeMode),
+		ANNPrefilter:   deps.ANNPrefilter,
 	})
 	s.retriever = r
 	return s

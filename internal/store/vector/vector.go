@@ -273,6 +273,7 @@ type Store interface {
 	ClearSupersededBy(ctx context.Context, refDocID string) error
 	ClearSupersededOnDoc(ctx context.Context, docID string) error
 	Query(ctx context.Context, vec []float32, k int, filter Filter) ([]ScoredChunk, error)
+	QueryCandidates(ctx context.Context, vec []float32, k int, candidateIDs []string, filter Filter) ([]ScoredChunk, error)
 	AllForBM25(ctx context.Context) ([]Chunk, error)
 	ChunksByDoc(ctx context.Context, docID string) ([]Chunk, error)
 	DocHash(ctx context.Context, docID string) (string, bool, error)

@@ -194,6 +194,7 @@ func benchRetriever(env config.Env, bundle *engineBundle) *retriever.Retriever {
 		IntraDocBudget: env.IntraDocBudget,
 		SetMaxRounds:   env.SetMaxRounds,
 		SupersedeMode:  retriever.SupersedeMode(env.SupersedeMode),
+		ANNPrefilter:   env.ANNPrefilter,
 	})
 }
 

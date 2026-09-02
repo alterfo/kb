@@ -262,6 +262,7 @@ func envVars(e Env) []EffectiveVar {
 		{Name: "KB_LLM_NO_THINK", Value: strconv.FormatBool(e.LLMNoThink), Default: "false"},
 		{Name: "KB_INDEX_GRAPH", Value: strconv.FormatBool(e.IndexGraph), Default: "true"},
 		{Name: "KB_FTS5", Value: strconv.FormatBool(e.FTS5), Default: "true"},
+		{Name: "KB_ANN_PREFILTER", Value: strconv.FormatBool(e.ANNPrefilter), Default: "false"},
 	}
 }
 

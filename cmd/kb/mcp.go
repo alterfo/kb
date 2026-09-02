@@ -52,6 +52,7 @@ func runMCPCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 		SupersedeMode:        env.SupersedeMode,
 		DetectContradictions: env.DetectContradictions,
 		QualifierFilter:      env.QualifierFilter,
+		ANNPrefilter:         env.ANNPrefilter,
 		RollingMemory:        env.AskRollingWindow,
 		SourcesPath:          filepath.Join(env.KBRoot, "sources.yaml"),
 	})

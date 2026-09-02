@@ -150,12 +150,12 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 9: Add an ANN prefilter on top of FTS5
 
-- [ ] Add entity-linking plus an ANN prefilter so cosine similarity is computed only
+- [x] Add entity-linking plus an ANN prefilter so cosine similarity is computed only
       within the prefiltered candidate set (O(N) → O(K))
-- [ ] Implement in pure Go (avoid sqlite-vec, which requires cgo)
-- [ ] Gate behind an environment flag with fallback; this task depends on task 6
+- [x] Implement in pure Go (avoid sqlite-vec, which requires cgo)
+- [x] Gate behind an environment flag with fallback; this task depends on task 6
       (FTS5) already being in place
-- [ ] write tests for prefilter correctness and for the fallback path
+- [x] write tests for prefilter correctness and for the fallback path
 - [x] run project tests - must pass before next task
 
 ### Task 10: Improve SQLite concurrency
