@@ -357,7 +357,11 @@ Starts the web dashboard (`internal/web`):
   round; progress renders as a structured list of steps
   (type/status/stage/answer), not raw JSON; runs persist to SQLite, so
   `/ask/history` lists past and in-flight runs and a run started before a
-  restart still shows its last known state instead of an empty page.
+  restart still shows its last known state instead of an empty page. Completed
+  ask responses are cached in SQLite keyed by `hash(query + corpus_version +
+  config fingerprint)`, so a repeated question against an unchanged corpus and
+  configuration returns the previous answer (including fail-open placeholders)
+  without paying LLM/retrieval cost again; stale entries are pruned on startup.
 - **Documents** — summary list, edit form, htmx delete; `/documents/view` shows
   a document's graph relationships (entities/relations whose source chunks
   overlap the document), not just its raw content.

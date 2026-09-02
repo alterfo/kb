@@ -99,6 +99,13 @@ CREATE TABLE IF NOT EXISTS ask_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_ask_runs_created_at ON ask_runs(created_at);
 
+CREATE TABLE IF NOT EXISTS ask_cache (
+	cache_key TEXT PRIMARY KEY,
+	corpus_version INTEGER NOT NULL,
+	graph_json TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(id UNINDEXED, text);
 `
 

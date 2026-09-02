@@ -68,6 +68,7 @@ type Deps struct {
 	SupersedeMode        string
 	QualifierFilter      bool
 	ANNPrefilter         bool
+	AskCache             got.AskCache
 
 	SourcesPath string
 }
@@ -113,6 +114,7 @@ func NewServer(deps Deps) *Server {
 		ExtractQualifiers:     deps.QualifierFilter,
 		AbstainThreshold:      deps.AbstainThreshold,
 		RollingMemory:         deps.RollingMemory,
+		AskCache:              deps.AskCache,
 	})
 
 	s := &Server{

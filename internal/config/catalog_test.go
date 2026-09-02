@@ -144,3 +144,42 @@ func TestValidateEnvRangeFailures(t *testing.T) {
 		t.Fatalf("ValidateEnv(TopK=0) = %v, want KB_TOP_K error", err)
 	}
 }
+
+func TestFingerprintStableAcrossCalls(t *testing.T) {
+	env := Defaults()
+	lookup := fakeLookup(map[string]string{"KB_SOCKS_PROXY": "socks5://127.0.0.1:3333"})
+	a := Fingerprint(env, lookup)
+	b := Fingerprint(env, lookup)
+	if a != b {
+		t.Fatalf("Fingerprint not stable: %q != %q", a, b)
+	}
+	if len(a) != 64 {
+		t.Fatalf("Fingerprint length = %d, want sha256 hex (64)", len(a))
+	}
+}
+
+func TestFingerprintChangesWithConfig(t *testing.T) {
+	env := Defaults()
+	lookup := fakeLookup(nil)
+	base := Fingerprint(env, lookup)
+
+	changed := env
+	changed.TopK = 25
+	if Fingerprint(changed, lookup) == base {
+		t.Fatal("Fingerprint unchanged after TopK change")
+	}
+
+	changedProxy := fakeLookup(map[string]string{"KB_SOCKS_PROXY": "socks5://127.0.0.1:3333"})
+	if Fingerprint(env, changedProxy) == base {
+		t.Fatal("Fingerprint unchanged after direct proxy change")
+	}
+}
+
+func TestFingerprintTreatsSecretPresenceOnly(t *testing.T) {
+	env := Defaults()
+	a := fakeLookup(map[string]string{"GITHUB_TOKEN": "token-a"})
+	b := fakeLookup(map[string]string{"GITHUB_TOKEN": "token-b"})
+	if Fingerprint(env, a) != Fingerprint(env, b) {
+		t.Fatal("Fingerprint changed across secret value rotation; want presence-only")
+	}
+}

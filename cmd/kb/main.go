@@ -38,7 +38,7 @@ func run(args []string, stdout, stderr *os.File) int {
 
 	switch cmd {
 	case "serve":
-		return runServeCmd(args[1:], env, stdout, stderr)
+		return runServeCmd(args[1:], env, lookup, stdout, stderr)
 	case "sync":
 		return runSyncCmd(args[1:], env, stdout, stderr)
 	case "reindex":
@@ -48,7 +48,7 @@ func run(args []string, stdout, stderr *os.File) int {
 	case "backup":
 		return runBackupCmd(args[1:], env, stdout, stderr)
 	case "mcp":
-		return runMCPCmd(args[1:], env, stdout, stderr)
+		return runMCPCmd(args[1:], env, lookup, stdout, stderr)
 	case "describe":
 		return runDescribeCmd(args[1:], env, stdout, stderr)
 	case "verify":

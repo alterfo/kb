@@ -40,6 +40,16 @@ type ChatClient interface {
 	Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error)
 }
 
+// AskCache caches a completed Run result. A nil AskCache disables caching.
+// Implementations are expected to key on the query, the current corpus
+// version and the effective configuration, so a hit is only returned when
+// both are unchanged. Get/Put are fail-open: a cache error must never
+// affect the answer.
+type AskCache interface {
+	Get(ctx context.Context, query string) (ThoughtGraph, bool, error)
+	Put(ctx context.Context, query string, g ThoughtGraph) error
+}
+
 // Config wires the orchestrator's dependencies and tunables. Retriever and
 // Chat are both optional; a nil Retriever degrades every subgoal to an
 // empty result, a nil Chat skips decomposition/synthesis/judging/gap-
@@ -84,6 +94,8 @@ type Config struct {
 	DetectContradictions  bool
 
 	Progress ProgressFunc
+
+	AskCache AskCache
 }
 
 type runMetricsKey struct{}
@@ -190,6 +202,11 @@ type subgoalResult struct {
 // the returned ThoughtGraph always carries a FinalAnswer (possibly a
 // fail-open placeholder) and whatever Sources were found.
 func (o *Orchestrator) Run(ctx context.Context, query string) ThoughtGraph {
+	if o.cfg.AskCache != nil {
+		if cached, ok, err := o.cfg.AskCache.Get(ctx, query); err == nil && ok {
+			return cached
+		}
+	}
 	start := time.Now()
 	var degraded []string
 	var retrieved []vector.ScoredChunk
@@ -265,6 +282,9 @@ func (o *Orchestrator) Run(ctx context.Context, query string) ThoughtGraph {
 	g := b.snapshot()
 	g.Degraded = append([]string(nil), degraded...)
 	g.Metrics = runMetrics
+	if o.cfg.AskCache != nil {
+		_ = o.cfg.AskCache.Put(ctx, query, g)
+	}
 	return g
 }
 

@@ -171,12 +171,12 @@ editing, they may have drifted since 2026-08-31):
 
 ### Task 11: Add an Ask response cache
 
-- [ ] Implement a cache keyed by `hash(query + corpus_version + hash(KB_*))`
-- [ ] Implement explicit invalidation on corpus or config change
-- [ ] Ensure this task lands after tasks 7 and 10, since it depends on config
+- [x] Implement a cache keyed by `hash(query + corpus_version + hash(KB_*))`
+- [x] Implement explicit invalidation on corpus or config change
+- [x] Ensure this task lands after tasks 7 and 10, since it depends on config
       hygiene and connection-pool changes
-- [ ] Ensure the fail-open path benefits from the cache instead of paying the cost twice
-- [ ] write tests for cache hit/miss/invalidation behavior
+- [x] Ensure the fail-open path benefits from the cache instead of paying the cost twice
+- [x] write tests for cache hit/miss/invalidation behavior
 - [x] run project tests - must pass before next task
 
 ### Task 12: Add a 👍/👎 feedback loop

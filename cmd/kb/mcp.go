@@ -9,11 +9,13 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/alterfo/kb/internal/askcache"
 	"github.com/alterfo/kb/internal/config"
 	"github.com/alterfo/kb/internal/mcp"
+	"github.com/alterfo/kb/internal/store/sqlite"
 )
 
-func runMCPCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
+func runMCPCmd(args []string, env config.Env, lookup config.EnvLookup, stdout, stderr io.Writer) int {
 	fset := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	fset.SetOutput(stderr)
 	if err := fset.Parse(args); err != nil {
@@ -27,6 +29,10 @@ func runMCPCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer bundle.close()
+
+	configHash := config.Fingerprint(env, lookup)
+	askCache := askcache.New(sqlite.NewAskCacheStore(bundle.db), bundle.db, configHash)
+	_ = askCache.PruneStale(ctx)
 
 	srv := mcp.NewServer(mcp.Deps{
 		Root:                 env.KBRoot,
@@ -54,6 +60,7 @@ func runMCPCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 		QualifierFilter:      env.QualifierFilter,
 		ANNPrefilter:         env.ANNPrefilter,
 		RollingMemory:        env.AskRollingWindow,
+		AskCache:             askCache,
 		SourcesPath:          filepath.Join(env.KBRoot, "sources.yaml"),
 	})
 

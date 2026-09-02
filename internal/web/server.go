@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/alterfo/kb/internal/engine"
+	"github.com/alterfo/kb/internal/engine/got"
 	"github.com/alterfo/kb/internal/engine/rerank"
 	"github.com/alterfo/kb/internal/engine/retriever"
 	"github.com/alterfo/kb/internal/governance"
@@ -73,6 +74,7 @@ type Deps struct {
 	SupersedeMode        string
 	QualifierFilter      bool
 	ANNPrefilter         bool
+	AskCache             got.AskCache
 
 	SourcesPath string
 	StatePath   string

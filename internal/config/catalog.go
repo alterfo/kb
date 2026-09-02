@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/url"
@@ -216,6 +218,19 @@ func EffectiveVars(env Env, lookup EnvLookup) []EffectiveVar {
 		return vars[i].Name < vars[j].Name
 	})
 	return vars
+}
+
+// Fingerprint returns a stable SHA-256 digest over the effective
+// configuration (the resolved Env values plus all directly-read KB_* and
+// connector variables). It is used to key Ask-response caches so a config
+// change produces a different cache namespace. Sensitive values are folded
+// in by presence only ("<set>"), never by their literal secret.
+func Fingerprint(env Env, lookup EnvLookup) string {
+	h := sha256.New()
+	for _, v := range EffectiveVars(env, lookup) {
+		fmt.Fprintf(h, "%s=%s\n", v.Name, v.Value)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func directVarSpecs() []DirectVarSpec {

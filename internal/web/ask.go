@@ -180,6 +180,7 @@ func (s *Server) startAsk(query string) (string, bool) {
 			ExtractQualifiers:     s.deps.QualifierFilter,
 			AbstainThreshold:      s.deps.AbstainThreshold,
 			RollingMemory:         s.deps.RollingMemory,
+			AskCache:              s.deps.AskCache,
 			Progress: func(g got.ThoughtGraph) {
 				s.asks.progress(id, g)
 				s.persistAskRun(id, query, history.AskRunStatusRunning, g, createdAt, nil)

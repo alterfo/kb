@@ -13,13 +13,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alterfo/kb/internal/askcache"
 	"github.com/alterfo/kb/internal/config"
 	"github.com/alterfo/kb/internal/governance"
 	"github.com/alterfo/kb/internal/mcp"
+	"github.com/alterfo/kb/internal/store/sqlite"
 	"github.com/alterfo/kb/internal/web"
 )
 
-func runServeCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
+func runServeCmd(args []string, env config.Env, lookup config.EnvLookup, stdout, stderr io.Writer) int {
 	fset := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fset.SetOutput(stderr)
 	addr := fset.String("addr", "127.0.0.1:8080", "listen address")
@@ -39,6 +41,10 @@ func runServeCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer bundle.close()
+
+	configHash := config.Fingerprint(env, lookup)
+	askCache := askcache.New(sqlite.NewAskCacheStore(bundle.db), bundle.db, configHash)
+	_ = askCache.PruneStale(ctx)
 
 	mcpSrv := mcp.NewServer(mcp.Deps{
 		Root:                 env.KBRoot,
@@ -66,6 +72,7 @@ func runServeCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 		QualifierFilter:      env.QualifierFilter,
 		ANNPrefilter:         env.ANNPrefilter,
 		RollingMemory:        env.AskRollingWindow,
+		AskCache:             askCache,
 		SourcesPath:          filepath.Join(env.KBRoot, "sources.yaml"),
 	})
 
@@ -100,6 +107,7 @@ func runServeCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 		QualifierFilter:      env.QualifierFilter,
 		ANNPrefilter:         env.ANNPrefilter,
 		RollingMemory:        env.AskRollingWindow,
+		AskCache:             askCache,
 		SourcesPath:          filepath.Join(env.KBRoot, "sources.yaml"),
 		StatePath:            filepath.Join(env.PersistDir, ".sync-state.json"),
 		StaleAfter:           env.StaleAfter,
