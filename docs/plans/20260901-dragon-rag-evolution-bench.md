@@ -177,12 +177,12 @@ precedent).
 
 ### Task 4: Stage-config table + budget-fitting question count
 
-- [ ] define the 7-stage table from the Overview as data in the sweep
+- [x] define the 7-stage table from the Overview as data in the sweep
       tooling (reuse or extend a small runner similar to what
       `cmd/kb/bench.go` already does for the other bench command) —
       each stage: env overrides, answer-mode, whether it needs the
       graph-enabled or graph-disabled persist-dir
-- [ ] add a helper that, given a measured seconds/question for the
+- [x] add a helper that, given a measured seconds/question for the
       heaviest stage (6, all features on — calibrated the same way as
       Task 2's doc calibration, via a small pilot batch), computes the
       largest fixed question count `N` that keeps *that* stage's full
@@ -190,9 +190,9 @@ precedent).
       2h); this `N` (capped at the Task 2 matched-question-pool size) is
       then used for **every** stage's run, so all 7 stages are scored on
       an identical question set
-- [ ] write tests for the stage-config table (one test per stage verifying
+- [x] write tests for the stage-config table (one test per stage verifying
       the expected env overrides) and for the budget-fitting calculation
-- [ ] run `go test ./...` — must pass before task 5
+- [x] run `go test ./...` — must pass before task 5
 
 ### Task 5: Index Pass A (no graph) for stages 0-1
 
