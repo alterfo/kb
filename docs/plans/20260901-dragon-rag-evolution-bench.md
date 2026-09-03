@@ -362,9 +362,27 @@ path. Saved `docs/bench/evolution/stage5-temporal.json` and
 
 ### Task 13: Stage 6 — +Qualifiers
 
-- [ ] run against `persist-b` (reuse), same as stage 5 plus
+- [x] run against `persist-b` (reuse), same as stage 5 plus
       `KB_QUALIFIER_FILTER=true`
-- [ ] score and save as `stage6-qualifiers.*`, record wall time
+- [x] score and save as `stage6-qualifiers.*`, record wall time
+
+Recorded: ran against `persist-b` (reuse, 192 chunks, 1660 entities, 1482
+relations, 432 communities) with `KB_SUPERSEDE_MODE=strict
+KB_DETECT_CONTRADICTIONS=true KB_QUALIFIER_FILTER=true KB_RERANK=llm
+KB_INDEX_GRAPH=true KB_HYBRID=true KB_LLM_NO_THINK=true
+KB_LLM_MAX_TOKENS=4096`, `-answer-mode got`, `-limit 100` (the same
+100-question matched subset as stages 4/5). Wall time 7762s (~129.4 min)
+— ⚠️ slightly over the 2h ceiling, same evening-load/contradiction-
+detection latency pattern as stage 5. Score: matched=100,
+retrieval_hit=2/100, answer_contains=29/100. Deltas vs stage 5 (same
+100-question set): retrieval_hit 4→2, answer_contains 37→29 (cond 12→10,
+mh 10→8, set 6→4, simple 9→7). The drop is larger than a pure
+noise wiggle; qualifier extraction adds a per-question structured-filter
+LLM call, so on this small sample the +Qualifiers delta looks like a
+real (negative) retrieval/tightening effect rather than signal, but it
+must be read as a reduced-corpus diagnostic — see Task 14's noise-vs-signal
+call-out. Saved `docs/bench/evolution/stage6-qualifiers.json` and
+`stage6-qualifiers.score.json` (+ history).
 
 ### Task N-1: Verify acceptance criteria
 

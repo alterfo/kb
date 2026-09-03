@@ -1,0 +1,33 @@
+[
+  {
+    "timestamp": "2026-09-03T20:41:47.06303Z",
+    "report": {
+      "total": 600,
+      "matched": 100,
+      "retrieval_hits": 2,
+      "answer_contains_gold": 29,
+      "types": {
+        "cond": {
+          "count": 22,
+          "retrieval_hits": 0,
+          "answer_contains_gold": 10
+        },
+        "mh": {
+          "count": 23,
+          "retrieval_hits": 1,
+          "answer_contains_gold": 8
+        },
+        "set": {
+          "count": 20,
+          "retrieval_hits": 0,
+          "answer_contains_gold": 4
+        },
+        "simple": {
+          "count": 35,
+          "retrieval_hits": 1,
+          "answer_contains_gold": 7
+        }
+      }
+    }
+  }
+]
