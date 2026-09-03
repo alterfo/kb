@@ -284,9 +284,19 @@ Saved `docs/bench/evolution/stage2-graph.json` and
 
 ### Task 10: Stage 3 — +Rerank
 
-- [ ] run against `persist-b` (reuse), `KB_RERANK=llm`, `-answer-mode
+- [x] run against `persist-b` (reuse), `KB_RERANK=llm`, `-answer-mode
       naive`
-- [ ] score and save as `stage3-rerank.*`, record wall time
+- [x] score and save as `stage3-rerank.*`, record wall time
+
+Recorded: ran against `persist-b` (reuse, 192 chunks, 1660 entities, 1482
+relations, 432 communities) with `KB_RERANK=llm KB_INDEX_GRAPH=true
+KB_HYBRID=true KB_LLM_NO_THINK=true`, `-answer-mode naive`, `-limit 150`
+in ~46.4 min (2784s, well under 2h). Score: matched=150,
+answer_contains=55/150 (36.7%), retrieval_hit=6/150 (4.0%). Deltas vs
+Stage 2 (+Graph): retrieval_hit 6→6, answer_contains 52→55 (cond 16→18,
+mh 13→13, set 8→9, simple 15→15). Saved
+`docs/bench/evolution/stage3-rerank.json` and
+`stage3-rerank.score.json`.
 
 ### Task 11: Stage 4 — +Logic (GoT)
 
