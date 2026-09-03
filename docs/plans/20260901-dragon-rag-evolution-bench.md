@@ -246,17 +246,26 @@ on this reduced corpus. Saved
 
 ### Task 8: Index Pass B (graph on) for stages 2-6
 
-- [ ] run `kb bench-dragon -hist -doc-limit <calibrated N, graph variant
+- [x] run `kb bench-dragon -hist -doc-limit <calibrated N, graph variant
       from Task 2> -persist-dir docs/bench/evolution/persist-b` with
       `KB_INDEX_GRAPH=true KB_HYBRID=true` — same underlying document
       subset as Pass A where possible (same `-doc-limit` value) so stages
       0-6 all evaluate the same corpus
-- [ ] confirm indexing completes under 2h; if the Task 2 calibration was
+- [x] confirm indexing completes under 2h; if the Task 2 calibration was
       conservative and the graph pass still risks exceeding budget, lower
       `-doc-limit` for both passes and re-run Task 5 too (record as ⚠️ if
       this happens)
-- [ ] confirm `docs/bench/evolution/persist-b/kb.db` has populated
+- [x] confirm `docs/bench/evolution/persist-b/kb.db` has populated
       entity/relation/community tables
+
+Recorded: ran with the same `-doc-limit 192` as Pass A (same corpus for
+stages 0-6), `KB_INDEX_GRAPH=true KB_HYBRID=true KB_LLM_NO_THINK=true`.
+Indexed all 192 docs graph-on in ~39m (well under 2h, matching the Task 2
+calibration). `persist-b/kb.db` has 192 chunks, 1660 entities, 1482
+relations, and 432 communities (all 432 summarized). The first invocation
+hit a transient HF 502 fetching questions after indexing finished; a
+re-run on the persisted index skipped indexing and confirmed the reuse
+path ("reusing persisted index ... 192 chunks", matched 212/600 questions).
 
 ### Task 9: Stage 2 — +Graph
 
