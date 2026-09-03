@@ -86,6 +86,23 @@ func TestNaiveAnswerNormal(t *testing.T) {
 	}
 }
 
+func TestNaiveAnswerUsesRawDocID(t *testing.T) {
+	r := &naiveFakeRetriever{chunks: []vector.ScoredChunk{
+		{Chunk: vector.Chunk{ID: "c1", RefDocID: "dragon/4", Metadata: map[string]string{"id": "4"}, Text: "excerpt one"}},
+		{Chunk: vector.Chunk{ID: "c2", RefDocID: "dragon/4", Metadata: map[string]string{"id": "4"}, Text: "excerpt two"}},
+		{Chunk: vector.Chunk{ID: "c3", RefDocID: "dragon/7", Metadata: map[string]string{"id": "7"}, Text: "excerpt three"}},
+	}}
+	chat := &naiveFakeChat{resp: llm.ChatResponse{Content: "answer", FinishReason: "stop"}}
+
+	_, docIDs, err := NaiveAnswer(context.Background(), r, chat, "test-model", 3, "question")
+	if err != nil {
+		t.Fatalf("NaiveAnswer: %v", err)
+	}
+	if len(docIDs) != 2 || docIDs[0] != "4" || docIDs[1] != "7" {
+		t.Errorf("docIDs = %v, want [4 7]", docIDs)
+	}
+}
+
 func TestNaiveAnswerEmptyRetrieval(t *testing.T) {
 	r := &naiveFakeRetriever{}
 	chat := &naiveFakeChat{resp: llm.ChatResponse{Content: "no answer", FinishReason: "stop"}}

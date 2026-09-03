@@ -210,13 +210,22 @@ has 192 chunks and 0 entities/0 relations/0 communities.
 
 ### Task 6: Stage 0 — Native
 
-- [ ] run against `persist-a` (reuse, no reindex), `KB_HYBRID=false`,
+- [x] run against `persist-a` (reuse, no reindex), `KB_HYBRID=false`,
       `-answer-mode naive`, fixed question count from Task 4
-- [ ] score with `kb bench-dragon score`, save submission + score report
+- [x] score with `kb bench-dragon score`, save submission + score report
       under `docs/bench/evolution/stage0-native.json` /
       `stage0-native.score.json`
-- [ ] confirm the run stayed under 2h; record actual wall time in the
+- [x] confirm the run stayed under 2h; record actual wall time in the
       results table (Task 12)
+
+Recorded: fixed question count N=150 (Task 4 helper: GoT pilot measured
+~28 s/question across 15 questions -> 90m budget -> ~171; rounded down to
+150 for headroom; matched pool for -doc-limit 192 is 212 questions). Stage 0
+ran naive against persist-a in 971s (~16.2m, well under 2h). Score:
+matched=150, answer_contains=51/150 (34.0%), retrieval_hit=3/150 (2.0%).
+Also fixed a naive-path scoring bug: NaiveAnswer returned the prefixed
+RefDocID ("dragon/N") instead of the raw document id (Metadata["id"]="N"),
+so retrieval_hit was 0 before the fix; now it matches the GoT path.
 
 ### Task 7: Stage 1 — +Hybrid
 

@@ -38,13 +38,17 @@ func NaiveAnswer(ctx context.Context, r Retriever, chat ChatClient, model string
 	docIDs := make([]string, 0, len(chunks))
 	seen := make(map[string]struct{}, len(chunks))
 	for i, sc := range chunks {
-		if sc.RefDocID != "" {
-			if _, ok := seen[sc.RefDocID]; !ok {
-				seen[sc.RefDocID] = struct{}{}
-				docIDs = append(docIDs, sc.RefDocID)
+		docID := sc.RefDocID
+		if id := sc.Metadata["id"]; id != "" {
+			docID = id
+		}
+		if docID != "" {
+			if _, ok := seen[docID]; !ok {
+				seen[docID] = struct{}{}
+				docIDs = append(docIDs, docID)
 			}
 		}
-		fmt.Fprintf(&sources, "\n[%d] (doc %s) %s", i+1, sc.RefDocID, strings.TrimSpace(sc.Text))
+		fmt.Fprintf(&sources, "\n[%d] (doc %s) %s", i+1, docID, strings.TrimSpace(sc.Text))
 	}
 
 	sourceText := strings.TrimSpace(sources.String())
