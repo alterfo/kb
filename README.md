@@ -344,6 +344,12 @@ score --history PATH` appends each score report to a metrics history. The
 command needs a live LLM endpoint and network access to
 `datasets-server.huggingface.co`.
 
+For the feature-attribution ladder (which capability contributes to the score),
+see `docs/bench/dragon-evolution-report.md` — a reduced-corpus diagnostic run
+(Native → Hybrid → Graph → Rerank → Logic → Temporal → Qualifiers) whose
+absolute numbers are not comparable to the full-corpus 75.2% figure, only the
+relative deltas between adjacent stages.
+
 The `verify` command needs a live LLM endpoint (retrieval + synthesis);
 integration tests for the QA harness are gated behind
 `-tags integration` + `KB_LLM_IT=1`.

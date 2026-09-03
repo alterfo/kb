@@ -408,18 +408,18 @@ call-out. Saved `docs/bench/evolution/stage6-qualifiers.json` and
 
 ### Task 14: [Final] Write up the evolution report
 
-- [ ] write `docs/bench/dragon-evolution-report.md`: table of stage →
+- [x] write `docs/bench/dragon-evolution-report.md`: table of stage →
       score → delta vs. previous stage → wall time, plus the doc/question
       subset size and how it was derived (calibration numbers from Tasks
       2 and 4)
-- [ ] call out the stage 5 (+temporal) caveat from Task 12 explicitly, and
+- [x] call out the stage 5 (+temporal) caveat from Task 12 explicitly, and
       any other stage where the delta looks like noise rather than signal
       given the reduced sample size
-- [ ] cross-link from `docs/bench/dragon-report.md` and note this is a
+- [x] cross-link from `docs/bench/dragon-report.md` and note this is a
       reduced-corpus diagnostic run (not the same sample as the 75.2%
       full-corpus number, not directly comparable in absolute terms —
       only the relative deltas between adjacent stages are the point)
-- [ ] update `README.md`'s DRAGON bench section with a pointer to the new
+- [x] update `README.md`'s DRAGON bench section with a pointer to the new
       report if useful for the Habr writeup
 
 ## Technical Details
