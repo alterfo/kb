@@ -322,18 +322,43 @@ retrieval improves but answer_contains is a small sample-size noise
 decrease. Saved `docs/bench/evolution/stage4-logic.json` and
 `stage4-logic.score.json`.
 
+Note for future runs of this stage: `docs/plans/20260903-got-refine-budget-gate.md`
+added `KB_GOT_MAX_REFINE_LATENCY_MS` (default `0` = unlimited), a wall-clock
+budget that skips the GoT orchestrator's optional refine pass once elapsed
+time already exceeds it. Setting this on a re-run of Stage 4/5 is now an
+alternative to cutting the question count (`N=150` → `N=100` above) to stay
+under the 2h ceiling.
+
 ### Task 12: Stage 5 — +Temporal
 
-- [ ] run against `persist-b` (reuse), same as stage 4 plus
+- [x] run against `persist-b` (reuse), same as stage 4 plus
       `KB_SUPERSEDE_MODE=strict KB_DETECT_CONTRADICTIONS=true`
-- [ ] score and save as `stage5-temporal.*`, record wall time
-- [ ] note explicitly in the results table: the DRAGON hist corpus is a
+- [x] score and save as `stage5-temporal.*`, record wall time
+- [x] note explicitly in the results table: the DRAGON hist corpus is a
       single bulk import with no document updates/tombstones, so
       supersede logic is structurally inert here (nothing to supersede);
       only contradiction detection has any chance of changing the
       answer. A ~0 delta at this stage is an expected, valid finding —
       it says "this corpus doesn't exercise temporal features", not
       "temporal features don't work"
+
+Recorded: wired `KB_DETECT_CONTRADICTIONS` into `benchDragonAsk`'s got
+path (it was previously dropped, unlike `ExtractQualifiers`/stage 6), plus
+a unit test in `cmd/kb/dragon_test.go`. Ran against `persist-b` (reuse, 192
+chunks) with `KB_SUPERSEDE_MODE=strict KB_DETECT_CONTRADICTIONS=true
+KB_RERANK=llm KB_INDEX_GRAPH=true KB_HYBRID=true KB_LLM_NO_THINK=true`,
+`-answer-mode got`, `-limit 100`. Wall time 7710s (~128.5 min) — ⚠️ slightly
+over the 2h ceiling because contradiction detection adds a per-subgoal LLM
+call and the ai-box was under evening load; a first attempt wedged when the
+ai-box model unloaded mid-run, so the successful re-run also added
+`KB_LLM_MAX_TOKENS=4096` as a safety cap against unbounded generations.
+Score: matched=100, retrieval_hit=4/100, answer_contains=37/100. Deltas vs
+stage 4 (same 100-question set): retrieval_hit 7→4, answer_contains 38→37
+— a ~0/noise finding, as expected: supersede logic is structurally inert on
+this single bulk import, and contradiction detection finds no real
+contradictions in this corpus, so it can only perturb the draft→gaps→refine
+path. Saved `docs/bench/evolution/stage5-temporal.json` and
+`stage5-temporal.score.json`.
 
 ### Task 13: Stage 6 — +Qualifiers
 
