@@ -196,12 +196,17 @@ precedent).
 
 ### Task 5: Index Pass A (no graph) for stages 0-1
 
-- [ ] run `kb bench-dragon -hist -doc-limit <calibrated N from Task 2,
-      no-graph variant> -persist-dir docs/bench/evolution/persist-a
-      -answer-mode naive` with `KB_INDEX_GRAPH=false KB_HYBRID=false` to
-      build the index and confirm it completes indexing well under 2h
-- [ ] confirm `docs/bench/evolution/persist-a/kb.db` has the expected
+- [x] run `kb bench-dragon -hist -doc-limit 192 -persist-dir
+      docs/bench/evolution/persist-a -answer-mode naive` with
+      `KB_INDEX_GRAPH=false KB_HYBRID=false` to build the index and
+      confirm it completes indexing well under 2h
+- [x] confirm `docs/bench/evolution/persist-a/kb.db` has the expected
       chunk count (no entities/relations tables populated)
+
+Recorded: Task 2 calibrate measured 15 docs graph-on in 3m31s
+(14.03 s/doc) -> -doc-limit 192 under the 45m budget. Index Pass A
+(no graph) indexed all 192 docs in <1 min (well under 2h); persist-a
+has 192 chunks and 0 entities/0 relations/0 communities.
 
 ### Task 6: Stage 0 — Native
 
