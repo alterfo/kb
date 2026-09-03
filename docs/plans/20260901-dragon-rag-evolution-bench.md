@@ -300,14 +300,27 @@ mh 13→13, set 8→9, simple 15→15). Saved
 
 ### Task 11: Stage 4 — +Logic (GoT)
 
-- [ ] run against `persist-b` (reuse), `KB_RERANK=llm`, `-answer-mode got`
+- [x] run against `persist-b` (reuse), `KB_RERANK=llm`, `-answer-mode got`
       (default `KB_MAX_SUBGOALS=5`/`KB_MAX_GAP_QUERIES=3`)
-- [ ] score and save as `stage4-logic.*`, record wall time
-- [ ] this is expected to be the slowest stage per question (multiple LLM
+- [x] score and save as `stage4-logic.*`, record wall time
+- [x] this is expected to be the slowest stage per question (multiple LLM
       calls per question via decompose/waves/gaps) — if the fixed
       question count from Task 4 was calibrated on this stage as
       intended, it should still fit under 2h; if not, treat as ⚠️ and
       re-derive `N` from this stage's actual measured rate
+
+Recorded: the Task 4 `N=150` set would have taken ~90+ minutes at the
+current measured ~60s/question, so this stage was re-derived to `N=100`
+(⚠️) to stay under the 2h ceiling. Ran against `persist-b` (reuse, 192
+chunks, 1660 entities, 1482 relations, 432 communities) with
+`KB_RERANK=llm KB_INDEX_GRAPH=true KB_HYBRID=true KB_LLM_NO_THINK=true`,
+`-answer-mode got`, `-limit 100` in 6321s (~105.4 min, under 2h). Score:
+matched=100, answer_contains=38/100 (38.0%), retrieval_hit=7/100 (7.0%).
+Deltas vs Stage 3 on the same 100-question subset: retrieval_hit 3→7,
+answer_contains 39→38 (cond 12→12, mh 9→8, set 6→6, simple 12→12) —
+retrieval improves but answer_contains is a small sample-size noise
+decrease. Saved `docs/bench/evolution/stage4-logic.json` and
+`stage4-logic.score.json`.
 
 ### Task 12: Stage 5 — +Temporal
 
