@@ -229,10 +229,20 @@ so retrieval_hit was 0 before the fix; now it matches the GoT path.
 
 ### Task 7: Stage 1 — +Hybrid
 
-- [ ] run against `persist-a` (reuse), `KB_HYBRID=true`, `-answer-mode
+- [x] run against `persist-a` (reuse), `KB_HYBRID=true`, `-answer-mode
       naive`, same fixed question set
-- [ ] score and save as `stage1-hybrid.*`
-- [ ] record wall time
+- [x] score and save as `stage1-hybrid.*`
+- [x] record wall time
+
+Recorded: ran against `persist-a` (reuse, 192 chunks) with
+`KB_HYBRID=true` `KB_LLM_NO_THINK=true`, `-answer-mode naive`,
+`-limit 150` in 968s (~16.1 min, well under 2h). Score: matched=150,
+answer_contains=51/150 (34.0%), retrieval_hit=3/150 (2.0%) — identical
+aggregate deltas vs Stage 0 (51/150, 3/150); only per-type reordering
+(cond 17→18, mh 14→13, set ret 1→2, mh ret 1→0), i.e. +Hybrid is noise
+on this reduced corpus. Saved
+`docs/bench/evolution/stage1-hybrid.json` and
+`stage1-hybrid.score.json`.
 
 ### Task 8: Index Pass B (graph on) for stages 2-6
 
