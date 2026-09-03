@@ -269,9 +269,18 @@ path ("reusing persisted index ... 192 chunks", matched 212/600 questions).
 
 ### Task 9: Stage 2 — +Graph
 
-- [ ] run against `persist-b` (reuse), `-answer-mode naive`, same fixed
+- [x] run against `persist-b` (reuse), `-answer-mode naive`, same fixed
       question set
-- [ ] score and save as `stage2-graph.*`, record wall time
+- [x] score and save as `stage2-graph.*`, record wall time
+
+Recorded: ran against `persist-b` (reuse, 192 chunks, 1660 entities, 1482
+relations, 432 communities) with `KB_INDEX_GRAPH=true KB_HYBRID=true
+KB_LLM_NO_THINK=true`, `-answer-mode naive`, `-limit 150` in 3227s (~53.8
+min, well under 2h). Score: matched=150, answer_contains=52/150 (34.7%),
+retrieval_hit=6/150 (4.0%). Deltas vs Stage 1 (+Hybrid): retrieval_hit
+3→6, answer_contains 51→52 (cond 18→16, mh 13→13, set 9→8, simple 11→15).
+Saved `docs/bench/evolution/stage2-graph.json` and
+`stage2-graph.score.json`.
 
 ### Task 10: Stage 3 — +Rerank
 
