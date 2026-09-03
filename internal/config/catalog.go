@@ -173,6 +173,9 @@ func validateEnv(e Env) error {
 	if e.MaxGapQueries <= 0 {
 		return fmt.Errorf("KB_MAX_GAP_QUERIES: must be positive")
 	}
+	if e.GoTMaxRefineLatencyMS < 0 {
+		return fmt.Errorf("KB_GOT_MAX_REFINE_LATENCY_MS: must be non-negative")
+	}
 	if e.WebRateLimit < 0 {
 		return fmt.Errorf("KB_WEB_RATE_LIMIT: must be non-negative")
 	}
@@ -276,6 +279,7 @@ func envVars(e Env) []EffectiveVar {
 		{Name: "KB_STALE_AFTER", Value: e.StaleAfter.String(), Default: "24h"},
 		{Name: "KB_MAX_SUBGOALS", Value: strconv.Itoa(e.MaxSubgoals), Default: "5"},
 		{Name: "KB_MAX_GAP_QUERIES", Value: strconv.Itoa(e.MaxGapQueries), Default: "3"},
+		{Name: "KB_GOT_MAX_REFINE_LATENCY_MS", Value: strconv.FormatInt(e.GoTMaxRefineLatencyMS, 10), Default: "0"},
 		{Name: "KB_LLM_TIMEOUT", Value: e.LLMTimeout.String(), Default: "60s"},
 		{Name: "KB_LLM_MAX_TOKENS", Value: strconv.Itoa(e.LLMMaxTokens), Default: ""},
 		{Name: "KB_LLM_NO_THINK", Value: strconv.FormatBool(e.LLMNoThink), Default: "false"},

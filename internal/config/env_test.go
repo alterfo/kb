@@ -65,39 +65,40 @@ func TestLoadEnv_Defaults(t *testing.T) {
 
 func TestLoadEnv_Overrides(t *testing.T) {
 	m := map[string]string{
-		"KB_ROOT":                  "/tmp/root",
-		"PERSIST_DIR":              "/tmp/persist",
-		"KB_LLM_BASE_URL":          "http://example.com:11434",
-		"KB_LLM_MODEL":             "llama3",
-		"KB_EMBED_MODEL":           "bge-m3",
-		"KB_HYBRID":                "false",
-		"KB_RERANK":                "llm",
-		"KB_AUTHORITY_BONUS":       "notes/=0.2, notes/approved/=0.5",
-		"KB_NO_PROXY":              "host1, host2 , host3",
-		"KB_TOP_K":                 "25",
-		"KB_CHUNK_SIZE":            "1024",
-		"KB_CHUNK_OVERLAP":         "100",
-		"KB_RRF_K":                 "30",
-		"KB_COMMUNITY_ALGO":        "leiden",
-		"KB_DETECT_CONTRADICTIONS": "true",
-		"KB_QUALIFIER_FILTER":      "true",
-		"KB_CANDIDATE_K":           "80",
-		"KB_PER_DOC_CAP":           "6",
-		"KB_SET_MAX_ROUNDS":        "7",
-		"KB_ABSTAIN_THRESHOLD":     "0.6",
-		"KB_SUPERSEDE_MODE":        "strict",
-		"KB_INTRA_DOC_BUDGET":      "5000",
-		"KB_STALE_AFTER":           "6h30m",
-		"KB_DESCRIBE_MODEL":        "llama3",
-		"KB_DESCRIBE_BATCH":        "5",
-		"KB_ASK_ROLLING_WINDOW":    "7",
-		"KB_MAX_SUBGOALS":          "3",
-		"KB_MAX_GAP_QUERIES":       "2",
-		"KB_LLM_NO_THINK":          "true",
-		"KB_FTS5":                  "false",
-		"KB_ANN_PREFILTER":         "true",
-		"KB_PII_REDACT":            "true",
-		"KB_WEB_RATE_LIMIT":        "30",
+		"KB_ROOT":                      "/tmp/root",
+		"PERSIST_DIR":                  "/tmp/persist",
+		"KB_LLM_BASE_URL":              "http://example.com:11434",
+		"KB_LLM_MODEL":                 "llama3",
+		"KB_EMBED_MODEL":               "bge-m3",
+		"KB_HYBRID":                    "false",
+		"KB_RERANK":                    "llm",
+		"KB_AUTHORITY_BONUS":           "notes/=0.2, notes/approved/=0.5",
+		"KB_NO_PROXY":                  "host1, host2 , host3",
+		"KB_TOP_K":                     "25",
+		"KB_CHUNK_SIZE":                "1024",
+		"KB_CHUNK_OVERLAP":             "100",
+		"KB_RRF_K":                     "30",
+		"KB_COMMUNITY_ALGO":            "leiden",
+		"KB_DETECT_CONTRADICTIONS":     "true",
+		"KB_QUALIFIER_FILTER":          "true",
+		"KB_CANDIDATE_K":               "80",
+		"KB_PER_DOC_CAP":               "6",
+		"KB_SET_MAX_ROUNDS":            "7",
+		"KB_ABSTAIN_THRESHOLD":         "0.6",
+		"KB_SUPERSEDE_MODE":            "strict",
+		"KB_INTRA_DOC_BUDGET":          "5000",
+		"KB_STALE_AFTER":               "6h30m",
+		"KB_DESCRIBE_MODEL":            "llama3",
+		"KB_DESCRIBE_BATCH":            "5",
+		"KB_ASK_ROLLING_WINDOW":        "7",
+		"KB_MAX_SUBGOALS":              "3",
+		"KB_MAX_GAP_QUERIES":           "2",
+		"KB_GOT_MAX_REFINE_LATENCY_MS": "5000",
+		"KB_LLM_NO_THINK":              "true",
+		"KB_FTS5":                      "false",
+		"KB_ANN_PREFILTER":             "true",
+		"KB_PII_REDACT":                "true",
+		"KB_WEB_RATE_LIMIT":            "30",
 	}
 	e, err := LoadEnv(fakeLookup(m))
 	if err != nil {
@@ -189,6 +190,9 @@ func TestLoadEnv_Overrides(t *testing.T) {
 	if e.MaxGapQueries != 2 {
 		t.Errorf("MaxGapQueries = %d, want 2", e.MaxGapQueries)
 	}
+	if e.GoTMaxRefineLatencyMS != 5000 {
+		t.Errorf("GoTMaxRefineLatencyMS = %d, want 5000", e.GoTMaxRefineLatencyMS)
+	}
 	if !e.LLMNoThink {
 		t.Errorf("LLMNoThink = %v, want true", e.LLMNoThink)
 	}
@@ -252,6 +256,8 @@ func TestLoadEnv_InvalidValues(t *testing.T) {
 		{"bad max subgoals zero", "KB_MAX_SUBGOALS", "0"},
 		{"bad max gap queries not a number", "KB_MAX_GAP_QUERIES", "many"},
 		{"bad max gap queries zero", "KB_MAX_GAP_QUERIES", "0"},
+		{"bad got max refine latency ms not a number", "KB_GOT_MAX_REFINE_LATENCY_MS", "many"},
+		{"bad got max refine latency ms negative", "KB_GOT_MAX_REFINE_LATENCY_MS", "-1"},
 		{"bad llm no think bool", "KB_LLM_NO_THINK", "notabool"},
 		{"bad fts5 bool", "KB_FTS5", "notabool"},
 		{"bad ann prefilter bool", "KB_ANN_PREFILTER", "notabool"},
@@ -265,6 +271,16 @@ func TestLoadEnv_InvalidValues(t *testing.T) {
 				t.Errorf("expected error for %s=%q, got nil", tc.key, tc.val)
 			}
 		})
+	}
+}
+
+func TestLoadEnv_GoTMaxRefineLatencyMSDefaultsToZero(t *testing.T) {
+	e, err := LoadEnv(fakeLookup(map[string]string{}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if e.GoTMaxRefineLatencyMS != 0 {
+		t.Errorf("GoTMaxRefineLatencyMS = %d, want 0 (disabled by default)", e.GoTMaxRefineLatencyMS)
 	}
 }
 

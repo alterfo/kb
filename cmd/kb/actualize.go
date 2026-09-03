@@ -145,15 +145,16 @@ func actualizeIsolatedEnv(env config.Env, persistDir string) (config.Env, func()
 func actualizeOrchestrator(env config.Env, bundle *engineBundle, topK int) *got.Orchestrator {
 	r := benchRetriever(env, bundle)
 	return got.New(got.Config{
-		Retriever:         retriever.Adapter{Retriever: r},
-		Chat:              bundle.chat,
-		Model:             env.LLMModel,
-		K:                 topK,
-		MaxSubgoals:       env.MaxSubgoals,
-		MaxGapQueries:     env.MaxGapQueries,
-		RollingMemory:     env.AskRollingWindow,
-		ExtractQualifiers: env.QualifierFilter,
-		AbstainThreshold:  env.AbstainThreshold,
+		Retriever:          retriever.Adapter{Retriever: r},
+		Chat:               bundle.chat,
+		Model:              env.LLMModel,
+		K:                  topK,
+		MaxSubgoals:        env.MaxSubgoals,
+		MaxGapQueries:      env.MaxGapQueries,
+		RollingMemory:      env.AskRollingWindow,
+		ExtractQualifiers:  env.QualifierFilter,
+		AbstainThreshold:   env.AbstainThreshold,
+		MaxRefineLatencyMS: env.GoTMaxRefineLatencyMS,
 	})
 }
 

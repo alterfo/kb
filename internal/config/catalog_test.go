@@ -150,6 +150,30 @@ func TestValidateEnvRangeFailures(t *testing.T) {
 	}
 }
 
+func TestValidateEnvRejectsNegativeGoTMaxRefineLatencyMS(t *testing.T) {
+	base := Defaults()
+	base.GoTMaxRefineLatencyMS = -1
+	if err := ValidateEnv(base); err == nil || !strings.Contains(err.Error(), "KB_GOT_MAX_REFINE_LATENCY_MS") {
+		t.Fatalf("ValidateEnv(GoTMaxRefineLatencyMS=-1) = %v, want KB_GOT_MAX_REFINE_LATENCY_MS error", err)
+	}
+}
+
+func TestValidateEnvAcceptsZeroGoTMaxRefineLatencyMS(t *testing.T) {
+	base := Defaults()
+	base.GoTMaxRefineLatencyMS = 0
+	if err := ValidateEnv(base); err != nil {
+		t.Fatalf("ValidateEnv(GoTMaxRefineLatencyMS=0) = %v, want nil (0 means unlimited)", err)
+	}
+}
+
+func TestEffectiveVarsContainsGoTMaxRefineLatencyMS(t *testing.T) {
+	vars := EffectiveVars(Defaults(), nil)
+	v := findVar(vars, "KB_GOT_MAX_REFINE_LATENCY_MS")
+	if v == nil || v.Value != "0" || v.Default != "0" {
+		t.Fatalf("KB_GOT_MAX_REFINE_LATENCY_MS = %#v, want Value/Default = 0", v)
+	}
+}
+
 func TestFingerprintStableAcrossCalls(t *testing.T) {
 	env := Defaults()
 	lookup := fakeLookup(map[string]string{"KB_SOCKS_PROXY": "socks5://127.0.0.1:3333"})

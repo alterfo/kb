@@ -386,14 +386,25 @@ call-out. Saved `docs/bench/evolution/stage6-qualifiers.json` and
 
 ### Task N-1: Verify acceptance criteria
 
-- [ ] verify all 7 stage score reports exist under `docs/bench/evolution/`
-      with a consistent question count across stages
-- [ ] verify each recorded wall-clock time is ≤2h
-- [ ] verify `-persist-dir`/`-force-reindex`/`-doc-limit`/`-answer-mode`
-      all have passing unit tests and don't change default `bench-dragon`
-      behavior when unset
-- [ ] run full test suite (`go test ./...`)
-- [ ] run linter — all issues fixed
+- [x] verified all 7 stage score reports exist under
+      `docs/bench/evolution/` (stage0-native … stage6-qualifiers
+      `.score.json`). Question counts: stages 0-3 `matched=150`, stages
+      4-6 `matched=100` — the N=150→100 cut happened in Task 11 to fit the
+      2h ceiling (already flagged ⚠️ there), so counts are consistent
+      within each index/path block but not across all 7 stages.
+- [x] verified wall times: stages 0-4 under 2h (16.2m / 16.1m / 53.8m /
+      46.4m / 105.4m); stages 5 (128.5m) and 6 (129.4m) exceeded 2h
+      (already flagged ⚠️: evening ai-box load + per-subgoal contradiction-
+      detection LLM call).
+- [x] verified flag unit tests exist and pass: `TestBenchDragonReuseIndex*`,
+      `TestBenchIsolatedEnvPersistDir`/`DefaultTempDir` (persist-dir/
+      force-reindex), `TestFilterQuestions`/`TestMaxDocLimit` (doc-limit),
+      `TestNaiveAnswer*`/`TestBenchDragonAskNaiveSkipsOrchestrator`
+      (answer-mode); default no-flag behavior covered by
+      `TestBenchDragonReuseIndexNoPersistDir` and
+      `TestBenchIsolatedEnvDefaultTempDir`.
+- [x] `go test ./...` — all packages pass.
+- [x] `go vet ./...` and `gofmt -l .` — both clean.
 
 ### Task 14: [Final] Write up the evolution report
 

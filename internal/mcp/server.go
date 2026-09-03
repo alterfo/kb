@@ -54,21 +54,22 @@ type Deps struct {
 	LLMModel   string
 	EmbedModel string
 
-	Hybrid               bool
-	AuthorityBonus       map[string]float64
-	RRFK                 int
-	DefaultK             int
-	DetectContradictions bool
-	RollingMemory        int
-	CandidateK           int
-	PerDocCap            int
-	SetMaxRounds         int
-	IntraDocBudget       int
-	AbstainThreshold     float64
-	SupersedeMode        string
-	QualifierFilter      bool
-	ANNPrefilter         bool
-	AskCache             got.AskCache
+	Hybrid                bool
+	AuthorityBonus        map[string]float64
+	RRFK                  int
+	DefaultK              int
+	DetectContradictions  bool
+	RollingMemory         int
+	CandidateK            int
+	PerDocCap             int
+	SetMaxRounds          int
+	IntraDocBudget        int
+	AbstainThreshold      float64
+	SupersedeMode         string
+	QualifierFilter       bool
+	ANNPrefilter          bool
+	AskCache              got.AskCache
+	GoTMaxRefineLatencyMS int64
 
 	SourcesPath string
 }
@@ -115,6 +116,7 @@ func NewServer(deps Deps) *Server {
 		AbstainThreshold:      deps.AbstainThreshold,
 		RollingMemory:         deps.RollingMemory,
 		AskCache:              deps.AskCache,
+		MaxRefineLatencyMS:    deps.GoTMaxRefineLatencyMS,
 	})
 
 	s := &Server{

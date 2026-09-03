@@ -110,6 +110,7 @@ connector that needs them (Discord).
 | `KB_LLM_NO_THINK` | `false` | Skip chain-of-thought generation on hybrid-reasoning models (e.g. Qwen3) for non-streaming, non-tool `Chat()` calls (graph extraction, GoT synthesis) by routing them to Ollama's native `/api/chat` with `think:false` instead of `/v1/chat/completions` — the OpenAI-compat endpoint ignores `think:false` on Ollama and still pays the full reasoning cost. Only affects the LLM pointed at by `KB_LLM_BASE_URL`; requires that endpoint to be Ollama, serving a hybrid-reasoning model. Some Ollama versions reject the `think` field outright for a plain (non-hybrid) model — only enable this when `KB_LLM_MODEL` actually supports thinking mode. Streaming (`kb serve`'s Ask) and tool-calling requests are unaffected. |
 | `KB_MAX_SUBGOALS` | `5` | Max GoT subgoals per question; lower cuts per-question LLM calls at some recall cost |
 | `KB_MAX_GAP_QUERIES` | `3` | Max GoT gap-refine queries per question; lower cuts per-question LLM calls |
+| `KB_GOT_MAX_REFINE_LATENCY_MS` | `0` (unlimited) | Wall-clock budget in ms for a GoT run before its optional refine pass; if already exceeded when the refine decision is made, refine is skipped (fail-open) and `degraded` records `refine_skipped_budget_exceeded` |
 | `KB_DESCRIBE_MODEL` | `qwen3.8:latest` | Chat model used by `kb describe` (independent of `KB_LLM_MODEL`) |
 | `KB_DESCRIBE_BATCH` | `10` | Batch size for `kb describe` summary generation |
 | `KB_SOCKS_PROXY` | (unset) | SOCKS5 proxy (`socks5://host:port`) used by connectors that need it (e.g. Discord) |

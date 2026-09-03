@@ -181,6 +181,7 @@ func (s *Server) startAsk(query string) (string, bool) {
 			AbstainThreshold:      s.deps.AbstainThreshold,
 			RollingMemory:         s.deps.RollingMemory,
 			AskCache:              s.deps.AskCache,
+			MaxRefineLatencyMS:    s.deps.GoTMaxRefineLatencyMS,
 			Progress: func(g got.ThoughtGraph) {
 				s.asks.progress(id, g)
 				s.persistAskRun(id, query, history.AskRunStatusRunning, g, createdAt, nil)

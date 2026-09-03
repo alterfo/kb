@@ -115,15 +115,16 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 
 	r := benchRetriever(env, bundle)
 	orch := got.New(got.Config{
-		Retriever:         retriever.Adapter{Retriever: r},
-		Chat:              bundle.chat,
-		Model:             env.LLMModel,
-		K:                 *topK,
-		MaxSubgoals:       env.MaxSubgoals,
-		MaxGapQueries:     env.MaxGapQueries,
-		RollingMemory:     env.AskRollingWindow,
-		ExtractQualifiers: env.QualifierFilter,
-		AbstainThreshold:  env.AbstainThreshold,
+		Retriever:          retriever.Adapter{Retriever: r},
+		Chat:               bundle.chat,
+		Model:              env.LLMModel,
+		K:                  *topK,
+		MaxSubgoals:        env.MaxSubgoals,
+		MaxGapQueries:      env.MaxGapQueries,
+		RollingMemory:      env.AskRollingWindow,
+		ExtractQualifiers:  env.QualifierFilter,
+		AbstainThreshold:   env.AbstainThreshold,
+		MaxRefineLatencyMS: env.GoTMaxRefineLatencyMS,
 	})
 
 	runner := &runbench.Runner{

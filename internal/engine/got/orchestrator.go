@@ -86,9 +86,18 @@ type Config struct {
 	Sleep      func(ctx context.Context, d time.Duration) error
 	JitterFunc func() float64
 
+	// Now returns the current time; overridable for deterministic tests.
+	// Defaults to time.Now.
+	Now func() time.Time
+
 	CoverageHigh            float64 // deterministic score at/above which a subgoal is covered outright
 	CoverageLow             float64 // deterministic score at/below which a subgoal is uncovered outright
 	RefineCoverageThreshold float64 // overall coverage below which a refine pass is attempted
+
+	// MaxRefineLatencyMS caps elapsed time (from Run start) beyond which the
+	// optional refine pass is skipped even if shouldRefine() would otherwise
+	// trigger it. 0 (default) means unlimited - unchanged legacy behavior.
+	MaxRefineLatencyMS int64
 
 	ContradictionDetector ContradictionDetector
 	DetectContradictions  bool
@@ -194,6 +203,9 @@ func New(cfg Config) *Orchestrator {
 	if cfg.JitterFunc == nil {
 		cfg.JitterFunc = rand.Float64
 	}
+	if cfg.Now == nil {
+		cfg.Now = time.Now
+	}
 	if cfg.CoverageHigh <= 0 {
 		cfg.CoverageHigh = 0.6
 	}
@@ -232,7 +244,7 @@ func (o *Orchestrator) Run(ctx context.Context, query string) ThoughtGraph {
 			return cached
 		}
 	}
-	start := time.Now()
+	start := o.cfg.Now()
 	rc := &runCollector{}
 	ctx = withRunCollector(ctx, rc)
 
@@ -271,20 +283,24 @@ func (o *Orchestrator) Run(ctx context.Context, query string) ThoughtGraph {
 	refined := false
 
 	if o.shouldRefine(gaps, results) {
-		if len(gaps) > o.cfg.MaxGapQueries {
-			gaps = gaps[:o.cfg.MaxGapQueries]
-		}
-		refineSubgoals := buildExpansionSubgoals(gaps, len(results))
-		refineResults := o.runExpansionScheduled(ctx, b, results, refineSubgoals, runFilter)
-		allResults = append(append([]subgoalResult(nil), results...), refineResults...)
+		if o.withinRefineBudget(start) {
+			if len(gaps) > o.cfg.MaxGapQueries {
+				gaps = gaps[:o.cfg.MaxGapQueries]
+			}
+			refineSubgoals := buildExpansionSubgoals(gaps, len(results))
+			refineResults := o.runExpansionScheduled(ctx, b, results, refineSubgoals, runFilter)
+			allResults = append(append([]subgoalResult(nil), results...), refineResults...)
 
-		b.setNode(Node{ID: NodeRefineAggregate, Type: NodeRefineAggregate, ParentID: NodeFindGaps, Status: StatusRunning})
-		finalAnswer = o.aggregate(ctx, query, allResults)
-		refined = true
-		b.setNode(Node{
-			ID: NodeRefineAggregate, Type: NodeRefineAggregate, ParentID: NodeFindGaps,
-			Status: StatusDone, Answer: finalAnswer, Sources: dedupSources(allSources(refineResults)),
-		})
+			b.setNode(Node{ID: NodeRefineAggregate, Type: NodeRefineAggregate, ParentID: NodeFindGaps, Status: StatusRunning})
+			finalAnswer = o.aggregate(ctx, query, allResults)
+			refined = true
+			b.setNode(Node{
+				ID: NodeRefineAggregate, Type: NodeRefineAggregate, ParentID: NodeFindGaps,
+				Status: StatusDone, Answer: finalAnswer, Sources: dedupSources(allSources(refineResults)),
+			})
+		} else {
+			addDegraded(ctx, "refine_skipped_budget_exceeded")
+		}
 	}
 
 	if o.cfg.AbstainThreshold > 0 && allUncovered(allResults) && averageCoverage(allResults) < o.cfg.AbstainThreshold {
@@ -346,6 +362,15 @@ func (o *Orchestrator) shouldRefine(gaps []gapSpec, results []subgoalResult) boo
 		return false
 	}
 	return averageCoverage(results) < o.cfg.RefineCoverageThreshold
+}
+
+// withinRefineBudget reports whether the orchestrator is still allowed to
+// start the refine pass. MaxRefineLatencyMS <= 0 means unlimited.
+func (o *Orchestrator) withinRefineBudget(start time.Time) bool {
+	if o.cfg.MaxRefineLatencyMS <= 0 {
+		return true
+	}
+	return o.cfg.Now().Sub(start).Milliseconds() < o.cfg.MaxRefineLatencyMS
 }
 
 func averageCoverage(results []subgoalResult) float64 {

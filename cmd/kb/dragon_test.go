@@ -193,3 +193,37 @@ func TestBenchDragonAskNaiveSkipsOrchestrator(t *testing.T) {
 		t.Errorf("docIDs = %v, want empty (no retrieval legs configured)", docIDs)
 	}
 }
+
+func TestBenchDragonGotConfigWiresContradictionDetection(t *testing.T) {
+	chat := &decomposeCountingChat{resp: "x"}
+
+	on := benchDragonGotConfig(config.Env{LLMModel: "m", DetectContradictions: true}, nil, chat, 5)
+	if !on.DetectContradictions {
+		t.Fatal("DetectContradictions = false, want true")
+	}
+	if on.ContradictionDetector == nil {
+		t.Fatal("ContradictionDetector = nil, want non-nil")
+	}
+
+	off := benchDragonGotConfig(config.Env{LLMModel: "m"}, nil, chat, 5)
+	if off.DetectContradictions {
+		t.Fatal("DetectContradictions = true, want false when env unset")
+	}
+	if off.ContradictionDetector == nil {
+		t.Fatal("ContradictionDetector = nil, want non-nil even when disabled")
+	}
+}
+
+func TestBenchDragonGotConfigWiresMaxRefineLatencyMS(t *testing.T) {
+	chat := &decomposeCountingChat{resp: "x"}
+
+	cfg := benchDragonGotConfig(config.Env{LLMModel: "m", GoTMaxRefineLatencyMS: 90000}, nil, chat, 5)
+	if cfg.MaxRefineLatencyMS != 90000 {
+		t.Fatalf("MaxRefineLatencyMS = %d, want 90000", cfg.MaxRefineLatencyMS)
+	}
+
+	unset := benchDragonGotConfig(config.Env{LLMModel: "m"}, nil, chat, 5)
+	if unset.MaxRefineLatencyMS != 0 {
+		t.Fatalf("MaxRefineLatencyMS = %d, want 0 when env unset", unset.MaxRefineLatencyMS)
+	}
+}

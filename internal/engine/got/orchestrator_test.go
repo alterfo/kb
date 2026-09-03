@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -189,6 +190,99 @@ func (c countingScriptedChat) Chat(ctx context.Context, req llm.ChatRequest) (ll
 		*c.onFindGaps++
 	}
 	return c.inner.Chat(ctx, req)
+}
+
+// steppedClock returns each time in order on successive calls, repeating
+// the last one once exhausted - enough to give Run's start-time read and
+// withinRefineBudget's later read distinct, deterministic values.
+func steppedClock(times ...time.Time) func() time.Time {
+	i := 0
+	return func() time.Time {
+		t := times[i]
+		if i < len(times)-1 {
+			i++
+		}
+		return t
+	}
+}
+
+func refineFixture() (fakeRetriever, scriptedChat) {
+	retriever := fakeRetriever{byQuery: map[string][]vector.ScoredChunk{
+		"gap query": goodChunks("gap"),
+	}}
+	chat := scriptedChat{byPrompt: map[string]llm.ChatResponse{
+		"You break a user question":   {Content: `["sub1"]`},
+		"Given the original question": {Content: `["gap query"]`},
+		"You combine sub-answers":     {Content: "refined final answer"},
+	}}
+	return retriever, chat
+}
+
+func TestRunSkipsRefineWhenBudgetExceeded(t *testing.T) {
+	retriever, chat := refineFixture()
+	t0 := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	cfg := baseConfig()
+	cfg.Retriever = retriever
+	cfg.Chat = chat
+	cfg.MaxRefineLatencyMS = 100
+	cfg.Now = steppedClock(t0, t0.Add(200*time.Millisecond))
+	g := New(cfg).Run(context.Background(), "q")
+
+	if g.Refined {
+		t.Fatalf("got Refined=true, want false (budget already exceeded)")
+	}
+	for _, n := range g.Nodes {
+		if n.Type == NodeRefineSubgoal || n.Type == NodeRefineAggregate {
+			t.Fatalf("unexpected refine node with budget exceeded: %+v", n)
+		}
+	}
+	found := false
+	for _, d := range g.Degraded {
+		if d == "refine_skipped_budget_exceeded" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("got Degraded=%v, want it to contain refine_skipped_budget_exceeded", g.Degraded)
+	}
+}
+
+func TestRunRefinesWhenWithinBudget(t *testing.T) {
+	retriever, chat := refineFixture()
+	t0 := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	cfg := baseConfig()
+	cfg.Retriever = retriever
+	cfg.Chat = chat
+	cfg.MaxRefineLatencyMS = 100
+	cfg.Now = steppedClock(t0, t0.Add(10*time.Millisecond))
+	g := New(cfg).Run(context.Background(), "q")
+
+	if !g.Refined {
+		t.Fatalf("got Refined=false, want true (elapsed time still within budget)")
+	}
+	if g.FinalAnswer != "refined final answer" {
+		t.Fatalf("got FinalAnswer %q", g.FinalAnswer)
+	}
+}
+
+func TestRunUnlimitedBudgetNeverGatesRefine(t *testing.T) {
+	retriever, chat := refineFixture()
+	cfg := baseConfig()
+	cfg.Retriever = retriever
+	cfg.Chat = chat
+	// MaxRefineLatencyMS left at its zero value (unlimited); no custom Now.
+	g := New(cfg).Run(context.Background(), "q")
+
+	if !g.Refined {
+		t.Fatalf("got Refined=false, want true (MaxRefineLatencyMS=0 must never gate refine)")
+	}
+	for _, d := range g.Degraded {
+		if d == "refine_skipped_budget_exceeded" {
+			t.Fatalf("got unexpected budget-skip degraded message with unlimited budget: %v", g.Degraded)
+		}
+	}
 }
 
 func TestRunFailOpenOnRetrieverError(t *testing.T) {
@@ -654,6 +748,28 @@ func TestRunGapExpansionSkippedWhenCoverageHigh(t *testing.T) {
 		if n.Type == NodeRefineSubgoal || n.Type == NodeRefineAggregate {
 			t.Fatalf("unexpected refine node: %+v", n)
 		}
+	}
+}
+
+func TestNewDefaultsNowToTimeNow(t *testing.T) {
+	o := New(Config{})
+
+	if o.cfg.Now == nil {
+		t.Fatal("New() left cfg.Now nil, want default time.Now")
+	}
+	want := reflect.ValueOf(time.Now).Pointer()
+	got := reflect.ValueOf(o.cfg.Now).Pointer()
+	if got != want {
+		t.Fatalf("cfg.Now = %v, want time.Now", got)
+	}
+}
+
+func TestNewPreservesCustomNow(t *testing.T) {
+	fixed := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	o := New(Config{Now: func() time.Time { return fixed }})
+
+	if got := o.cfg.Now(); !got.Equal(fixed) {
+		t.Fatalf("cfg.Now() = %v, want %v", got, fixed)
 	}
 }
 

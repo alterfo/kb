@@ -10,44 +10,45 @@ import (
 type EnvLookup func(key string) (string, bool)
 
 type Env struct {
-	KBRoot               string
-	PersistDir           string
-	LLMBaseURL           string
-	EmbedBaseURL         string
-	EmbedIndexBaseURL    string
-	LLMModel             string
-	EmbedModel           string
-	DescribeModel        string
-	DescribeBatch        int
-	Hybrid               bool
-	Rerank               string
-	AuthorityBonus       map[string]float64
-	NoProxy              []string
-	TopK                 int
-	ChunkSize            int
-	ChunkOverlap         int
-	RRFK                 int
-	CommunityAlgo        string
-	DetectContradictions bool
-	QualifierFilter      bool
-	CandidateK           int
-	PerDocCap            int
-	SetMaxRounds         int
-	AbstainThreshold     float64
-	SupersedeMode        string
-	IntraDocBudget       int
-	AskRollingWindow     int
-	StaleAfter           time.Duration
-	MaxSubgoals          int
-	MaxGapQueries        int
-	LLMTimeout           time.Duration
-	LLMMaxTokens         int
-	LLMNoThink           bool
-	IndexGraph           bool
-	FTS5                 bool
-	ANNPrefilter         bool
-	PIIRedact            bool
-	WebRateLimit         int
+	KBRoot                string
+	PersistDir            string
+	LLMBaseURL            string
+	EmbedBaseURL          string
+	EmbedIndexBaseURL     string
+	LLMModel              string
+	EmbedModel            string
+	DescribeModel         string
+	DescribeBatch         int
+	Hybrid                bool
+	Rerank                string
+	AuthorityBonus        map[string]float64
+	NoProxy               []string
+	TopK                  int
+	ChunkSize             int
+	ChunkOverlap          int
+	RRFK                  int
+	CommunityAlgo         string
+	DetectContradictions  bool
+	QualifierFilter       bool
+	CandidateK            int
+	PerDocCap             int
+	SetMaxRounds          int
+	AbstainThreshold      float64
+	SupersedeMode         string
+	IntraDocBudget        int
+	AskRollingWindow      int
+	StaleAfter            time.Duration
+	MaxSubgoals           int
+	MaxGapQueries         int
+	GoTMaxRefineLatencyMS int64
+	LLMTimeout            time.Duration
+	LLMMaxTokens          int
+	LLMNoThink            bool
+	IndexGraph            bool
+	FTS5                  bool
+	ANNPrefilter          bool
+	PIIRedact             bool
+	WebRateLimit          int
 }
 
 // DefaultLocalLLMURL is the local LLM. It is pinned to the local
@@ -288,6 +289,13 @@ func LoadEnv(lookup EnvLookup) (Env, error) {
 			return Env{}, fmt.Errorf("KB_MAX_GAP_QUERIES: invalid positive int %q", v)
 		}
 		e.MaxGapQueries = n
+	}
+	if v, ok := lookup("KB_GOT_MAX_REFINE_LATENCY_MS"); ok && v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 0 {
+			return Env{}, fmt.Errorf("KB_GOT_MAX_REFINE_LATENCY_MS: invalid non-negative int %q", v)
+		}
+		e.GoTMaxRefineLatencyMS = n
 	}
 	if v, ok := lookup("KB_LLM_MAX_TOKENS"); ok && v != "" {
 		n, err := strconv.Atoi(v)

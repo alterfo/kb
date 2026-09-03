@@ -15,6 +15,7 @@ import (
 	"github.com/alterfo/kb/internal/engine/got"
 	"github.com/alterfo/kb/internal/engine/retriever"
 	"github.com/alterfo/kb/internal/store/sqlite"
+	"github.com/alterfo/kb/internal/verify"
 )
 
 func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
@@ -202,15 +203,7 @@ func benchDragonAsk(env config.Env, r *retriever.Retriever, chat dragon.ChatClie
 			return answer, runbench.CorpusDocumentIDs(docIDs)
 		}
 	}
-	orch := got.New(got.Config{
-		Retriever:         retriever.Adapter{Retriever: r},
-		Chat:              chat,
-		Model:             env.LLMModel,
-		K:                 topK,
-		RollingMemory:     env.AskRollingWindow,
-		ExtractQualifiers: env.QualifierFilter,
-		AbstainThreshold:  env.AbstainThreshold,
-	})
+	orch := got.New(benchDragonGotConfig(env, r, chat, topK))
 	return func(ctx context.Context, q corpus.Question) (string, []string) {
 		g := orch.Run(ctx, q.Text)
 		docIDs := make([]string, 0, len(g.Sources))
@@ -218,6 +211,21 @@ func benchDragonAsk(env config.Env, r *retriever.Retriever, chat dragon.ChatClie
 			docIDs = append(docIDs, s.DocID)
 		}
 		return g.FinalAnswer, runbench.CorpusDocumentIDs(docIDs)
+	}
+}
+
+func benchDragonGotConfig(env config.Env, r *retriever.Retriever, chat dragon.ChatClient, topK int) got.Config {
+	return got.Config{
+		Retriever:             retriever.Adapter{Retriever: r},
+		Chat:                  chat,
+		Model:                 env.LLMModel,
+		K:                     topK,
+		RollingMemory:         env.AskRollingWindow,
+		ExtractQualifiers:     env.QualifierFilter,
+		AbstainThreshold:      env.AbstainThreshold,
+		ContradictionDetector: verify.NewContradictionDetector(chat, env.LLMModel),
+		DetectContradictions:  env.DetectContradictions,
+		MaxRefineLatencyMS:    env.GoTMaxRefineLatencyMS,
 	}
 }
 
