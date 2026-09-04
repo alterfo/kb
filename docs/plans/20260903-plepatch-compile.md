@@ -113,12 +113,12 @@ kb поставляет только компилятор патчей (втор
 - [x] run tests — must pass before task 5
 
 ### Task 5: `internal/plepatch` — GGUF-BPE токенизатор
-- [ ] создать `internal/plepatch/bpe.go`: bytes_to_unicode-таблица GPT-2
-- [ ] реализовать pre-tokenizer (qwen2- и gpt2-паттерны; `\s+(?!\S)`-альтернатива отбрасывается — RE2 без lookahead, `\s+` покрывает те же матчи) + BPE-merge-цикл по ranks из `tokenizer.ggml.merges` (с кэшем)
-- [ ] реализовать загрузку из GGUF-метаданных (`tokenizer.ggml.tokens/merges/pre/byte_fallback/add_prefix_space`)
-- [ ] write tests: byte-level vocab без merges (synthetic) — identity для любых строк
-- [ ] write tests: hand-built vocab+merges — корректные слияния, qwen2-pattern сегментация, byte_fallback, детерминизм
-- [ ] run tests — must pass before task 6
+- [x] создать `internal/plepatch/bpe.go`: bytes_to_unicode-таблица GPT-2
+- [x] реализовать pre-tokenizer (qwen2- и gpt2-паттерны; `\s+(?!\S)`-альтернатива отбрасывается — RE2 без lookahead, `\s+` покрывает те же матчи) + BPE-merge-цикл по ranks из `tokenizer.ggml.merges` (с кэшем)
+- [x] реализовать загрузку из GGUF-метаданных (`tokenizer.ggml.tokens/merges/pre/byte_fallback/add_prefix_space`)
+- [x] write tests: byte-level vocab без merges (synthetic) — identity для любых строк
+- [x] write tests: hand-built vocab+merges — корректные слияния, qwen2-pattern сегментация, byte_fallback, детерминизм
+- [x] run tests — must pass before task 6
 
 ### Task 6: `internal/plepatch` — knowledge schema + план
 - [ ] создать `internal/plepatch/knowledge.go`: парсинг entries+defaults (trigger обязателен; ops: set/zero/random/copy_from; at/heads/orders/prefix/note; неизвестный op → ошибка)
