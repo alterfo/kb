@@ -91,11 +91,11 @@ kb поставляет только компилятор патчей (втор
 - [x] run tests — must pass before task 2
 
 ### Task 2: `internal/gguf` — shard discovery + locate tensor
-- [ ] создать `internal/gguf/shards.go`: split.count/split.no из метаданных, поиск шардов по суффиксам (`-00001-of-00006.gguf`, `.00005.gguf`, толерантность к мусорным суффиксам)
-- [ ] locate tensor by name → data_offset, dims, qtype, n_bytes; ошибка если тензора нет
-- [ ] write tests: multi-shard fixture, суффиксные паттерны (вкл. download-junk), отсутствующий шард → ошибка
-- [ ] write tests: locate `per_layer_token_embd.weight` на synthetic fixture; отсутствующий тензор → ошибка
-- [ ] run tests — must pass before task 3
+- [x] создать `internal/gguf/shards.go`: split.count/split.no из метаданных, поиск шардов по суффиксам (`-00001-of-00006.gguf`, `.00005.gguf`, толерантность к мусорным суффиксам)
+- [x] locate tensor by name → data_offset, dims, qtype, n_bytes; ошибка если тензора нет
+- [x] write tests: multi-shard fixture, суффиксные паттерны (вкл. download-junk), отсутствующий шард → ошибка
+- [x] write tests: locate `per_layer_token_embd.weight` на synthetic fixture; отсутствующий тензор → ошибка
+- [x] run tests — must pass before task 3
 
 ### Task 3: `internal/plepatch` — hash + row addressing (pure algorithm, golden)
 - [ ] создать `internal/plepatch/ple.go`: `Constants` (ngram_size, heads_per_ngram, multipliers, offsets, vocab_sizes, eos) из GGUF-метаданных `qwen4exp.ple.*` с валидацией (prefix-sum offsets, длины массивов)
