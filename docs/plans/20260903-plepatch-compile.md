@@ -129,12 +129,12 @@ kb поставляет только компилятор патчей (втор
 - [x] run tests — must pass before task 7
 
 ### Task 7: `internal/plepatch` — overlay writer + reader
-- [ ] создать `internal/plepatch/overlay.go`: 128-байтный header (magic "PLEOVLY1", ver=1, qtype, row_dim, bytes_per_row, n_rows, manifest_len, reserved, 72-байтное имя тензора) + row-записи (u64 row_id + payload)
-- [ ] манифест JSON: format/model/table_tensor/table_sha1_before (sha1 затронутых строк с диска)/row_dim/qtype/bytes_per_row/n_rows/ple{...}/entries[{trigger,op,note}]
-- [ ] атомарная запись (temp+rename по паттерну internal/state/atomic.go); reader для верификации
-- [ ] write tests: roundtrip write→read (по мотивам test_overlay_roundtrip): layout byte-exact, манифест-поля, sha1 по известным байтам строк
-- [ ] write tests: атомарность (ошибка до rename → нет файла/нет частичного), bounds-валидация при чтении битого патча
-- [ ] run tests — must pass before task 8
+- [x] создать `internal/plepatch/overlay.go`: 128-байтный header (magic "PLEOVLY1", ver=1, qtype, row_dim, bytes_per_row, n_rows, manifest_len, reserved, 72-байтное имя тензора) + row-записи (u64 row_id + payload)
+- [x] манифест JSON: format/model/table_tensor/table_sha1_before (sha1 затронутых строк с диска)/row_dim/qtype/bytes_per_row/n_rows/ple{...}/entries[{trigger,op,note}]
+- [x] атомарная запись (temp+rename по паттерну internal/state/atomic.go); reader для верификации
+- [x] write tests: roundtrip write→read (по мотивам test_overlay_roundtrip): layout byte-exact, манифест-поля, sha1 по известным байтам строк
+- [x] write tests: атомарность (ошибка до rename → нет файла/нет частичного), bounds-валидация при чтении битого патча
+- [x] run tests — must pass before task 8
 
 ### Task 8: `cmd/kb` — команда `kb memory compile`
 - [ ] создать `cmd/kb/memory.go`: `runMemoryCmd` — сабкоманда `compile` (иначе usage → exit 2); флаги `-gguf` (обязателен), `-knowledge` (обязателен), `-out` (дефолт: имя knowledge с `.plepatch`), `-report`, `-dry-run`
