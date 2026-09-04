@@ -106,11 +106,11 @@ kb поставляет только компилятор патчей (втор
 - [x] run tests — must pass before task 4
 
 ### Task 4: `internal/plepatch` — Q8_0 кодек
-- [ ] создать `internal/plepatch/q8.go`: quantize/dequantize блока (32 float32 → 34 байт: 32×int8 + scale d fp16; d = amax/127, clamp [-127,127])
-- [ ] реализовать `encodeRow`/`decodeRow` (row_dim=160 → 170 байт)
-- [ ] write tests: roundtrip byte-identical (как test_q8_roundtrip_byte_identical)
-- [ ] write tests: edge-кейсы (нули, отрицательные, amax-границы, неверная длина → ошибка)
-- [ ] run tests — must pass before task 5
+- [x] создать `internal/plepatch/q8.go`: quantize/dequantize блока (32 float32 → 34 байт: 32×int8 + scale d fp16; d = amax/127, clamp [-127,127])
+- [x] реализовать `encodeRow`/`decodeRow` (row_dim=160 → 170 байт)
+- [x] write tests: roundtrip byte-identical (как test_q8_roundtrip_byte_identical)
+- [x] write tests: edge-кейсы (нули, отрицательные, amax-границы, неверная длина → ошибка)
+- [x] run tests — must pass before task 5
 
 ### Task 5: `internal/plepatch` — GGUF-BPE токенизатор
 - [ ] создать `internal/plepatch/bpe.go`: bytes_to_unicode-таблица GPT-2
