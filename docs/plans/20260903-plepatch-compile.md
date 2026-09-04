@@ -98,12 +98,12 @@ kb поставляет только компилятор патчей (втор
 - [x] run tests — must pass before task 3
 
 ### Task 3: `internal/plepatch` — hash + row addressing (pure algorithm, golden)
-- [ ] создать `internal/plepatch/ple.go`: `Constants` (ngram_size, heads_per_ngram, multipliers, offsets, vocab_sizes, eos) из GGUF-метаданных `qwen4exp.ple.*` с валидацией (prefix-sum offsets, длины массивов)
-- [ ] реализовать `mixed_value` (mul-xor uint64) и `rows_for_token` с EOS-reset-семантикой (eos у t-1 режет t-2; eos у t-2 не трогает ctx[1]; собственный eos токена не режет контекст)
-- [ ] реализовать `rows_for_sequence` (per-position rows)
-- [ ] write tests: 18 golden-окон из `tests/golden/golden.txt` (testdata) — byte-exact
-- [ ] write tests: EOS-reset-семантика (a==b, d!=e кейсы из test_ple.py), rows_in_range property, ошибки валидации метаданных
-- [ ] run tests — must pass before task 4
+- [x] создать `internal/plepatch/ple.go`: `Constants` (ngram_size, heads_per_ngram, multipliers, offsets, vocab_sizes, eos) из GGUF-метаданных `qwen4exp.ple.*` с валидацией (prefix-sum offsets, длины массивов)
+- [x] реализовать `mixed_value` (mul-xor uint64) и `rows_for_token` с EOS-reset-семантикой (eos у t-1 режет t-2; eos у t-2 не трогает ctx[1]; собственный eos токена не режет контекст)
+- [x] реализовать `rows_for_sequence` (per-position rows)
+- [x] write tests: 18 golden-окон из `tests/golden/golden.txt` (testdata) — byte-exact
+- [x] write tests: EOS-reset-семантика (a==b, d!=e кейсы из test_ple.py), rows_in_range property, ошибки валидации метаданных
+- [x] run tests — must pass before task 4
 
 ### Task 4: `internal/plepatch` — Q8_0 кодек
 - [ ] создать `internal/plepatch/q8.go`: quantize/dequantize блока (32 float32 → 34 байт: 32×int8 + scale d fp16; d = amax/127, clamp [-127,127])
