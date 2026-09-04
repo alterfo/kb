@@ -121,12 +121,12 @@ kb поставляет только компилятор патчей (втор
 - [x] run tests — must pass before task 6
 
 ### Task 6: `internal/plepatch` — knowledge schema + план
-- [ ] создать `internal/plepatch/knowledge.go`: парсинг entries+defaults (trigger обязателен; ops: set/zero/random/copy_from; at/heads/orders/prefix/note; неизвестный op → ошибка)
-- [ ] реализовать build_plan: prefix+trigger → tokens → rows_for_sequence → фильтр heads/orders/positions → target rows → resolve векторов (inline JSON-массив, raw f32 файл, .json файл, random seeded normal*0.02, zero, copy_from: read rows + mean)
-- [ ] реализовать last-write-wins по row_ops + подсчёт touched (коллизии)
-- [ ] write tests: слияние defaults, невалидные entries → ошибки, фильтры heads/orders, positions (last/all/first/int)
-- [ ] write tests: copy_from (mean по heads источника), random детерминизм (same seed → same vector), коллизии считаются
-- [ ] run tests — must pass before task 7
+- [x] создать `internal/plepatch/knowledge.go`: парсинг entries+defaults (trigger обязателен; ops: set/zero/random/copy_from; at/heads/orders/prefix/note; неизвестный op → ошибка)
+- [x] реализовать build_plan: prefix+trigger → tokens → rows_for_sequence → фильтр heads/orders/positions → target rows → resolve векторов (inline JSON-массив, raw f32 файл, .json файл, random seeded normal*0.02, zero, copy_from: read rows + mean)
+- [x] реализовать last-write-wins по row_ops + подсчёт touched (коллизии)
+- [x] write tests: слияние defaults, невалидные entries → ошибки, фильтры heads/orders, positions (last/all/first/int)
+- [x] write tests: copy_from (mean по heads источника), random детерминизм (same seed → same vector), коллизии считаются
+- [x] run tests — must pass before task 7
 
 ### Task 7: `internal/plepatch` — overlay writer + reader
 - [ ] создать `internal/plepatch/overlay.go`: 128-байтный header (magic "PLEOVLY1", ver=1, qtype, row_dim, bytes_per_row, n_rows, manifest_len, reserved, 72-байтное имя тензора) + row-записи (u64 row_id + payload)
