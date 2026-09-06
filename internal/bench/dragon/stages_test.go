@@ -7,9 +7,9 @@ import (
 )
 
 func TestEvolutionStages(t *testing.T) {
-	stages := EvolutionStages()
+	stages := evolutionStages()
 	if len(stages) != 7 {
-		t.Fatalf("len(EvolutionStages) = %d, want 7", len(stages))
+		t.Fatalf("len(evolutionStages) = %d, want 7", len(stages))
 	}
 
 	want := []Stage{
@@ -107,7 +107,7 @@ func TestEvolutionStages(t *testing.T) {
 }
 
 func TestEvolutionStagesKeySetNeverShrinks(t *testing.T) {
-	stages := EvolutionStages()
+	stages := evolutionStages()
 	for i := 1; i < len(stages); i++ {
 		prev := stages[i-1].EnvOverrides
 		for k := range prev {
@@ -133,12 +133,12 @@ func TestMaxQuestionCount(t *testing.T) {
 		{"zero rate", 0, time.Minute, 100, 0},
 		{"zero pool", 1, time.Minute, 0, 0},
 		{"negative budget", 10, -time.Minute, 100, 0},
-		{"default budget", 10, DefaultAnswerBudget, 600, 540},
+		{"default budget", 10, defaultAnswerBudget, 600, 540},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := MaxQuestionCount(tc.secondsPerQuestion, tc.budget, tc.poolSize); got != tc.want {
-				t.Errorf("MaxQuestionCount(%v, %v, %d) = %d, want %d",
+			if got := maxQuestionCount(tc.secondsPerQuestion, tc.budget, tc.poolSize); got != tc.want {
+				t.Errorf("maxQuestionCount(%v, %v, %d) = %d, want %d",
 					tc.secondsPerQuestion, tc.budget, tc.poolSize, got, tc.want)
 			}
 		})

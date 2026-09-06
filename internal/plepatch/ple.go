@@ -15,12 +15,6 @@ type Constants struct {
 	EosTokenID     int64
 }
 
-type HeadRange struct {
-	Order     int
-	FirstHead int
-	HeadCount int
-}
-
 func (c *Constants) NHeads() int {
 	return (c.NgramSize - 1) * c.HeadsPerNgram
 }
@@ -28,22 +22,6 @@ func (c *Constants) NHeads() int {
 func (c *Constants) NRows() uint64 {
 	last := len(c.HeadOffsets) - 1
 	return c.HeadOffsets[last] + c.HeadVocabSizes[last]
-}
-
-func (c *Constants) HeadOf(h int) (uint64, uint64) {
-	return c.HeadOffsets[h], c.HeadVocabSizes[h]
-}
-
-func (c *Constants) HeadRanges() []HeadRange {
-	out := make([]HeadRange, 0, c.NgramSize-1)
-	for n := 2; n <= c.NgramSize; n++ {
-		out = append(out, HeadRange{
-			Order:     n,
-			FirstHead: (n - 2) * c.HeadsPerNgram,
-			HeadCount: c.HeadsPerNgram,
-		})
-	}
-	return out
 }
 
 func LoadConstants(f *gguf.File) (*Constants, error) {
@@ -123,6 +101,9 @@ func LoadConstants(f *gguf.File) (*Constants, error) {
 	var expect uint64
 	for h, off := range headOffsets {
 		vsz := headVocabSizes[h]
+		if vsz == 0 {
+			return nil, fmt.Errorf("plepatch: head_vocab_sizes[%d]=0, must be positive", h)
+		}
 		if off != expect {
 			return nil, fmt.Errorf("plepatch: head_offsets[%d]=%d is not the prefix sum %d; heads must tile the table contiguously", h, off, expect)
 		}
@@ -214,7 +195,7 @@ func intArray(v gguf.Value, key string) ([]uint64, error) {
 	}
 }
 
-func MixedValue(ctx []uint64, n int, multipliers []uint64) uint64 {
+func mixedValue(ctx []uint64, n int, multipliers []uint64) uint64 {
 	mixed := ctx[0] * multipliers[0]
 	for j := 1; j < n; j++ {
 		mixed ^= ctx[j] * multipliers[j]
@@ -244,7 +225,7 @@ func (c *Constants) RowsForToken(tok int64, prev []int64) []uint64 {
 
 	rows := make([]uint64, 0, c.NHeads())
 	for n := 2; n <= nGram; n++ {
-		mixed := MixedValue(ctx, n, c.Multipliers)
+		mixed := mixedValue(ctx, n, c.Multipliers)
 		base := (n - 2) * c.HeadsPerNgram
 		for g := 0; g < c.HeadsPerNgram; g++ {
 			h := base + g

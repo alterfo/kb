@@ -197,6 +197,34 @@ func TestParseMalformed(t *testing.T) {
 	truncatedTensor = append(truncatedTensor, leU64(3)...)
 	truncatedTensor = append(truncatedTensor, []byte("ab")...)
 
+	hugeTensorDims := append([]byte(nil), Magic...)
+	hugeTensorDims = append(hugeTensorDims, leU32(3)...) // version
+	hugeTensorDims = append(hugeTensorDims, leU64(1)...) // tensorCount
+	hugeTensorDims = append(hugeTensorDims, leU64(0)...) // kvCount
+	hugeTensorDims = append(hugeTensorDims, leU64(1)...) // tensor name len
+	hugeTensorDims = append(hugeTensorDims, []byte("t")...)
+	hugeTensorDims = append(hugeTensorDims, leU32(0xFFFFFFFF)...) // ndims
+
+	hugeStringArray := append([]byte(nil), Magic...)
+	hugeStringArray = append(hugeStringArray, leU32(3)...) // version
+	hugeStringArray = append(hugeStringArray, leU64(0)...) // tensorCount
+	hugeStringArray = append(hugeStringArray, leU64(1)...) // kvCount
+	hugeStringArray = append(hugeStringArray, leU64(1)...) // key len
+	hugeStringArray = append(hugeStringArray, []byte("k")...)
+	hugeStringArray = append(hugeStringArray, leU32(uint32(TypeArray))...)
+	hugeStringArray = append(hugeStringArray, leU32(uint32(TypeString))...)
+	hugeStringArray = append(hugeStringArray, leU64(0xFFFFFFFFFFFFFFFF)...) // element count
+
+	hugeNestedArray := append([]byte(nil), Magic...)
+	hugeNestedArray = append(hugeNestedArray, leU32(3)...) // version
+	hugeNestedArray = append(hugeNestedArray, leU64(0)...) // tensorCount
+	hugeNestedArray = append(hugeNestedArray, leU64(1)...) // kvCount
+	hugeNestedArray = append(hugeNestedArray, leU64(1)...) // key len
+	hugeNestedArray = append(hugeNestedArray, []byte("k")...)
+	hugeNestedArray = append(hugeNestedArray, leU32(uint32(TypeArray))...)
+	hugeNestedArray = append(hugeNestedArray, leU32(uint32(TypeArray))...)
+	hugeNestedArray = append(hugeNestedArray, leU64(0xFFFFFFFFFFFFFFFF)...) // element count
+
 	cases := []struct {
 		name string
 		data []byte
@@ -206,6 +234,9 @@ func TestParseMalformed(t *testing.T) {
 		{"wrong magic", []byte("XXXX0000000000000000")},
 		{"truncated metadata string", append(append(append([]byte(Magic), leU32(3)...), leU64(0)...), leU64(1)...)},
 		{"truncated tensor name", truncatedTensor},
+		{"huge tensor dims count", hugeTensorDims},
+		{"huge string array count", hugeStringArray},
+		{"huge nested array count", hugeNestedArray},
 	}
 
 	for _, tc := range cases {

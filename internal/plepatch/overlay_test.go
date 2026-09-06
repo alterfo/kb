@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -304,6 +305,27 @@ func TestParseOverlayCorrupt(t *testing.T) {
 		if _, err := ParseOverlay(tc.data); err == nil {
 			t.Fatalf("%s: expected error", tc.name)
 		}
+	}
+}
+
+func TestParseOverlayBytesPerRowOverflow(t *testing.T) {
+	o, err := NewOverlay(OverlayParams{
+		Model:       "m",
+		TableTensor: "t",
+		RowDim:      1,
+		QType:       8,
+		BytesPerRow: math.MaxUint64 - 4,
+		NRows:       1,
+	})
+	if err != nil {
+		t.Fatalf("NewOverlay: %v", err)
+	}
+	data, err := o.Bytes()
+	if err != nil {
+		t.Fatalf("Bytes: %v", err)
+	}
+	if _, err := ParseOverlay(data); err == nil {
+		t.Fatalf("expected error for overflowing bytes_per_row")
 	}
 }
 

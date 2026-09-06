@@ -22,7 +22,6 @@ type Tokenizer struct {
 	byteFallback   bool
 	addPrefixSpace bool
 	decoder        [256]rune
-	encoder        map[rune]byte
 	tokens         []string
 	tokToID        map[string]int
 	bpeRanks       map[[2]string]int
@@ -66,14 +65,10 @@ func NewTokenizer(tokens, merges []string, byteFallback, addPrefixSpace bool, pr
 		byteFallback:   byteFallback,
 		addPrefixSpace: addPrefixSpace,
 		decoder:        bytesToUnicode(),
-		encoder:        make(map[rune]byte, 256),
 		tokens:         append([]string(nil), tokens...),
 		tokToID:        make(map[string]int, len(tokens)),
 		bpeRanks:       make(map[[2]string]int, len(merges)),
 		cache:          make(map[string][]string),
-	}
-	for b, r := range t.decoder {
-		t.encoder[r] = byte(b)
 	}
 	for i, tok := range t.tokens {
 		t.tokToID[tok] = i
@@ -212,13 +207,16 @@ func (t *Tokenizer) bpe(text string) []string {
 }
 
 func (t *Tokenizer) Encode(text string) []int {
+	if t.addPrefixSpace {
+		text = " " + text
+	}
 	var ids []int
 	for _, piece := range t.pattern.FindAllString(text, -1) {
 		for _, sym := range t.bpe(piece) {
 			tid, ok := t.tokToID[sym]
 			if !ok && t.byteFallback {
-				for _, b := range []byte(sym) {
-					if fid, ok2 := t.tokToID[string(t.decoder[b])]; ok2 {
+				for _, r := range sym {
+					if fid, ok2 := t.tokToID[string(r)]; ok2 {
 						ids = append(ids, fid)
 					}
 				}

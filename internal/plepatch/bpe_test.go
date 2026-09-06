@@ -181,6 +181,41 @@ func TestByteFallback(t *testing.T) {
 	}
 }
 
+func TestByteFallbackDecomposesMultiByteMappedSymbol(t *testing.T) {
+	toks := byteLevelVocab()
+	merges := []string{"Ā ā"}
+	tok, err := NewTokenizer(toks, merges, true, false, "gpt2")
+	if err != nil {
+		t.Fatalf("NewTokenizer: %v", err)
+	}
+	text := string([]byte{0, 1})
+	got := tok.Encode(text)
+	want := []int{0, 1}
+	if !slices.Equal(got, want) {
+		t.Fatalf("byte fallback for multi-byte-mapped symbol Encode(%q) = %v, want %v", text, got, want)
+	}
+}
+
+func TestAddPrefixSpaceAppliedInEncode(t *testing.T) {
+	toks := byteLevelVocab()
+	withPrefix, err := NewTokenizer(toks, nil, false, true, "gpt2")
+	if err != nil {
+		t.Fatalf("NewTokenizer: %v", err)
+	}
+	withoutPrefix, err := NewTokenizer(toks, nil, false, false, "gpt2")
+	if err != nil {
+		t.Fatalf("NewTokenizer: %v", err)
+	}
+	got := withPrefix.Encode("hello")
+	want := utf8Bytes(" hello")
+	if !slices.Equal(got, want) {
+		t.Fatalf("add_prefix_space Encode(%q) = %v, want %v", "hello", got, want)
+	}
+	if slices.Equal(withoutPrefix.Encode("hello"), got) {
+		t.Fatalf("add_prefix_space=true should not match add_prefix_space=false output")
+	}
+}
+
 func TestTokenizerDeterminism(t *testing.T) {
 	toks := append(byteLevelVocab(), "ab", "abc")
 	tok, err := NewTokenizer(toks, []string{"a b", "ab c"}, false, false, "gpt2")
@@ -224,8 +259,8 @@ func TestLoadTokenizer(t *testing.T) {
 	if r, ok := tok.bpeRanks[[2]string{"a", "b"}]; !ok || r != 0 {
 		t.Fatalf("merge rank for (a,b) = %d ok=%v, want 0 true", r, ok)
 	}
-	if got := tok.Encode("ab"); !slices.Equal(got, []int{256}) {
-		t.Fatalf("Encode(%q) = %v, want [256]", "ab", got)
+	if got := tok.Encode("ab"); !slices.Equal(got, []int{32, 256}) {
+		t.Fatalf("Encode(%q) = %v, want [32 256] (add_prefix_space prepends a space)", "ab", got)
 	}
 }
 

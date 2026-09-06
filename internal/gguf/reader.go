@@ -171,8 +171,13 @@ func (c *cursor) scalar(t ValueType) (any, error) {
 }
 
 func (c *cursor) arrayData(elem ValueType, n uint64) (any, error) {
+	remaining := uint64(c.size - c.off)
 	switch elem {
 	case TypeString:
+		const minStringSize = 8 // shortest possible entry: an empty string's length prefix
+		if n > remaining/minStringSize {
+			return nil, io.ErrUnexpectedEOF
+		}
 		out := make([]string, 0, n)
 		for i := uint64(0); i < n; i++ {
 			s, err := c.string()
@@ -183,6 +188,10 @@ func (c *cursor) arrayData(elem ValueType, n uint64) (any, error) {
 		}
 		return out, nil
 	case TypeArray:
+		const minValueSize = 4 // shortest possible entry: a value's type tag alone
+		if n > remaining/minValueSize {
+			return nil, io.ErrUnexpectedEOF
+		}
 		out := make([]Value, 0, n)
 		for i := uint64(0); i < n; i++ {
 			v, err := c.value()
@@ -376,6 +385,9 @@ func Parse(r io.ReaderAt, size int64) (*File, error) {
 		ndims, err := c.u32()
 		if err != nil {
 			return nil, fmt.Errorf("gguf: read tensor %q dims: %w", name, err)
+		}
+		if uint64(ndims) > uint64(c.size-c.off)/8 {
+			return nil, fmt.Errorf("gguf: tensor %q dims count %d exceeds remaining data", name, ndims)
 		}
 		dims := make([]uint64, ndims)
 		for j := range dims {

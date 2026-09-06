@@ -2,10 +2,10 @@ package dragon
 
 import "time"
 
-// DefaultAnswerBudget is the default per-run budget used to derive the fixed
+// defaultAnswerBudget is the default per-run budget used to derive the fixed
 // question count for the evolution ladder. It leaves headroom under the 2h/run
 // ceiling that the DRAGON bench plan enforces.
-const DefaultAnswerBudget = 90 * time.Minute
+const defaultAnswerBudget = 90 * time.Minute
 
 // Stage describes one rung of the DRAGON evolution ladder. Each stage is the
 // previous stage plus exactly one capability. EnvOverrides are passed through
@@ -19,9 +19,9 @@ type Stage struct {
 	PersistDir   string
 }
 
-// EvolutionStages returns the 7 cumulative stages from the plan Overview:
+// evolutionStages returns the 7 cumulative stages from the plan Overview:
 // Native -> Hybrid -> Graph -> Rerank -> Logic -> Temporal -> Qualifiers.
-func EvolutionStages() []Stage {
+func evolutionStages() []Stage {
 	return []Stage{
 		{
 			Name:       "native",
@@ -98,11 +98,11 @@ func EvolutionStages() []Stage {
 	}
 }
 
-// MaxQuestionCount returns the largest fixed question count that keeps the
+// maxQuestionCount returns the largest fixed question count that keeps the
 // heaviest stage's full answer run under budget given a measured
 // seconds-per-question rate, capped at poolSize (the matched-question-pool
 // size). Non-positive inputs yield zero rather than an invalid count.
-func MaxQuestionCount(secondsPerQuestion float64, budget time.Duration, poolSize int) int {
+func maxQuestionCount(secondsPerQuestion float64, budget time.Duration, poolSize int) int {
 	if secondsPerQuestion <= 0 || poolSize <= 0 {
 		return 0
 	}

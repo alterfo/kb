@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -271,6 +272,9 @@ func ParseOverlay(data []byte) (*Overlay, error) {
 	rest := data[OverlayHeaderSize+int(header.ManifestLen):]
 	if header.BytesPerRow == 0 {
 		return nil, fmt.Errorf("plepatch: bytes_per_row is zero")
+	}
+	if header.BytesPerRow > uint64(math.MaxInt-8) {
+		return nil, fmt.Errorf("plepatch: bytes_per_row %d overflows int", header.BytesPerRow)
 	}
 	recordSize := 8 + int(header.BytesPerRow)
 	if len(rest)%recordSize != 0 {
