@@ -145,11 +145,11 @@ kb поставляет только компилятор патчей (втор
 - [x] run tests — must pass before task 9
 
 ### Task 9: Верификация acceptance + документация
-- [ ] проверить реализацию всех требований Overview (только overlay, ops set/zero/random/copy_from, GGUF-BPE only)
-- [ ] `go test ./...`, `go vet ./...`, `gofmt -l .` — чисто
-- [ ] добавить `### memory compile` в `README.md` `## Usage` (пример knowledge.json, вызов, примечание про llama.cpp-NLTM)
-- [ ] добавить строки `internal/gguf` и `internal/plepatch` в таблицу пакетов `AGENTS.md`
-- [ ] run full test suite — must pass
+- [x] проверить реализацию всех требований Overview (только overlay, ops set/zero/random/copy_from, GGUF-BPE only)
+- [x] `go test ./...`, `go vet ./...`, `gofmt -l .` — чисто
+- [x] добавить `### memory compile` в `README.md` `## Usage` (пример knowledge.json, вызов, примечание про llama.cpp-NLTM)
+- [x] добавить строки `internal/gguf` и `internal/plepatch` в таблицу пакетов `AGENTS.md`
+- [x] run full test suite — must pass
 
 ## Technical Details
 

@@ -418,6 +418,38 @@ Two transports:
 ./bin/kb mcp
 ```
 
+### memory compile
+
+Compiles curated knowledge JSON into a `.plepatch` overlay sidecar for
+Qwen3.8-Flash-Next (`qwen4exp`). The compiler reads the PLE n-gram table
+layout from GGUF metadata, tokenizes each trigger with the model's GGUF-BPE
+tokenizer, and writes resolved vectors into the target rows. Supported
+operations are `set`, `zero`, `random`, and `copy_from`; output is always an
+overlay patch, never a materialized model rewrite.
+
+```json
+{
+  "entries": [
+    {"trigger": "The capital of France is", "op": "copy_from", "copy_from": "Paris"},
+    {"trigger": "Boiling point of water is", "op": "set", "vector": "vector.raw"},
+    {"trigger": "obsolete fact", "op": "zero"}
+  ]
+}
+```
+
+```sh
+./bin/kb memory compile -gguf model.gguf -knowledge knowledge.json
+./bin/kb memory compile -gguf model.gguf -knowledge knowledge.json -out model.gguf.plepatch
+./bin/kb memory compile -gguf model.gguf -knowledge knowledge.json -report report.json
+./bin/kb memory compile -gguf model.gguf -knowledge knowledge.json -dry-run
+```
+
+Without `-out`, the patch is written next to the knowledge file with a
+`.plepatch` extension. `-report` writes a JSON plan/report, and `-dry-run`
+builds the plan without writing the patch. Hot-swap requires the patched
+`ortegaalfredo/llama.cpp-NLTM` runtime serving the Qwen3.8-Flash-Next model;
+standard Ollama does not support `.plepatch` overlays.
+
 ## Connectors
 
 Registered types (in `internal/connectors/registry`, wired in `cmd/kb/connectors.go`):

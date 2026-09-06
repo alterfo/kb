@@ -81,6 +81,8 @@ General project rules apply; this section keeps only kb-specific rules.
 |---|---|---|
 | `cmd/kb` | CLI-обвязка: `sync\|serve\|reindex\|doctor\|mcp\|plan\|describe\|verify` | все команды реализованы; `connectors.go` — регистрация коннекторов |
 | `internal/config` | env (`Env`, `LoadEnv`) + `sources.yaml` (только имена секретных env-переменных) | |
+| `internal/gguf` | минимальный GGUF v3 reader/writer + shard discovery + `LocateTensor` | writer — только для synthetic-фикстур тестов; используется компилятором `.plepatch` |
+| `internal/plepatch` | компилятор PLE-патчей: hash/row-addressing, Q8_0, GGUF-BPE, knowledge schema/plan, overlay writer/reader | формат `PLEOVLY1`, операции `set`/`zero`/`random`/`copy_from`; только overlay-режим |
 | `internal/llm` | `Client` (конкретный тип, не интерфейс) — `Chat`, `ChatStream`, `Embed`, `Dim`; proxy-bypass по `KB_NO_PROXY` | Потребители (retriever, got, rerank) сами объявляют узкие локальные интерфейсы (`Embedder`, `ChatClient`), которым `*llm.Client` удовлетворяет — не полагайся на общий `LLMClient`/`EmbeddingClient` интерфейс, его нет |
 | `internal/store/sqlite` | `VectorStore` и `GraphStore` — реализации поверх `ncruces/go-sqlite3` (pure-Go, без cgo); lifecycle-колонки `chunks` (`created_at/valid_to/replaces/superseded_by`) | **Векторный поиск — brute-force cosine по BLOB**, не sqlite-vec extension (asg017 cgo-only недоступен в pure-Go стеке); чанки soft-close вместо delete в update-пути |
 | `internal/store/vector` | интерфейс `Store` (`EnsureDim/Upsert/DeleteByDoc/Query/AllForBM25/SoftCloseByDoc/SetSuperseded/ClearSupersededBy`) + `Chunk` с lifecycle-полями + `ScoredChunk` | контракт, реализация — в `store/sqlite` |
