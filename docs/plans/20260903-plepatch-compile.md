@@ -137,12 +137,12 @@ kb поставляет только компилятор патчей (втор
 - [x] run tests — must pass before task 8
 
 ### Task 8: `cmd/kb` — команда `kb memory compile`
-- [ ] создать `cmd/kb/memory.go`: `runMemoryCmd` — сабкоманда `compile` (иначе usage → exit 2); флаги `-gguf` (обязателен), `-knowledge` (обязателен), `-out` (дефолт: имя knowledge с `.plepatch`), `-report`, `-dry-run`
-- [ ] вывод в стиле inject.py: model/table/ple-сводка, plan (unique rows, touched, коллизии), per-entry отчёт; ошибки runtime → exit 1
-- [ ] зарегистрировать "memory" в `cmd/kb/main.go` (валидация + диспатч + usage())
-- [ ] write tests: smoke `run(["memory","compile"], ...)` на synthetic GGUF в temp-директории (exit 0, magic в файле), `-dry-run` ничего не пишет, `-report` пишет JSON
-- [ ] write tests: ошибки использования (нет -gguf/-knowledge, нет сабкоманды) → exit 2; битый GGUF → exit 1
-- [ ] run tests — must pass before task 9
+- [x] создать `cmd/kb/memory.go`: `runMemoryCmd` — сабкоманда `compile` (иначе usage → exit 2); флаги `-gguf` (обязателен), `-knowledge` (обязателен), `-out` (дефолт: имя knowledge с `.plepatch`), `-report`, `-dry-run`
+- [x] вывод в стиле inject.py: model/table/ple-сводка, plan (unique rows, touched, коллизии), per-entry отчёт; ошибки runtime → exit 1
+- [x] зарегистрировать "memory" в `cmd/kb/main.go` (валидация + диспатч + usage())
+- [x] write tests: smoke `run(["memory","compile"], ...)` на synthetic GGUF в temp-директории (exit 0, magic в файле), `-dry-run` ничего не пишет, `-report` пишет JSON
+- [x] write tests: ошибки использования (нет -gguf/-knowledge, нет сабкоманды) → exit 2; битый GGUF → exit 1
+- [x] run tests — must pass before task 9
 
 ### Task 9: Верификация acceptance + документация
 - [ ] проверить реализацию всех требований Overview (только overlay, ops set/zero/random/copy_from, GGUF-BPE only)

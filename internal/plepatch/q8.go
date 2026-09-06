@@ -67,6 +67,10 @@ func encodeRow(vec []float32) ([]byte, error) {
 	return out, nil
 }
 
+func EncodeRow(vec []float32) ([]byte, error) {
+	return encodeRow(vec)
+}
+
 func decodeRow(raw []byte) ([]float32, error) {
 	if len(raw) == 0 || len(raw)%q8BlockBytes != 0 {
 		return nil, fmt.Errorf("plepatch: decodeRow: length %d not divisible by %d", len(raw), q8BlockBytes)
@@ -80,6 +84,10 @@ func decodeRow(raw []byte) ([]float32, error) {
 		out = append(out, b...)
 	}
 	return out, nil
+}
+
+func DecodeRow(raw []byte) ([]float32, error) {
+	return decodeRow(raw)
 }
 
 func float16ToFloat32(h uint16) float32 {
