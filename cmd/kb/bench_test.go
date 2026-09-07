@@ -2,14 +2,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/alterfo/kb/internal/bench/corpus"
 	runbench "github.com/alterfo/kb/internal/bench/run"
 	"github.com/alterfo/kb/internal/config"
+	"github.com/alterfo/kb/internal/engine/retriever"
+	"github.com/alterfo/kb/internal/store/sqlite"
 )
 
 func writeReportFile(t *testing.T, dir, name string, rep *runbench.Report) string {
@@ -124,5 +128,56 @@ func TestBenchCompareInvalidJSON(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "parse report") {
 		t.Errorf("stderr = %q, want parse error", stderr.String())
+	}
+}
+
+func TestBenchAnswerModeInvalid(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := runBenchCmd([]string{"-answer-mode", "bogus"}, config.Env{}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "invalid -answer-mode") {
+		t.Errorf("stderr = %q, want invalid -answer-mode error", stderr.String())
+	}
+}
+
+func TestBenchAnswerModeValidAccepted(t *testing.T) {
+	for _, mode := range []string{"got", "naive"} {
+		var stdout, stderr bytes.Buffer
+		code := runBenchCmd([]string{"-answer-mode", mode}, config.Env{}, &stdout, &stderr)
+		if code != 2 {
+			t.Fatalf("code = %d, want 2 (missing corpus/questions)", code)
+		}
+		if strings.Contains(stderr.String(), "invalid -answer-mode") {
+			t.Errorf("stderr = %q, valid mode %q was rejected", stderr.String(), mode)
+		}
+		if !strings.Contains(stderr.String(), "-corpus and -questions are required") {
+			t.Errorf("stderr = %q, want corpus/questions requirement", stderr.String())
+		}
+	}
+}
+
+func TestBenchAskNaiveSkipsOrchestrator(t *testing.T) {
+	db := openDragonTestDB(t)
+	vs := sqlite.NewVectorStore(db)
+	r := retriever.New(retriever.Config{Vector: vs})
+
+	chat := &decomposeCountingChat{resp: "naive answer"}
+	ask := benchAsk(config.Env{LLMModel: "test-model"}, r, chat, "naive", 5)
+
+	answer, docIDs := ask(context.Background(), corpus.Question{ID: "1", Text: "what is kb"})
+
+	if answer != "naive answer" {
+		t.Errorf("answer = %q, want %q", answer, "naive answer")
+	}
+	if chat.chatCalls != 1 {
+		t.Errorf("chat calls = %d, want 1", chat.chatCalls)
+	}
+	if chat.decomposeCalls != 0 {
+		t.Errorf("decompose calls = %d, want 0", chat.decomposeCalls)
+	}
+	if len(docIDs) != 0 {
+		t.Errorf("docIDs = %v, want empty", docIDs)
 	}
 }

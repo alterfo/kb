@@ -193,10 +193,10 @@ func benchDragonIndexTexts(ctx context.Context, bundle *engineBundle, texts []dr
 	return bundle.updater.EndBulk(ctx)
 }
 
-func benchDragonAsk(env config.Env, r *retriever.Retriever, chat dragon.ChatClient, answerMode string, topK int) dragon.AskFunc {
+func benchDragonAsk(env config.Env, r *retriever.Retriever, chat runbench.ChatClient, answerMode string, topK int) dragon.AskFunc {
 	if answerMode == "naive" {
 		return func(ctx context.Context, q corpus.Question) (string, []string) {
-			answer, docIDs, err := dragon.NaiveAnswer(ctx, r, chat, env.LLMModel, topK, q.Text)
+			answer, docIDs, err := runbench.NaiveAnswer(ctx, r, chat, env.LLMModel, topK, q.Text)
 			if err != nil {
 				return "", nil
 			}
@@ -214,7 +214,7 @@ func benchDragonAsk(env config.Env, r *retriever.Retriever, chat dragon.ChatClie
 	}
 }
 
-func benchDragonGotConfig(env config.Env, r *retriever.Retriever, chat dragon.ChatClient, topK int) got.Config {
+func benchDragonGotConfig(env config.Env, r *retriever.Retriever, chat runbench.ChatClient, topK int) got.Config {
 	return got.Config{
 		Retriever:             retriever.Adapter{Retriever: r},
 		Chat:                  chat,

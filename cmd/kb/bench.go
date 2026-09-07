@@ -33,7 +33,12 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 	persistDir := fset.String("persist-dir", "", "reuse this persist/root dir instead of a temporary one; unchanged docs skip reindexing via doc_hashes")
 	historyPath := fset.String("history", "", "metrics history JSON path (default: persist-dir/bench-history.json, or out.history.json)")
 	smoke := fset.Bool("smoke", false, "use the checked-in testdata/lang-bench subset for a one-minute sanity run")
+	answerMode := fset.String("answer-mode", "got", "answering path: got (Graph-of-Thoughts, default) or naive (single-shot retrieval + one chat call)")
 	if err := fset.Parse(args); err != nil {
+		return 2
+	}
+	if *answerMode != "got" && *answerMode != "naive" {
+		fmt.Fprintf(stderr, "bench: invalid -answer-mode %q (want got|naive)\n", *answerMode)
 		return 2
 	}
 	if *smoke {
@@ -114,31 +119,13 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 	}
 
 	r := benchRetriever(env, bundle)
-	orch := got.New(got.Config{
-		Retriever:          retriever.Adapter{Retriever: r},
-		Chat:               bundle.chat,
-		Model:              env.LLMModel,
-		K:                  *topK,
-		MaxSubgoals:        env.MaxSubgoals,
-		MaxGapQueries:      env.MaxGapQueries,
-		RollingMemory:      env.AskRollingWindow,
-		ExtractQualifiers:  env.QualifierFilter,
-		AbstainThreshold:   env.AbstainThreshold,
-		MaxRefineLatencyMS: env.GoTMaxRefineLatencyMS,
-	})
+	ask := benchAsk(env, r, bundle.chat, *answerMode, *topK)
 
 	runner := &runbench.Runner{
 		Questions:   questions,
 		OutPath:     *out,
 		Concurrency: *concurrency,
-		Ask: func(ctx context.Context, q corpus.Question) (string, []string) {
-			g := orch.Run(ctx, q.Text)
-			docIDs := make([]string, 0, len(g.Sources))
-			for _, s := range g.Sources {
-				docIDs = append(docIDs, s.DocID)
-			}
-			return g.FinalAnswer, runbench.CorpusDocumentIDs(docIDs)
-		},
+		Ask:         ask,
 	}
 
 	rep, err := runner.Run(ctx)
@@ -197,6 +184,38 @@ func benchRetriever(env config.Env, bundle *engineBundle) *retriever.Retriever {
 		SupersedeMode:  retriever.SupersedeMode(env.SupersedeMode),
 		ANNPrefilter:   env.ANNPrefilter,
 	})
+}
+
+func benchAsk(env config.Env, r *retriever.Retriever, chat runbench.ChatClient, answerMode string, topK int) runbench.AskFunc {
+	if answerMode == "naive" {
+		return func(ctx context.Context, q corpus.Question) (string, []string) {
+			answer, docIDs, err := runbench.NaiveAnswer(ctx, r, chat, env.LLMModel, topK, q.Text)
+			if err != nil {
+				return "", nil
+			}
+			return answer, runbench.CorpusDocumentIDs(docIDs)
+		}
+	}
+	orch := got.New(got.Config{
+		Retriever:          retriever.Adapter{Retriever: r},
+		Chat:               chat,
+		Model:              env.LLMModel,
+		K:                  topK,
+		MaxSubgoals:        env.MaxSubgoals,
+		MaxGapQueries:      env.MaxGapQueries,
+		RollingMemory:      env.AskRollingWindow,
+		ExtractQualifiers:  env.QualifierFilter,
+		AbstainThreshold:   env.AbstainThreshold,
+		MaxRefineLatencyMS: env.GoTMaxRefineLatencyMS,
+	})
+	return func(ctx context.Context, q corpus.Question) (string, []string) {
+		g := orch.Run(ctx, q.Text)
+		docIDs := make([]string, 0, len(g.Sources))
+		for _, s := range g.Sources {
+			docIDs = append(docIDs, s.DocID)
+		}
+		return g.FinalAnswer, runbench.CorpusDocumentIDs(docIDs)
+	}
 }
 
 func benchIsolatedEnv(env config.Env, persistDir string) (config.Env, func(), error) {
