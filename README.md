@@ -280,6 +280,49 @@ questions). `--persist-dir` reuses a corpus index and skips unchanged docs via
 `doc_hashes`; `--history` (or the default next to the report) appends each
 run's metrics report. The command needs a live LLM endpoint.
 
+`-answer-mode` selects the answering path: `got` (default, the existing
+Graph-of-Thoughts orchestrator) or `naive` (single-shot retrieval plus one
+chat call). The default is unchanged, so existing `kb bench` invocations keep
+using GoT.
+
+#### Building the ERB evolution slice
+
+`kb bench slice` copies the gold documents for the selected questions into a
+smaller corpus tree so the feature ladder runs against a fixed, targeted
+subset:
+
+```sh
+./bin/kb bench slice \
+  --corpus /data/erb/corpus \
+  --questions questions.jsonl \
+  --types conflicting_info,completeness,project_related,constrained \
+  --out-corpus docs/bench/erb-evolution/corpus \
+  --out-questions docs/bench/erb-evolution/questions.jsonl
+```
+
+Flags: `-corpus` (source `.txt` corpus root), `-questions` (source questions
+JSONL), `-types` (comma-separated types to keep, empty = all),
+`-limit-per-type` (cap questions per type), `-out-corpus` and
+`-out-questions` (output locations). It writes the filtered questions and
+copies every referenced gold document, reporting any missing document IDs.
+
+#### Scoring ERB submissions
+
+`kb bench score` grades a submission JSONL against the source questions JSONL
+using English gold-answer and fact stemming:
+
+```sh
+./bin/kb bench score answers.jsonl \
+  --questions questions.jsonl \
+  --out answers.score.json
+```
+
+Flags: one positional `<submission.jsonl>` argument, `-questions` (required),
+`-out` (score report JSON, default `<submission>.score.json`), and `-history`
+(score history JSON, default `<out>.history.json`). The report contains
+`retrieval_hits`, `answer_contains_gold`, `avg_facts_coverage`, and per-type
+breakdowns.
+
 #### Comparing embedders (RU vs EN)
 
 To check whether swapping the embedding model improves Russian retrieval
@@ -349,6 +392,10 @@ see `docs/bench/dragon-evolution-report.md` — a reduced-corpus diagnostic run
 (Native → Hybrid → Graph → Rerank → Logic → Temporal → Qualifiers) whose
 absolute numbers are not comparable to the full-corpus 75.2% figure, only the
 relative deltas between adjacent stages.
+
+For the same ladder on the category-targeted ERB slice, see
+`docs/bench/erb-evolution-report.md` — a planned diagnostic run whose result
+tables are filled after the live ai-box run described in Post-Completion.
 
 The `verify` command needs a live LLM endpoint (retrieval + synthesis);
 integration tests for the QA harness are gated behind

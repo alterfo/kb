@@ -154,10 +154,10 @@ Dependencies identified:
 
 ### Task 7: [Final] Documentation
 
-- [ ] add a `docs/bench/erb-evolution-report.md` skeleton mirroring
+- [x] add a `docs/bench/erb-evolution-report.md` skeleton mirroring
       `docs/bench/dragon-evolution-report.md` (methodology, slice construction, empty per-stage
       + per-category tables to be filled from the real run in Post-Completion)
-- [ ] add a README link to the ERB evolution report next to the DRAGON one (`README.md:347-351`)
+- [x] add a README link to the ERB evolution report next to the DRAGON one (`README.md:347-351`)
       and document the new `kb bench` subcommands/flags (`-answer-mode`, `slice`, `score`)
 
 ## Technical Details
