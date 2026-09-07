@@ -216,7 +216,15 @@ func TestAddPrefixSpaceAppliedInEncode(t *testing.T) {
 	}
 
 	if got := withPrefix.Encode(" hello"); !slices.Equal(got, utf8Bytes(" hello")) {
-		t.Fatalf("add_prefix_space should not double-prepend when text already starts with whitespace: Encode(%q) = %v, want %v", " hello", got, utf8Bytes(" hello"))
+		t.Fatalf("add_prefix_space should not double-prepend when text already starts with an ASCII space: Encode(%q) = %v, want %v", " hello", got, utf8Bytes(" hello"))
+	}
+
+	if got := withPrefix.Encode("\thello"); !slices.Equal(got, utf8Bytes(" \thello")) {
+		t.Fatalf("add_prefix_space should still prepend before a non-ASCII-space leading char such as tab: Encode(%q) = %v, want %v", "\thello", got, utf8Bytes(" \thello"))
+	}
+
+	if got := withPrefix.Encode(""); len(got) != 0 {
+		t.Fatalf("add_prefix_space should not prepend a space to empty input: Encode(\"\") = %v, want empty", got)
 	}
 }
 

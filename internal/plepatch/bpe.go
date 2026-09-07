@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/alterfo/kb/internal/gguf"
 )
@@ -209,11 +207,8 @@ func (t *Tokenizer) bpe(text string) []string {
 }
 
 func (t *Tokenizer) Encode(text string) []int {
-	if t.addPrefixSpace {
-		r, size := utf8.DecodeRuneInString(text)
-		if size == 0 || !unicode.IsSpace(r) {
-			text = " " + text
-		}
+	if t.addPrefixSpace && text != "" && !strings.HasPrefix(text, " ") {
+		text = " " + text
 	}
 	var ids []int
 	for _, piece := range t.pattern.FindAllString(text, -1) {
