@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -166,8 +167,11 @@ func TestBenchAskNaiveSkipsOrchestrator(t *testing.T) {
 	chat := &decomposeCountingChat{resp: "naive answer"}
 	ask := benchAsk(config.Env{LLMModel: "test-model"}, r, chat, "naive", 5)
 
-	answer, docIDs := ask(context.Background(), corpus.Question{ID: "1", Text: "what is kb"})
+	answer, docIDs, err := ask(context.Background(), corpus.Question{ID: "1", Text: "what is kb"})
 
+	if err != nil {
+		t.Fatalf("ask: %v", err)
+	}
 	if answer != "naive answer" {
 		t.Errorf("answer = %q, want %q", answer, "naive answer")
 	}
@@ -179,6 +183,24 @@ func TestBenchAskNaiveSkipsOrchestrator(t *testing.T) {
 	}
 	if len(docIDs) != 0 {
 		t.Errorf("docIDs = %v, want empty", docIDs)
+	}
+}
+
+func TestBenchAskNaivePropagatesError(t *testing.T) {
+	db := openDragonTestDB(t)
+	vs := sqlite.NewVectorStore(db)
+	r := retriever.New(retriever.Config{Vector: vs})
+
+	chat := &decomposeCountingChat{resp: "unused", chatErr: errors.New("chat failed")}
+	ask := benchAsk(config.Env{LLMModel: "test-model"}, r, chat, "naive", 5)
+
+	answer, docIDs, err := ask(context.Background(), corpus.Question{ID: "1", Text: "what is kb"})
+
+	if err == nil || err.Error() != "chat failed" {
+		t.Fatalf("err = %v, want chat failed", err)
+	}
+	if answer != "" || len(docIDs) != 0 {
+		t.Errorf("answer/docIDs = %q/%v, want empty", answer, docIDs)
 	}
 }
 

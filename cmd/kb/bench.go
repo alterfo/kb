@@ -195,22 +195,22 @@ func benchRetriever(env config.Env, bundle *engineBundle) *retriever.Retriever {
 
 func benchAsk(env config.Env, r *retriever.Retriever, chat runbench.ChatClient, answerMode string, topK int) runbench.AskFunc {
 	if answerMode == "naive" {
-		return func(ctx context.Context, q corpus.Question) (string, []string) {
+		return func(ctx context.Context, q corpus.Question) (string, []string, error) {
 			answer, docIDs, err := runbench.NaiveAnswer(ctx, r, chat, env.LLMModel, topK, q.Text)
 			if err != nil {
-				return "", nil
+				return "", nil, err
 			}
-			return answer, runbench.CorpusDocumentIDs(docIDs)
+			return answer, runbench.CorpusDocumentIDs(docIDs), nil
 		}
 	}
 	orch := got.New(benchGotConfig(env, r, chat, topK))
-	return func(ctx context.Context, q corpus.Question) (string, []string) {
+	return func(ctx context.Context, q corpus.Question) (string, []string, error) {
 		g := orch.Run(ctx, q.Text)
 		docIDs := make([]string, 0, len(g.Sources))
 		for _, s := range g.Sources {
 			docIDs = append(docIDs, s.DocID)
 		}
-		return g.FinalAnswer, runbench.CorpusDocumentIDs(docIDs)
+		return g.FinalAnswer, runbench.CorpusDocumentIDs(docIDs), nil
 	}
 }
 

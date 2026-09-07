@@ -25,7 +25,7 @@ type Answer struct {
 
 // AskFunc answers a single benchmark question and reports the document ids
 // its pipeline used as evidence.
-type AskFunc func(ctx context.Context, q corpus.Question) (string, []string)
+type AskFunc func(ctx context.Context, q corpus.Question) (string, []string, error)
 
 // Runner drives the question set through Ask, writes the submission JSONL
 // and computes local proxy metrics per question type.
@@ -124,17 +124,30 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	}
 	sem := make(chan struct{}, conc)
 	var wg sync.WaitGroup
+	var errMu sync.Mutex
+	var firstErr error
 	for i, q := range r.Questions {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(i int, q corpus.Question) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			text, docIDs := r.Ask(ctx, q)
+			text, docIDs, askErr := r.Ask(ctx, q)
+			if askErr != nil {
+				errMu.Lock()
+				if firstErr == nil {
+					firstErr = fmt.Errorf("bench: ask %s: %w", q.ID, askErr)
+				}
+				errMu.Unlock()
+				return
+			}
 			answers[i] = Answer{QuestionID: q.ID, Answer: text, DocumentIDs: CorpusDocumentIDs(docIDs)}
 		}(i, q)
 	}
 	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
 
 	if err := writeAnswers(r.OutPath, answers); err != nil {
 		return nil, err

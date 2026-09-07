@@ -358,6 +358,59 @@ func TestBenchSliceRejectsOutputEqualToSource(t *testing.T) {
 	}
 }
 
+func TestBenchSliceRejectsOutputQuestionsEqualToInput(t *testing.T) {
+	src := sliceCorpusFixture(t)
+	questions := writeSliceQuestions(t, filepath.Join(t.TempDir(), "questions.jsonl"), []corpus.Question{
+		{ID: "q1", Type: "basic", Text: "one?", ExpectedDocIDs: []string{"dsid_docA"}},
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := runBenchSliceCmd([]string{
+		"-corpus", src,
+		"-questions", questions,
+		"-out-corpus", filepath.Join(t.TempDir(), "out-corpus"),
+		"-out-questions", questions,
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "output questions must not be the input questions file") {
+		t.Fatalf("stderr = %q, want input/output questions overlap rejection", stderr.String())
+	}
+	got, _, err := corpus.LoadQuestions(questions)
+	if err != nil {
+		t.Fatalf("source questions were damaged: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "q1" {
+		t.Fatalf("source questions = %+v, want original q1", got)
+	}
+}
+
+func TestBenchSliceRejectsOutputQuestionsInsideCorpus(t *testing.T) {
+	src := sliceCorpusFixture(t)
+	questions := writeSliceQuestions(t, filepath.Join(t.TempDir(), "questions.jsonl"), []corpus.Question{
+		{ID: "q1", Type: "basic", Text: "one?", ExpectedDocIDs: []string{"dsid_docA"}},
+	})
+	outQuestions := filepath.Join(src, "slice-questions.jsonl")
+
+	var stdout, stderr bytes.Buffer
+	code := runBenchSliceCmd([]string{
+		"-corpus", src,
+		"-questions", questions,
+		"-out-corpus", filepath.Join(t.TempDir(), "out-corpus"),
+		"-out-questions", outQuestions,
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "output questions must not be inside the source corpus") {
+		t.Fatalf("stderr = %q, want inside-corpus rejection", stderr.String())
+	}
+	if _, err := os.Stat(outQuestions); !os.IsNotExist(err) {
+		t.Fatalf("output questions file was written inside source corpus: %v", err)
+	}
+}
+
 func TestBenchSliceMissingCorpusDoesNotClearOutput(t *testing.T) {
 	outCorpus := filepath.Join(t.TempDir(), "out-corpus")
 	sentinel := writeSliceFile(t, outCorpus, "sentinel.txt", "keep")

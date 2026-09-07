@@ -150,10 +150,14 @@ type decomposeCountingChat struct {
 	chatCalls      int
 	decomposeCalls int
 	resp           string
+	chatErr        error
 }
 
 func (c *decomposeCountingChat) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
 	c.chatCalls++
+	if c.chatErr != nil {
+		return llm.ChatResponse{}, c.chatErr
+	}
 	hay := strings.ToLower(messageHaystackForTest(req.Messages))
 	if strings.Contains(hay, "break a user question") {
 		c.decomposeCalls++

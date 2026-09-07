@@ -98,7 +98,7 @@ func TestFakeE2E_BenchPipelineEndToEnd(t *testing.T) {
 	runner := &Runner{
 		Questions: questions,
 		OutPath:   out,
-		Ask: func(ctx context.Context, q corpus.Question) (string, []string) {
+		Ask: func(ctx context.Context, q corpus.Question) (string, []string, error) {
 			g := orch.Run(ctx, q.Text)
 			docIDs := make([]string, 0, len(g.Sources))
 			for _, s := range g.Sources {
@@ -106,7 +106,7 @@ func TestFakeE2E_BenchPipelineEndToEnd(t *testing.T) {
 					docIDs = append(docIDs, s.DocID)
 				}
 			}
-			return g.FinalAnswer, docIDs
+			return g.FinalAnswer, docIDs, nil
 		},
 	}
 

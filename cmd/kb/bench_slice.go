@@ -45,6 +45,11 @@ func runBenchSliceCmd(args []string, stdout, stderr io.Writer) int {
 		questions = limitQuestionsPerType(questions, *limitPerType)
 	}
 
+	if err := validateQuestionsOutput(*outQuestions, *questionsPath, *corpusDir); err != nil {
+		fmt.Fprintf(stderr, "bench slice: %v\n", err)
+		return 1
+	}
+
 	if len(questions) == 0 {
 		if err := prepareOutputCorpus(*outCorpus, *corpusDir); err != nil {
 			fmt.Fprintf(stderr, "bench slice: %v\n", err)
@@ -127,6 +132,40 @@ func runBenchSliceCmd(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "bench slice: copied %d documents to %s\n", copied, *outCorpus)
 	fmt.Fprintf(stdout, "bench slice: wrote %d questions to %s\n", len(questions), *outQuestions)
 	return 0
+}
+
+func validateQuestionsOutput(outQuestions, questionsPath, corpusDir string) error {
+	srcAbs, err := filepath.Abs(questionsPath)
+	if err != nil {
+		return fmt.Errorf("resolve input questions: %w", err)
+	}
+	srcAbs = resolveExisting(srcAbs)
+
+	outAbs, err := filepath.Abs(outQuestions)
+	if err != nil {
+		return fmt.Errorf("resolve output questions: %w", err)
+	}
+	outResolved := resolveExisting(outAbs)
+
+	if filepath.Clean(srcAbs) == filepath.Clean(outResolved) {
+		return fmt.Errorf("output questions must not be the input questions file: %s", outQuestions)
+	}
+	if srcInfo, statErr := os.Stat(srcAbs); statErr == nil {
+		if outInfo, statOutErr := os.Stat(outResolved); statOutErr == nil && os.SameFile(srcInfo, outInfo) {
+			return fmt.Errorf("output questions must not be the input questions file: %s", outQuestions)
+		}
+	}
+
+	corpusAbs, err := filepath.Abs(corpusDir)
+	if err != nil {
+		return fmt.Errorf("resolve source corpus: %w", err)
+	}
+	corpusResolved := resolveExisting(corpusAbs)
+	if pathsOverlap(corpusResolved, outResolved) {
+		return fmt.Errorf("output questions must not be inside the source corpus: %s", outQuestions)
+	}
+
+	return nil
 }
 
 func limitQuestionsPerType(qs []corpus.Question, limit int) []corpus.Question {

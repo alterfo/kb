@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -27,11 +28,11 @@ func sampleQuestions(t *testing.T) []corpus.Question {
 
 func TestRunnerWritesSubmissionAndReport(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "answers.jsonl")
-	ask := func(ctx context.Context, q corpus.Question) (string, []string) {
+	ask := func(ctx context.Context, q corpus.Question) (string, []string, error) {
 		if q.Type == "info_not_found" {
-			return report.NotFoundSentinel, nil
+			return report.NotFoundSentinel, nil, nil
 		}
-		return "The limit is 10 MiB per file.", []string{"dsid_ae068ee4aa9640159427cd941bef0238"}
+		return "The limit is 10 MiB per file.", []string{"dsid_ae068ee4aa9640159427cd941bef0238"}, nil
 	}
 
 	r := &Runner{Questions: sampleQuestions(t), OutPath: out, Ask: ask}
@@ -73,8 +74,8 @@ func TestRunnerWritesSubmissionAndReport(t *testing.T) {
 func TestRunnerPreservesQuestionOrderWithConcurrency(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "answers.jsonl")
 	r := &Runner{Questions: sampleQuestions(t), OutPath: out, Concurrency: 3,
-		Ask: func(ctx context.Context, q corpus.Question) (string, []string) {
-			return "answer for " + q.ID, nil
+		Ask: func(ctx context.Context, q corpus.Question) (string, []string, error) {
+			return "answer for " + q.ID, nil, nil
 		}}
 	if _, err := r.Run(context.Background()); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -90,6 +91,24 @@ func TestRunnerPreservesQuestionOrderWithConcurrency(t *testing.T) {
 		if a.QuestionID != want {
 			t.Fatalf("line %d = %s, want %s", i, a.QuestionID, want)
 		}
+	}
+}
+
+func TestRunnerReturnsAskErrorWithoutWritingAnswers(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "answers.jsonl")
+	r := &Runner{Questions: sampleQuestions(t), OutPath: out, Concurrency: 2,
+		Ask: func(ctx context.Context, q corpus.Question) (string, []string, error) {
+			if q.ID == "qst_0471" {
+				return "", nil, errors.New("ask failed")
+			}
+			return "answer for " + q.ID, nil, nil
+		}}
+
+	if _, err := r.Run(context.Background()); err == nil || !strings.Contains(err.Error(), "ask qst_0471") {
+		t.Fatalf("Run error = %v, want ask qst_0471 failure", err)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Fatalf("answers file was written despite ask failure: %v", err)
 	}
 }
 
