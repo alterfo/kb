@@ -21,3 +21,10 @@
 coverage.out
 coverage.html
 .DS_Store
+
+# Bench run bookkeeping (pid/log/timestamps, not score data)
+docs/bench/evolution/*.log
+docs/bench/evolution/*.pid
+docs/bench/evolution/*.start
+docs/bench/evolution/*.end
+docs/bench/evolution/*.exit

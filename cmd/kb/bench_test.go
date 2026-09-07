@@ -181,3 +181,23 @@ func TestBenchAskNaiveSkipsOrchestrator(t *testing.T) {
 		t.Errorf("docIDs = %v, want empty", docIDs)
 	}
 }
+
+func TestBenchGotConfigWiresContradictionDetection(t *testing.T) {
+	chat := &decomposeCountingChat{resp: "x"}
+
+	on := benchGotConfig(config.Env{LLMModel: "m", DetectContradictions: true}, nil, chat, 5)
+	if !on.DetectContradictions {
+		t.Fatal("DetectContradictions = false, want true")
+	}
+	if on.ContradictionDetector == nil {
+		t.Fatal("ContradictionDetector = nil, want non-nil")
+	}
+
+	off := benchGotConfig(config.Env{LLMModel: "m"}, nil, chat, 5)
+	if off.DetectContradictions {
+		t.Fatal("DetectContradictions = true, want false when env unset")
+	}
+	if off.ContradictionDetector == nil {
+		t.Fatal("ContradictionDetector = nil, want non-nil even when disabled")
+	}
+}

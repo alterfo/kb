@@ -14,6 +14,7 @@ import (
 	"github.com/alterfo/kb/internal/config"
 	"github.com/alterfo/kb/internal/engine/got"
 	"github.com/alterfo/kb/internal/engine/retriever"
+	"github.com/alterfo/kb/internal/verify"
 )
 
 func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
@@ -196,18 +197,7 @@ func benchAsk(env config.Env, r *retriever.Retriever, chat runbench.ChatClient, 
 			return answer, runbench.CorpusDocumentIDs(docIDs)
 		}
 	}
-	orch := got.New(got.Config{
-		Retriever:          retriever.Adapter{Retriever: r},
-		Chat:               chat,
-		Model:              env.LLMModel,
-		K:                  topK,
-		MaxSubgoals:        env.MaxSubgoals,
-		MaxGapQueries:      env.MaxGapQueries,
-		RollingMemory:      env.AskRollingWindow,
-		ExtractQualifiers:  env.QualifierFilter,
-		AbstainThreshold:   env.AbstainThreshold,
-		MaxRefineLatencyMS: env.GoTMaxRefineLatencyMS,
-	})
+	orch := got.New(benchGotConfig(env, r, chat, topK))
 	return func(ctx context.Context, q corpus.Question) (string, []string) {
 		g := orch.Run(ctx, q.Text)
 		docIDs := make([]string, 0, len(g.Sources))
@@ -215,6 +205,23 @@ func benchAsk(env config.Env, r *retriever.Retriever, chat runbench.ChatClient, 
 			docIDs = append(docIDs, s.DocID)
 		}
 		return g.FinalAnswer, runbench.CorpusDocumentIDs(docIDs)
+	}
+}
+
+func benchGotConfig(env config.Env, r *retriever.Retriever, chat runbench.ChatClient, topK int) got.Config {
+	return got.Config{
+		Retriever:             retriever.Adapter{Retriever: r},
+		Chat:                  chat,
+		Model:                 env.LLMModel,
+		K:                     topK,
+		MaxSubgoals:           env.MaxSubgoals,
+		MaxGapQueries:         env.MaxGapQueries,
+		RollingMemory:         env.AskRollingWindow,
+		ExtractQualifiers:     env.QualifierFilter,
+		AbstainThreshold:      env.AbstainThreshold,
+		ContradictionDetector: verify.NewContradictionDetector(chat, env.LLMModel),
+		DetectContradictions:  env.DetectContradictions,
+		MaxRefineLatencyMS:    env.GoTMaxRefineLatencyMS,
 	}
 }
 

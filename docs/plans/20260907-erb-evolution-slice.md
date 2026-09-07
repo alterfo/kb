@@ -92,13 +92,13 @@ Dependencies identified:
 
 ### Task 2: Wire contradiction detection into `kb bench`'s GoT config
 
-- [ ] add `ContradictionDetector: verify.NewContradictionDetector(chat, env.LLMModel)` and
+- [x] add `ContradictionDetector: verify.NewContradictionDetector(chat, env.LLMModel)` and
       `DetectContradictions: env.DetectContradictions` to the `got.New(...)` config in
       `cmd/kb/bench.go:117-128` (parity with `cmd/kb/dragon.go:226-227`), keeping existing
       `MaxSubgoals`/`MaxGapQueries`
-- [ ] write a test asserting the bench GoT config passes contradiction-detection through when
+- [x] write a test asserting the bench GoT config passes contradiction-detection through when
       `KB_DETECT_CONTRADICTIONS=true` (e.g. a fake detector observing it is invoked)
-- [ ] run `go test ./... && go vet ./... && gofmt -l .` — must pass before next task
+- [x] run `go test ./... && go vet ./... && gofmt -l .` — must pass before next task
 
 ### Task 3: Corpus-slice subcommand `kb bench slice`
 
