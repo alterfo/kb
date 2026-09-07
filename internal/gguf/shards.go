@@ -14,12 +14,17 @@ type SplitInfo struct {
 	No    int
 }
 
+const maxSplitCount = 100000
+
 func (f *File) SplitInfo() (SplitInfo, error) {
 	si := SplitInfo{Count: 1, No: 0}
 	if v, ok := f.MetadataValue("split.count"); ok {
 		n, err := intMetadata(v, "split.count")
 		if err != nil {
 			return si, err
+		}
+		if n < 1 || n > maxSplitCount {
+			return si, fmt.Errorf("gguf: split.count=%d out of range [1,%d]", n, maxSplitCount)
 		}
 		si.Count = n
 	}
@@ -197,6 +202,9 @@ func LocateTensor(shards []Shard, name string) (*TensorLocation, error) {
 			default:
 				loc.RowDim = t.Dims[0]
 				loc.NRows = t.Dims[1]
+			}
+			if loc.DataOffset < 0 || loc.NBytes < 0 || loc.DataOffset > sh.Size-loc.NBytes {
+				return nil, fmt.Errorf("gguf: tensor %q data (offset %d, %d bytes) does not fit in shard %s (size %d); a tensor split across shards is unsupported", name, loc.DataOffset, loc.NBytes, sh.Path, sh.Size)
 			}
 			return loc, nil
 		}

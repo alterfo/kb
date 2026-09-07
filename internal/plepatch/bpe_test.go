@@ -214,6 +214,10 @@ func TestAddPrefixSpaceAppliedInEncode(t *testing.T) {
 	if slices.Equal(withoutPrefix.Encode("hello"), got) {
 		t.Fatalf("add_prefix_space=true should not match add_prefix_space=false output")
 	}
+
+	if got := withPrefix.Encode(" hello"); !slices.Equal(got, utf8Bytes(" hello")) {
+		t.Fatalf("add_prefix_space should not double-prepend when text already starts with whitespace: Encode(%q) = %v, want %v", " hello", got, utf8Bytes(" hello"))
+	}
 }
 
 func TestTokenizerDeterminism(t *testing.T) {

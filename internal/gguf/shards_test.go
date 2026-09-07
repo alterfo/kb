@@ -275,6 +275,26 @@ func TestLocateTensorAcrossShards(t *testing.T) {
 	}
 }
 
+func TestLocateTensorRejectsDataExceedingShardSize(t *testing.T) {
+	dir := t.TempDir()
+	path := writeShardFile(t, dir, "model.gguf", 0, []WriterTensor{tableTensor(4)})
+	full, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if err := os.WriteFile(path, full[:len(full)-100], 0o644); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+
+	shards, err := DiscoverShards(path)
+	if err != nil {
+		t.Fatalf("DiscoverShards: %v", err)
+	}
+	if _, err := LocateTensor(shards, "per_layer_token_embd.weight"); err == nil {
+		t.Fatalf("expected error for tensor data exceeding truncated shard size")
+	}
+}
+
 func TestTensorSize(t *testing.T) {
 	cases := []struct {
 		qtype uint32

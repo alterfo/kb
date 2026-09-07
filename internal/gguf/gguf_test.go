@@ -198,32 +198,32 @@ func TestParseMalformed(t *testing.T) {
 	truncatedTensor = append(truncatedTensor, []byte("ab")...)
 
 	hugeTensorDims := append([]byte(nil), Magic...)
-	hugeTensorDims = append(hugeTensorDims, leU32(3)...) // version
-	hugeTensorDims = append(hugeTensorDims, leU64(1)...) // tensorCount
-	hugeTensorDims = append(hugeTensorDims, leU64(0)...) // kvCount
-	hugeTensorDims = append(hugeTensorDims, leU64(1)...) // tensor name len
+	hugeTensorDims = append(hugeTensorDims, leU32(3)...)
+	hugeTensorDims = append(hugeTensorDims, leU64(1)...)
+	hugeTensorDims = append(hugeTensorDims, leU64(0)...)
+	hugeTensorDims = append(hugeTensorDims, leU64(1)...)
 	hugeTensorDims = append(hugeTensorDims, []byte("t")...)
-	hugeTensorDims = append(hugeTensorDims, leU32(0xFFFFFFFF)...) // ndims
+	hugeTensorDims = append(hugeTensorDims, leU32(0xFFFFFFFF)...)
 
 	hugeStringArray := append([]byte(nil), Magic...)
-	hugeStringArray = append(hugeStringArray, leU32(3)...) // version
-	hugeStringArray = append(hugeStringArray, leU64(0)...) // tensorCount
-	hugeStringArray = append(hugeStringArray, leU64(1)...) // kvCount
-	hugeStringArray = append(hugeStringArray, leU64(1)...) // key len
+	hugeStringArray = append(hugeStringArray, leU32(3)...)
+	hugeStringArray = append(hugeStringArray, leU64(0)...)
+	hugeStringArray = append(hugeStringArray, leU64(1)...)
+	hugeStringArray = append(hugeStringArray, leU64(1)...)
 	hugeStringArray = append(hugeStringArray, []byte("k")...)
 	hugeStringArray = append(hugeStringArray, leU32(uint32(TypeArray))...)
 	hugeStringArray = append(hugeStringArray, leU32(uint32(TypeString))...)
-	hugeStringArray = append(hugeStringArray, leU64(0xFFFFFFFFFFFFFFFF)...) // element count
+	hugeStringArray = append(hugeStringArray, leU64(0xFFFFFFFFFFFFFFFF)...)
 
 	hugeNestedArray := append([]byte(nil), Magic...)
-	hugeNestedArray = append(hugeNestedArray, leU32(3)...) // version
-	hugeNestedArray = append(hugeNestedArray, leU64(0)...) // tensorCount
-	hugeNestedArray = append(hugeNestedArray, leU64(1)...) // kvCount
-	hugeNestedArray = append(hugeNestedArray, leU64(1)...) // key len
+	hugeNestedArray = append(hugeNestedArray, leU32(3)...)
+	hugeNestedArray = append(hugeNestedArray, leU64(0)...)
+	hugeNestedArray = append(hugeNestedArray, leU64(1)...)
+	hugeNestedArray = append(hugeNestedArray, leU64(1)...)
 	hugeNestedArray = append(hugeNestedArray, []byte("k")...)
 	hugeNestedArray = append(hugeNestedArray, leU32(uint32(TypeArray))...)
 	hugeNestedArray = append(hugeNestedArray, leU32(uint32(TypeArray))...)
-	hugeNestedArray = append(hugeNestedArray, leU64(0xFFFFFFFFFFFFFFFF)...) // element count
+	hugeNestedArray = append(hugeNestedArray, leU64(0xFFFFFFFFFFFFFFFF)...)
 
 	cases := []struct {
 		name string

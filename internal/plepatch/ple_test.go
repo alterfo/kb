@@ -154,6 +154,18 @@ func TestLoadConstantsValidation(t *testing.T) {
 		}
 		return &gguf.File{Metadata: kvs}
 	}
+	replace2 := func(key1 string, value1 gguf.Value, key2 string, value2 gguf.Value) *gguf.File {
+		kvs := append([]gguf.KV(nil), base.Metadata...)
+		for i := range kvs {
+			switch kvs[i].Key {
+			case key1:
+				kvs[i].Value = value1
+			case key2:
+				kvs[i].Value = value2
+			}
+		}
+		return &gguf.File{Metadata: kvs}
+	}
 	drop := func(key string) *gguf.File {
 		var kvs []gguf.KV
 		for _, kv := range base.Metadata {
@@ -188,16 +200,48 @@ func TestLoadConstantsValidation(t *testing.T) {
 			0, 20000003, 40000026, 60000059, 80000106, 100000165, 120000228, 140000297,
 			160000374, 180000455, 200000548, 220000655, 240000802, 260000955, 280001114, -1,
 		}))},
-		{"vocab size zero", replace("qwen4exp.ple.head_vocab_sizes", gguf.Uint64Array([]uint64{
-			0, 20000023, 20000033, 20000047, 20000059, 20000063, 20000069, 20000077,
-			20000081, 20000093, 20000107, 20000147, 20000153, 20000159, 20000161, 20000171,
-		}))},
+		{"vocab size zero, offsets still a valid prefix sum", replace2(
+			"qwen4exp.ple.head_vocab_sizes", gguf.Uint64Array([]uint64{
+				0, 20000023, 20000033, 20000047, 20000059, 20000063, 20000069, 20000077,
+				20000081, 20000093, 20000107, 20000147, 20000153, 20000159, 20000161, 20000171,
+			}),
+			"qwen4exp.ple.head_offsets", gguf.Uint64Array([]uint64{
+				0, 0, 20000023, 40000056, 60000103, 80000162, 100000225, 120000294,
+				140000371, 160000452, 180000545, 200000652, 220000799, 240000952, 260001111, 280001272,
+			}),
+		)},
 	}
 
 	for _, tc := range cases {
 		if _, err := LoadConstants(tc.file); err == nil {
 			t.Fatalf("%s: expected error, got nil", tc.name)
 		}
+	}
+}
+
+func TestLoadConstantsRejectsZeroVocabSizeMessage(t *testing.T) {
+	base := validFile()
+	kvs := append([]gguf.KV(nil), base.Metadata...)
+	for i := range kvs {
+		switch kvs[i].Key {
+		case "qwen4exp.ple.head_vocab_sizes":
+			kvs[i].Value = gguf.Uint64Array([]uint64{
+				0, 20000023, 20000033, 20000047, 20000059, 20000063, 20000069, 20000077,
+				20000081, 20000093, 20000107, 20000147, 20000153, 20000159, 20000161, 20000171,
+			})
+		case "qwen4exp.ple.head_offsets":
+			kvs[i].Value = gguf.Uint64Array([]uint64{
+				0, 0, 20000023, 40000056, 60000103, 80000162, 100000225, 120000294,
+				140000371, 160000452, 180000545, 200000652, 220000799, 240000952, 260001111, 280001272,
+			})
+		}
+	}
+	_, err := LoadConstants(&gguf.File{Metadata: kvs})
+	if err == nil {
+		t.Fatalf("expected error for zero head_vocab_sizes entry")
+	}
+	if !strings.Contains(err.Error(), "head_vocab_sizes") {
+		t.Fatalf("error %q does not name head_vocab_sizes", err)
 	}
 }
 

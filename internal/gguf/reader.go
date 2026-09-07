@@ -174,7 +174,7 @@ func (c *cursor) arrayData(elem ValueType, n uint64) (any, error) {
 	remaining := uint64(c.size - c.off)
 	switch elem {
 	case TypeString:
-		const minStringSize = 8 // shortest possible entry: an empty string's length prefix
+		const minStringSize = 8
 		if n > remaining/minStringSize {
 			return nil, io.ErrUnexpectedEOF
 		}
@@ -188,7 +188,7 @@ func (c *cursor) arrayData(elem ValueType, n uint64) (any, error) {
 		}
 		return out, nil
 	case TypeArray:
-		const minValueSize = 4 // shortest possible entry: a value's type tag alone
+		const minValueSize = 4
 		if n > remaining/minValueSize {
 			return nil, io.ErrUnexpectedEOF
 		}
