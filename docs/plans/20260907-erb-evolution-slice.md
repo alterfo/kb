@@ -119,18 +119,18 @@ Dependencies identified:
 
 ### Task 4: ERB facts-based scorer and `kb bench score`
 
-- [ ] add `internal/bench/run/score.go`: port `stemSequence`/`phraseStemsPresent`/
+- [x] add `internal/bench/run/score.go`: port `stemSequence`/`phraseStemsPresent`/
       `answerContainsGold` structure from `internal/bench/dragon/score.go:96-148`, using
       `snowball/english` instead of `snowball/russian`
-- [ ] compute per-type `answer_contains_gold` (vs `GoldAnswer`), facts coverage (fraction of
+- [x] compute per-type `answer_contains_gold` (vs `GoldAnswer`), facts coverage (fraction of
       `AnswerFacts` stems present in the answer), and retrieval-hit (vs `ExpectedDocIDs`); emit
       a `ScoreReport` shaped parallel to DRAGON's
-- [ ] add a `score` subcommand to `runBenchCmd`: read submission JSONL + questions.jsonl, write
+- [x] add a `score` subcommand to `runBenchCmd`: read submission JSONL + questions.jsonl, write
       `<name>.score.json`, append to `.history.json`
-- [ ] write tests for the scorer on EN gold pairs: exact-contains hit/miss, partial facts
+- [x] write tests for the scorer on EN gold pairs: exact-contains hit/miss, partial facts
       fraction, set-style bracket gold, empty gold → no hit (mirror DRAGON scorer tests)
-- [ ] write tests for the `score` subcommand wiring (submission + questions → score.json fields)
-- [ ] run `go test ./... && go vet ./... && gofmt -l .` — must pass before next task
+- [x] write tests for the `score` subcommand wiring (submission + questions → score.json fields)
+- [x] run `go test ./... && go vet ./... && gofmt -l .` — must pass before next task
 
 ### Task 5: Qualifier-filter fail-open fix
 
