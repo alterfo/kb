@@ -225,6 +225,16 @@ func prepareOutputCorpus(outCorpus, corpusDir string) error {
 	if pathsOverlap(srcAbs, dstResolved) {
 		return fmt.Errorf("bench slice: output corpus must not be the source corpus or inside it")
 	}
+	dstInfo, err := os.Stat(dstAbs)
+	switch {
+	case err == nil:
+		if !dstInfo.IsDir() {
+			return fmt.Errorf("bench slice: output corpus is not a directory: %s", dstAbs)
+		}
+	case os.IsNotExist(err):
+	default:
+		return fmt.Errorf("bench slice: inspect output corpus: %w", err)
+	}
 	if err := os.RemoveAll(dstAbs); err != nil {
 		return fmt.Errorf("bench slice: clear output corpus: %w", err)
 	}

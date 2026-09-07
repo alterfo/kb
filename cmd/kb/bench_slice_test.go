@@ -302,6 +302,38 @@ func TestBenchSliceClearsPreExistingOutputCorpus(t *testing.T) {
 	}
 }
 
+func TestBenchSliceRejectsExistingRegularFileOutput(t *testing.T) {
+	src := sliceCorpusFixture(t)
+	questions := writeSliceQuestions(t, filepath.Join(t.TempDir(), "questions.jsonl"), []corpus.Question{
+		{ID: "q1", Type: "basic", Text: "one?", ExpectedDocIDs: []string{"dsid_docA"}},
+	})
+	outCorpus := filepath.Join(t.TempDir(), "out-corpus")
+	if err := os.WriteFile(outCorpus, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runBenchSliceCmd([]string{
+		"-corpus", src,
+		"-questions", questions,
+		"-out-corpus", outCorpus,
+		"-out-questions", filepath.Join(t.TempDir(), "out.jsonl"),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "output corpus is not a directory") {
+		t.Fatalf("stderr = %q, want non-directory rejection", stderr.String())
+	}
+	got, err := os.ReadFile(outCorpus)
+	if err != nil {
+		t.Fatalf("output file was removed: %v", err)
+	}
+	if string(got) != "keep" {
+		t.Fatalf("output file content = %q, want keep", got)
+	}
+}
+
 func TestBenchSliceRejectsOutputEqualToSource(t *testing.T) {
 	src := sliceCorpusFixture(t)
 	questions := writeSliceQuestions(t, filepath.Join(t.TempDir(), "questions.jsonl"), []corpus.Question{
