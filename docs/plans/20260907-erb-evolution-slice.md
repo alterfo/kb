@@ -145,12 +145,12 @@ Dependencies identified:
 
 ### Task 6: Verify acceptance criteria
 
-- [ ] verify `kb bench -answer-mode naive|got`, `kb bench slice`, and `kb bench score` all parse
+- [x] verify `kb bench -answer-mode naive|got`, `kb bench slice`, and `kb bench score` all parse
       and dispatch correctly (help/exit codes)
-- [ ] verify `kb bench` default (no `-answer-mode`) still runs GoT unchanged
-- [ ] run full unit suite `go test ./...`
-- [ ] run `go vet ./...` and `gofmt -l .` — no issues
-- [ ] confirm no code comments were introduced (project rule)
+- [x] verify `kb bench` default (no `-answer-mode`) still runs GoT unchanged
+- [x] run full unit suite `go test ./...`
+- [x] run `go vet ./...` and `gofmt -l .` — no issues
+- [x] confirm no code comments were introduced (project rule)
 
 ### Task 7: [Final] Documentation
 
