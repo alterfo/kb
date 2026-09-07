@@ -32,7 +32,12 @@ type Retriever interface {
 // run carries a structured filter; production adapters implement it, test
 // fakes may keep relying on plain RetrieveMode.
 type filterAwareRetriever interface {
-	RetrieveModeFiltered(ctx context.Context, query string, k int, mode retriever.Mode, filter vector.Filter) ([]vector.ScoredChunk, error)
+	RetrieveModeFiltered(ctx context.Context, query string, k int, mode retriever.Mode, base, qualifier vector.Filter) ([]vector.ScoredChunk, error)
+}
+
+type retrievalFilters struct {
+	base      vector.Filter
+	qualifier vector.Filter
 }
 
 // ChatClient runs a single chat completion. Satisfied by *llm.Client.
@@ -255,14 +260,14 @@ func (o *Orchestrator) Run(ctx context.Context, query string) ThoughtGraph {
 	b.setNode(Node{ID: NodeDecompose, Type: NodeDecompose, Query: query, Status: StatusDone})
 	b.setNode(Node{ID: NodePlan, Type: NodePlan, ParentID: NodeDecompose, Query: planQuery(subgoals), Status: StatusDone})
 
-	runFilter := o.cfg.Filter
+	runFilters := retrievalFilters{base: o.cfg.Filter}
 	if o.cfg.ExtractQualifiers {
 		if extracted, ok := retriever.ExtractQualifiers(ctx, o.cfg.Chat, o.cfg.Model, query); ok {
-			runFilter = vector.MergeAND(runFilter, extracted)
+			runFilters.qualifier = extracted
 		}
 	}
 
-	results := o.runSubgoalsScheduled(ctx, b, NodeDecompose, NodeSubgoal, subgoals, runFilter)
+	results := o.runSubgoalsScheduled(ctx, b, NodeDecompose, NodeSubgoal, subgoals, runFilters)
 
 	b.setNode(Node{ID: NodeAggregate, Type: NodeAggregate, ParentID: NodeDecompose, Status: StatusRunning})
 	draft := o.aggregate(ctx, query, results)
@@ -288,7 +293,7 @@ func (o *Orchestrator) Run(ctx context.Context, query string) ThoughtGraph {
 				gaps = gaps[:o.cfg.MaxGapQueries]
 			}
 			refineSubgoals := buildExpansionSubgoals(gaps, len(results))
-			refineResults := o.runExpansionScheduled(ctx, b, results, refineSubgoals, runFilter)
+			refineResults := o.runExpansionScheduled(ctx, b, results, refineSubgoals, runFilters)
 			allResults = append(append([]subgoalResult(nil), results...), refineResults...)
 
 			b.setNode(Node{ID: NodeRefineAggregate, Type: NodeRefineAggregate, ParentID: NodeFindGaps, Status: StatusRunning})
@@ -423,7 +428,7 @@ func buildExpansionSubgoals(gaps []gapSpec, numResults int) []subgoalSpec {
 // and solves only the new nodes in level order. Original results are seeded
 // as already-done nodes so a gap resolved after its reporter sees the
 // reporter's answer in its dependency context.
-func (o *Orchestrator) runExpansionScheduled(ctx context.Context, b *graphBuilder, results []subgoalResult, gaps []subgoalSpec, filter vector.Filter) []subgoalResult {
+func (o *Orchestrator) runExpansionScheduled(ctx context.Context, b *graphBuilder, results []subgoalResult, gaps []subgoalSpec, filters retrievalFilters) []subgoalResult {
 	if len(gaps) == 0 {
 		return nil
 	}
@@ -447,7 +452,7 @@ func (o *Orchestrator) runExpansionScheduled(ctx context.Context, b *graphBuilde
 
 	levels, err := dag.levels()
 	if err != nil {
-		return o.runExpansionSequential(ctx, b, results, gaps, filter)
+		return o.runExpansionSequential(ctx, b, results, gaps, filters)
 	}
 
 	resolved := make(map[string]subgoalResult, len(results)+len(gaps))
@@ -478,7 +483,7 @@ func (o *Orchestrator) runExpansionScheduled(ctx context.Context, b *graphBuilde
 		if len(gapIndices) == 0 {
 			continue
 		}
-		o.runExpansionLevel(ctx, b, gaps, gapIndices, resolved, gapResults, memory.snapshot(), filter)
+		o.runExpansionLevel(ctx, b, gaps, gapIndices, resolved, gapResults, memory.snapshot(), filters)
 		for _, i := range gapIndices {
 			resolved[gapIDs[i]] = gapResults[i]
 			memory.add(gapResults[i])
@@ -490,7 +495,7 @@ func (o *Orchestrator) runExpansionScheduled(ctx context.Context, b *graphBuilde
 // runExpansionLevel resolves one level of new gap nodes in parallel bounded
 // by MaxConcurrency. All dependency nodes (original or earlier gaps) are
 // already present in resolved.
-func (o *Orchestrator) runExpansionLevel(ctx context.Context, b *graphBuilder, gaps []subgoalSpec, indices []int, resolved map[string]subgoalResult, gapResults []subgoalResult, memory []subgoalResult, filter vector.Filter) {
+func (o *Orchestrator) runExpansionLevel(ctx context.Context, b *graphBuilder, gaps []subgoalSpec, indices []int, resolved map[string]subgoalResult, gapResults []subgoalResult, memory []subgoalResult, filters retrievalFilters) {
 	sem := make(chan struct{}, o.cfg.MaxConcurrency)
 	var wg sync.WaitGroup
 	for _, i := range indices {
@@ -502,7 +507,7 @@ func (o *Orchestrator) runExpansionLevel(ctx context.Context, b *graphBuilder, g
 			spec := gaps[i]
 			id := fmt.Sprintf("%s:%d", NodeRefineSubgoal, i)
 			deps := expansionDependencyAnswers(spec, resolved)
-			gapResults[i] = o.runSubgoal(ctx, b, id, NodeFindGaps, NodeRefineSubgoal, spec, deps, memory, filter)
+			gapResults[i] = o.runSubgoal(ctx, b, id, NodeFindGaps, NodeRefineSubgoal, spec, deps, memory, filters)
 		}(i)
 	}
 	wg.Wait()
@@ -511,7 +516,7 @@ func (o *Orchestrator) runExpansionLevel(ctx context.Context, b *graphBuilder, g
 // runExpansionSequential is the cycle fallback for the expansion DAG: it
 // resolves gap nodes one by one in slice order, still honoring reporter
 // dependencies where their answers are already available.
-func (o *Orchestrator) runExpansionSequential(ctx context.Context, b *graphBuilder, results []subgoalResult, gaps []subgoalSpec, filter vector.Filter) []subgoalResult {
+func (o *Orchestrator) runExpansionSequential(ctx context.Context, b *graphBuilder, results []subgoalResult, gaps []subgoalSpec, filters retrievalFilters) []subgoalResult {
 	resolved := make(map[string]subgoalResult, len(results)+len(gaps))
 	for i, r := range results {
 		resolved[strconv.Itoa(i)] = r
@@ -520,7 +525,7 @@ func (o *Orchestrator) runExpansionSequential(ctx context.Context, b *graphBuild
 	for i, spec := range gaps {
 		id := fmt.Sprintf("%s:%d", NodeRefineSubgoal, i)
 		deps := expansionDependencyAnswers(spec, resolved)
-		gapResults[i] = o.runSubgoal(ctx, b, id, NodeFindGaps, NodeRefineSubgoal, spec, deps, nil, filter)
+		gapResults[i] = o.runSubgoal(ctx, b, id, NodeFindGaps, NodeRefineSubgoal, spec, deps, nil, filters)
 		resolved["gap:"+strconv.Itoa(i)] = gapResults[i]
 	}
 	return gapResults
@@ -545,7 +550,7 @@ func expansionDependencyAnswers(spec subgoalSpec, resolved map[string]subgoalRes
 // within a level run in parallel under MaxConcurrency. A subgoal's
 // retrieval query is prefixed with the resolved answers of its
 // dependencies.
-func (o *Orchestrator) runSubgoalsScheduled(ctx context.Context, b *graphBuilder, parentID, nodeType string, subgoals []subgoalSpec, filter vector.Filter) []subgoalResult {
+func (o *Orchestrator) runSubgoalsScheduled(ctx context.Context, b *graphBuilder, parentID, nodeType string, subgoals []subgoalSpec, filters retrievalFilters) []subgoalResult {
 	results := make([]subgoalResult, len(subgoals))
 	if len(subgoals) == 0 {
 		return results
@@ -556,7 +561,7 @@ func (o *Orchestrator) runSubgoalsScheduled(ctx context.Context, b *graphBuilder
 	if err != nil {
 		// buildSubgoalDAG already breaks cycles, so this is a defensive
 		// fail-open guard: degrade to a deterministic sequential flat run.
-		return o.runSubgoalsSequential(ctx, b, parentID, nodeType, subgoals, filter)
+		return o.runSubgoalsSequential(ctx, b, parentID, nodeType, subgoals, filters)
 	}
 
 	maxLevel := 0
@@ -573,7 +578,7 @@ func (o *Orchestrator) runSubgoalsScheduled(ctx context.Context, b *graphBuilder
 
 	memory := newRollingMemory(o.cfg.RollingMemory)
 	for lvl := 0; lvl <= maxLevel; lvl++ {
-		o.runSubgoalLevel(ctx, b, parentID, nodeType, subgoals, byLevel[lvl], results, memory.snapshot(), filter)
+		o.runSubgoalLevel(ctx, b, parentID, nodeType, subgoals, byLevel[lvl], results, memory.snapshot(), filters)
 		for _, i := range byLevel[lvl] {
 			memory.add(results[i])
 		}
@@ -584,7 +589,7 @@ func (o *Orchestrator) runSubgoalsScheduled(ctx context.Context, b *graphBuilder
 // runSubgoalLevel resolves one level of the DAG. All dependencies of these
 // nodes live in lower levels and are already resolved, so the whole level
 // may run in parallel bounded by MaxConcurrency.
-func (o *Orchestrator) runSubgoalLevel(ctx context.Context, b *graphBuilder, parentID, nodeType string, subgoals []subgoalSpec, indices []int, results []subgoalResult, memory []subgoalResult, filter vector.Filter) {
+func (o *Orchestrator) runSubgoalLevel(ctx context.Context, b *graphBuilder, parentID, nodeType string, subgoals []subgoalSpec, indices []int, results []subgoalResult, memory []subgoalResult, filters retrievalFilters) {
 	sem := make(chan struct{}, o.cfg.MaxConcurrency)
 	var wg sync.WaitGroup
 	for _, i := range indices {
@@ -596,7 +601,7 @@ func (o *Orchestrator) runSubgoalLevel(ctx context.Context, b *graphBuilder, par
 			spec := subgoals[i]
 			id := fmt.Sprintf("%s:%d", nodeType, i)
 			deps := dependencyAnswers(spec, results, i)
-			results[i] = o.runSubgoal(ctx, b, id, parentID, nodeType, spec, deps, memory, filter)
+			results[i] = o.runSubgoal(ctx, b, id, parentID, nodeType, spec, deps, memory, filters)
 		}(i)
 	}
 	wg.Wait()
@@ -605,11 +610,11 @@ func (o *Orchestrator) runSubgoalLevel(ctx context.Context, b *graphBuilder, par
 // runSubgoalsSequential is the cycle fallback: resolve each subgoal one by
 // one in slice order, ignoring dependencies. It is kept as a fail-open
 // guard; buildSubgoalDAG normally breaks cycles before scheduling.
-func (o *Orchestrator) runSubgoalsSequential(ctx context.Context, b *graphBuilder, parentID, nodeType string, subgoals []subgoalSpec, filter vector.Filter) []subgoalResult {
+func (o *Orchestrator) runSubgoalsSequential(ctx context.Context, b *graphBuilder, parentID, nodeType string, subgoals []subgoalSpec, filters retrievalFilters) []subgoalResult {
 	results := make([]subgoalResult, len(subgoals))
 	for i, spec := range subgoals {
 		id := fmt.Sprintf("%s:%d", nodeType, i)
-		results[i] = o.runSubgoal(ctx, b, id, parentID, nodeType, spec, nil, nil, filter)
+		results[i] = o.runSubgoal(ctx, b, id, parentID, nodeType, spec, nil, nil, filters)
 	}
 	return results
 }
@@ -662,11 +667,11 @@ func buildDependencyAwareQuery(query string, deps []subgoalResult) string {
 	return query
 }
 
-func (o *Orchestrator) runSubgoal(ctx context.Context, b *graphBuilder, id, parentID, nodeType string, spec subgoalSpec, deps []subgoalResult, memory []subgoalResult, filter vector.Filter) subgoalResult {
+func (o *Orchestrator) runSubgoal(ctx context.Context, b *graphBuilder, id, parentID, nodeType string, spec subgoalSpec, deps []subgoalResult, memory []subgoalResult, filters retrievalFilters) subgoalResult {
 	b.setNode(Node{ID: id, Type: nodeType, ParentID: parentID, Query: spec.Query, Deps: append([]string(nil), spec.DependsOn...), Status: StatusRunning, Stage: StageRetrieving})
 
 	retrievalQuery := buildDependencyAwareQuery(spec.Query, deps)
-	chunks := o.retrieve(ctx, retrievalQuery, spec.Mode, filter)
+	chunks := o.retrieve(ctx, retrievalQuery, spec.Mode, filters)
 	appendRetrievedChunks(ctx, chunks)
 	contradictions := o.detectContradictions(ctx, spec.Query, chunks)
 
@@ -690,13 +695,13 @@ func (o *Orchestrator) runSubgoal(ctx context.Context, b *graphBuilder, id, pare
 
 // retrieve calls the retriever with retry+backoff, failing open to nil
 // chunks once retries are exhausted.
-func (o *Orchestrator) retrieve(ctx context.Context, query string, mode retriever.Mode, filter vector.Filter) []vector.ScoredChunk {
+func (o *Orchestrator) retrieve(ctx context.Context, query string, mode retriever.Mode, filters retrievalFilters) []vector.ScoredChunk {
 	if o.cfg.Retriever == nil {
 		addDegraded(ctx, "retriever unavailable; sub-question answered without retrieval")
 		return nil
 	}
 	for attempt := 0; attempt <= o.cfg.MaxRetries; attempt++ {
-		chunks, err := o.retrieverRetrieve(ctx, query, mode, filter)
+		chunks, err := o.retrieverRetrieve(ctx, query, mode, filters)
 		if err == nil {
 			return chunks
 		}
@@ -708,9 +713,9 @@ func (o *Orchestrator) retrieve(ctx context.Context, query string, mode retrieve
 	return nil
 }
 
-func (o *Orchestrator) retrieverRetrieve(ctx context.Context, query string, mode retriever.Mode, filter vector.Filter) ([]vector.ScoredChunk, error) {
+func (o *Orchestrator) retrieverRetrieve(ctx context.Context, query string, mode retriever.Mode, filters retrievalFilters) ([]vector.ScoredChunk, error) {
 	if fa, ok := o.cfg.Retriever.(filterAwareRetriever); ok {
-		return fa.RetrieveModeFiltered(ctx, query, o.cfg.K, mode, filter)
+		return fa.RetrieveModeFiltered(ctx, query, o.cfg.K, mode, filters.base, filters.qualifier)
 	}
 	return o.cfg.Retriever.RetrieveMode(ctx, query, o.cfg.K, mode)
 }

@@ -22,9 +22,18 @@ type SetResult struct {
 }
 
 func (r *Retriever) retrieveSet(ctx context.Context, query string, opt Options, k int) ([]vector.ScoredChunk, error) {
-	res, evidence, err := r.SetRetrieve(ctx, query, opt.Filter)
+	base, qualifier, relaxable := opt.filterParts()
+	filter := mergeFilters(base, qualifier)
+	res, evidence, err := r.SetRetrieve(ctx, query, filter)
 	if err != nil {
 		return nil, err
+	}
+	if len(res.DocIDs) == 0 && relaxable && !isEmptyFilter(qualifier) && r.hasLocalCandidates(ctx) {
+		addDegraded(ctx, "qualifier filter excluded all set retrieval results; retrying unfiltered")
+		res, evidence, err = r.SetRetrieve(ctx, query, base)
+		if err != nil {
+			return nil, err
+		}
 	}
 	summary := vector.ScoredChunk{Chunk: setSummaryChunk(res, evidence), Score: 2}
 	out := append([]vector.ScoredChunk{summary}, evidence...)

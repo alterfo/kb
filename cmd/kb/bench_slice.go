@@ -194,6 +194,13 @@ func copyFile(src, dst string) error {
 }
 
 func prepareOutputCorpus(outCorpus, corpusDir string) error {
+	srcInfo, err := os.Stat(corpusDir)
+	if err != nil {
+		return fmt.Errorf("bench slice: source corpus: %w", err)
+	}
+	if !srcInfo.IsDir() {
+		return fmt.Errorf("bench slice: source corpus is not a directory: %s", corpusDir)
+	}
 	srcAbs, err := filepath.Abs(corpusDir)
 	if err != nil {
 		return fmt.Errorf("bench slice: resolve source corpus: %w", err)
@@ -202,7 +209,17 @@ func prepareOutputCorpus(outCorpus, corpusDir string) error {
 	if err != nil {
 		return fmt.Errorf("bench slice: resolve output corpus: %w", err)
 	}
-	if pathsOverlap(srcAbs, dstAbs) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("bench slice: resolve working directory: %w", err)
+	}
+	srcAbs = resolveExisting(srcAbs)
+	dstResolved := resolveExisting(dstAbs)
+	cwdResolved := resolveExisting(cwd)
+	if err := validateOutputDestination(dstResolved, cwdResolved); err != nil {
+		return err
+	}
+	if pathsOverlap(srcAbs, dstResolved) {
 		return fmt.Errorf("bench slice: output corpus must not be the source corpus or inside it")
 	}
 	if err := os.RemoveAll(dstAbs); err != nil {
@@ -210,6 +227,27 @@ func prepareOutputCorpus(outCorpus, corpusDir string) error {
 	}
 	if err := os.MkdirAll(dstAbs, 0o755); err != nil {
 		return fmt.Errorf("bench slice: create output corpus: %w", err)
+	}
+	return nil
+}
+
+func resolveExisting(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	parent := filepath.Dir(path)
+	if resolvedParent, err := filepath.EvalSymlinks(parent); err == nil {
+		return filepath.Join(resolvedParent, filepath.Base(path))
+	}
+	return path
+}
+
+func validateOutputDestination(dst, cwd string) error {
+	if dst == cwd || pathWithin(cwd, dst) {
+		return fmt.Errorf("bench slice: output corpus must not contain the working directory: %s", dst)
+	}
+	if dst == string(os.PathSeparator) {
+		return fmt.Errorf("bench slice: output corpus must not be the filesystem root")
 	}
 	return nil
 }

@@ -47,6 +47,7 @@ type Options struct {
 	// RelevantIDs, when non-empty, enables recall@k in Result.Metrics.
 	RelevantIDs        []string
 	relaxFilterOnEmpty bool
+	qualifierFilter    vector.Filter
 }
 
 // Result is a retrieval outcome with observability metadata. It exists so
@@ -238,34 +239,65 @@ func (r *Retriever) retrieve(ctx context.Context, query string, opt Options) ([]
 		k = r.cfg.DefaultK
 	}
 	r.refreshStaleCommunities(ctx)
-	switch opt.Mode {
-	case ModeGlobal:
-		chunks, err := r.retrieveGlobal(ctx, query, opt, k)
-		return chunks, nil, err
-	case ModeDrift:
-		chunks, err := r.retrieveDrift(ctx, query, opt, k)
-		return chunks, nil, err
-	case ModeSet:
+	if opt.Mode == ModeSet {
 		chunks, err := r.retrieveSet(ctx, query, opt, k)
 		return chunks, nil, err
+	}
+
+	base, qualifier, relaxable := opt.filterParts()
+	effective := opt
+	effective.Filter = mergeFilters(base, qualifier)
+	effective.qualifierFilter = vector.Filter{}
+	effective.relaxFilterOnEmpty = false
+	chunks, err := r.dispatchMode(ctx, query, effective, k)
+	if len(chunks) == 0 && relaxable && !isEmptyFilter(qualifier) && r.hasLocalCandidates(ctx) {
+		addDegraded(ctx, "qualifier filter excluded all retrieval results; retrying unfiltered")
+		retry := opt
+		retry.Filter = base
+		retry.qualifierFilter = vector.Filter{}
+		retry.relaxFilterOnEmpty = false
+		chunks, err = r.dispatchMode(ctx, query, retry, k)
+	}
+	return chunks, nil, err
+}
+
+func (r *Retriever) dispatchMode(ctx context.Context, query string, opt Options, k int) ([]vector.ScoredChunk, error) {
+	switch opt.Mode {
+	case ModeGlobal:
+		return r.retrieveGlobal(ctx, query, opt, k)
+	case ModeDrift:
+		return r.retrieveDrift(ctx, query, opt, k)
 	default:
-		chunks, err := r.retrieveLocal(ctx, query, opt, k)
-		return chunks, nil, err
+		return r.retrieveLocal(ctx, query, opt, k)
 	}
 }
 
 func (r *Retriever) retrieveLocal(ctx context.Context, query string, opt Options, k int) ([]vector.ScoredChunk, error) {
 	scored := r.retrieveLocalFiltered(ctx, query, opt, k)
-	if len(scored) == 0 && opt.relaxFilterOnEmpty && !isEmptyFilter(opt.Filter) && r.hasLocalCandidates(ctx) {
-		addDegraded(ctx, "qualifier filter excluded all local retrieval results; retrying unfiltered")
-		relaxed := opt
-		relaxed.Filter = vector.Filter{}
-		scored = r.retrieveLocalFiltered(ctx, query, relaxed, k)
-	}
 	if len(scored) == 0 {
 		addDegraded(ctx, "all retrieval legs unavailable for local query")
 	}
 	return scored, nil
+}
+
+func (o Options) filterParts() (base, qualifier vector.Filter, relaxable bool) {
+	if !isEmptyFilter(o.qualifierFilter) {
+		return o.Filter, o.qualifierFilter, true
+	}
+	if o.relaxFilterOnEmpty {
+		return vector.Filter{}, o.Filter, true
+	}
+	return o.Filter, vector.Filter{}, false
+}
+
+func mergeFilters(base, qualifier vector.Filter) vector.Filter {
+	if isEmptyFilter(qualifier) {
+		return base
+	}
+	if isEmptyFilter(base) {
+		return qualifier
+	}
+	return vector.MergeAND(base, qualifier)
 }
 
 func (r *Retriever) retrieveLocalFiltered(ctx context.Context, query string, opt Options, k int) []vector.ScoredChunk {
@@ -358,10 +390,11 @@ func (a Adapter) RetrieveMode(ctx context.Context, query string, k int, mode Mod
 	return a.Retriever.Retrieve(ctx, query, Options{K: k, Mode: mode})
 }
 
-// RetrieveModeFiltered is RetrieveMode with an explicit structured filter;
-// orchestrators that extract query qualifiers use it to constrain every leg.
-func (a Adapter) RetrieveModeFiltered(ctx context.Context, query string, k int, mode Mode, filter vector.Filter) ([]vector.ScoredChunk, error) {
-	return a.Retriever.Retrieve(ctx, query, Options{K: k, Mode: mode, Filter: filter, relaxFilterOnEmpty: true})
+// RetrieveModeFiltered is RetrieveMode with a strict base filter plus an
+// optional qualifier filter. The qualifier filter may be relaxed when it
+// excludes every retrieval result; the base filter always stays strict.
+func (a Adapter) RetrieveModeFiltered(ctx context.Context, query string, k int, mode Mode, base, qualifier vector.Filter) ([]vector.ScoredChunk, error) {
+	return a.Retriever.Retrieve(ctx, query, Options{K: k, Mode: mode, Filter: base, qualifierFilter: qualifier})
 }
 
 // rerank applies the configured Reranker, fail-open: any error or a

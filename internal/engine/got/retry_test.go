@@ -26,7 +26,7 @@ func TestRetrieveRetriesThenFailsOpen(t *testing.T) {
 	cfg.Retriever = fakeRetriever{err: errors.New("boom"), calls: &calls}
 	o := New(cfg)
 
-	got := o.retrieve(context.Background(), "q", retriever.ModeLocal, vector.Filter{})
+	got := o.retrieve(context.Background(), "q", retriever.ModeLocal, retrievalFilters{})
 	if got != nil {
 		t.Fatalf("retrieve = %v, want nil after exhausted retries", got)
 	}
@@ -52,7 +52,7 @@ func TestRetrieveSucceedsOnRetry(t *testing.T) {
 	cfg.Retriever = flakyRetriever{failFirst: 1, calls: &calls}
 	o := New(cfg)
 
-	got := o.retrieve(context.Background(), "q", retriever.ModeLocal, vector.Filter{})
+	got := o.retrieve(context.Background(), "q", retriever.ModeLocal, retrievalFilters{})
 	if len(got) != 1 || got[0].ID != "ok" {
 		t.Fatalf("retrieve = %+v, want [ok]", got)
 	}
@@ -92,7 +92,7 @@ func TestWaitAbortsRetriesOnContextCancellation(t *testing.T) {
 	cfg.Retriever = fakeRetriever{err: errors.New("boom"), calls: &calls}
 	o := New(cfg)
 
-	got := o.retrieve(ctx, "q", retriever.ModeLocal, vector.Filter{})
+	got := o.retrieve(ctx, "q", retriever.ModeLocal, retrievalFilters{})
 	if got != nil {
 		t.Fatalf("retrieve = %v, want nil", got)
 	}

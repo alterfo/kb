@@ -325,3 +325,47 @@ func TestBenchSliceRejectsOutputEqualToSource(t *testing.T) {
 		t.Fatalf("source corpus was damaged: %v", err)
 	}
 }
+
+func TestBenchSliceMissingCorpusDoesNotClearOutput(t *testing.T) {
+	outCorpus := filepath.Join(t.TempDir(), "out-corpus")
+	sentinel := writeSliceFile(t, outCorpus, "sentinel.txt", "keep")
+	questions := writeSliceQuestions(t, filepath.Join(t.TempDir(), "questions.jsonl"), []corpus.Question{
+		{ID: "q1", Type: "basic", Text: "one?", ExpectedDocIDs: []string{"dsid_docA"}},
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := runBenchSliceCmd([]string{
+		"-corpus", filepath.Join(t.TempDir(), "missing-corpus"),
+		"-questions", questions,
+		"-out-corpus", outCorpus,
+		"-out-questions", filepath.Join(t.TempDir(), "out.jsonl"),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "source corpus") {
+		t.Fatalf("stderr = %q, want source corpus error", stderr.String())
+	}
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Fatalf("pre-existing output was cleared despite missing source: %v", err)
+	}
+}
+
+func TestValidateOutputDestination(t *testing.T) {
+	cwd := filepath.Join(t.TempDir(), "workspace")
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateOutputDestination(cwd, cwd); err == nil {
+		t.Error("destination equal to cwd was accepted")
+	}
+	if err := validateOutputDestination(filepath.Dir(cwd), cwd); err == nil {
+		t.Error("destination containing cwd was accepted")
+	}
+	if err := validateOutputDestination(string(os.PathSeparator), cwd); err == nil {
+		t.Error("filesystem root was accepted")
+	}
+	if err := validateOutputDestination(filepath.Join(cwd, "out"), cwd); err != nil {
+		t.Fatalf("destination inside cwd was rejected: %v", err)
+	}
+}
