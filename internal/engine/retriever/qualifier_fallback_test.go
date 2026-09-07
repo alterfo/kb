@@ -263,3 +263,26 @@ func TestAdapterQualifierFilterFallsBack(t *testing.T) {
 		t.Fatalf("result = %+v, want fallback chunk a", got)
 	}
 }
+
+func TestAdapterConflictingMetadataDoesNotOverrideBase(t *testing.T) {
+	chunks := []vector.Chunk{
+		{ID: "a", RefDocID: "doc-a", Text: "apple orchard", FilePath: "notes/a.md", Source: "jira", Metadata: map[string]string{"region": "us-east"}, Embedding: []float32{1, 0}},
+	}
+	vs := &fakeVectorStore{chunks: chunks}
+	r := New(Config{Vector: vs, Embed: fakeEmbedder{vec: constVec([]float32{1, 0})}, Hybrid: false})
+	a := Adapter{r}
+
+	got, err := a.RetrieveModeFiltered(context.Background(), "apple", 10, ModeLocal,
+		vector.Filter{Sources: []string{"jira"}, Metadata: map[string]string{"region": "us-east"}},
+		vector.Filter{Metadata: map[string]string{"region": "eu-west"}},
+	)
+	if err != nil {
+		t.Fatalf("RetrieveModeFiltered: %v", err)
+	}
+	if vs.queryCalls != 2 {
+		t.Fatalf("query calls = %d, want 2 (impossible merge then base-only fallback)", vs.queryCalls)
+	}
+	if len(got) != 1 || got[0].Chunk.ID != "a" {
+		t.Fatalf("result = %+v, want base-matching chunk a", got)
+	}
+}

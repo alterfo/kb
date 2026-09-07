@@ -369,3 +369,28 @@ func TestValidateOutputDestination(t *testing.T) {
 		t.Fatalf("destination inside cwd was rejected: %v", err)
 	}
 }
+
+func TestValidateSourceOutputOverlapRejectsSameDir(t *testing.T) {
+	src := t.TempDir()
+	info, err := os.Stat(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSourceOutputOverlap(src, src, info); err == nil {
+		t.Fatal("same source and destination directory was accepted")
+	}
+}
+
+func TestValidateSourceOutputOverlapRejectsParent(t *testing.T) {
+	src := t.TempDir()
+	info, err := os.Stat(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSourceOutputOverlap(src, filepath.Join(src, "out"), info); err == nil {
+		t.Fatal("destination inside source was accepted")
+	}
+	if err := validateSourceOutputOverlap(filepath.Join(src, "child"), src, info); err == nil {
+		t.Fatal("destination containing source was accepted")
+	}
+}

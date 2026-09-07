@@ -219,6 +219,9 @@ func prepareOutputCorpus(outCorpus, corpusDir string) error {
 	if err := validateOutputDestination(dstResolved, cwdResolved); err != nil {
 		return err
 	}
+	if err := validateSourceOutputOverlap(srcAbs, dstResolved, srcInfo); err != nil {
+		return err
+	}
 	if pathsOverlap(srcAbs, dstResolved) {
 		return fmt.Errorf("bench slice: output corpus must not be the source corpus or inside it")
 	}
@@ -249,7 +252,53 @@ func validateOutputDestination(dst, cwd string) error {
 	if dst == string(os.PathSeparator) {
 		return fmt.Errorf("bench slice: output corpus must not be the filesystem root")
 	}
+	if _, err := os.Stat(cwd); err != nil {
+		return fmt.Errorf("bench slice: inspect working directory: %w", err)
+	}
+	dstInfo, err := os.Stat(dst)
+	switch {
+	case err == nil:
+		if sameFileOrAncestor(cwd, dstInfo) {
+			return fmt.Errorf("bench slice: output corpus must not contain the working directory: %s", dst)
+		}
+	case os.IsNotExist(err):
+		return nil
+	default:
+		return fmt.Errorf("bench slice: inspect output corpus: %w", err)
+	}
 	return nil
+}
+
+func validateSourceOutputOverlap(srcAbs, dstAbs string, srcInfo os.FileInfo) error {
+	dstInfo, err := os.Stat(dstAbs)
+	switch {
+	case err == nil:
+		if sameFileOrAncestor(dstAbs, srcInfo) || sameFileOrAncestor(srcAbs, dstInfo) {
+			return fmt.Errorf("bench slice: output corpus must not be the source corpus or inside it")
+		}
+	case os.IsNotExist(err):
+		if sameFileOrAncestor(dstAbs, srcInfo) {
+			return fmt.Errorf("bench slice: output corpus must not be the source corpus or inside it")
+		}
+	default:
+		return fmt.Errorf("bench slice: inspect output corpus: %w", err)
+	}
+	return nil
+}
+
+func sameFileOrAncestor(path string, target os.FileInfo) bool {
+	p := filepath.Clean(path)
+	for {
+		info, err := os.Stat(p)
+		if err == nil && os.SameFile(info, target) {
+			return true
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return false
+		}
+		p = parent
+	}
 }
 
 func pathsOverlap(a, b string) bool {

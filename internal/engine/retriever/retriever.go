@@ -297,7 +297,14 @@ func mergeFilters(base, qualifier vector.Filter) vector.Filter {
 	if isEmptyFilter(base) {
 		return qualifier
 	}
-	return vector.MergeAND(base, qualifier)
+	merged := vector.MergeAND(base, qualifier)
+	for key, baseValue := range base.Metadata {
+		if qualifierValue, ok := qualifier.Metadata[key]; ok && qualifierValue != baseValue {
+			merged.Sources = []string{"\x00impossible"}
+			return merged
+		}
+	}
+	return merged
 }
 
 func (r *Retriever) retrieveLocalFiltered(ctx context.Context, query string, opt Options, k int) []vector.ScoredChunk {
