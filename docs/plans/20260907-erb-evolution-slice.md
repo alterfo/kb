@@ -134,14 +134,14 @@ Dependencies identified:
 
 ### Task 5: Qualifier-filter fail-open fix
 
-- [ ] in `internal/engine/retriever/retriever.go`, when a retrieval leg returns empty because of
+- [x] in `internal/engine/retriever/retriever.go`, when a retrieval leg returns empty because of
       the qualifier-derived `opt.Filter`, retry that leg unfiltered — mirroring the ANN-prefilter
       fallback pattern (`queryDense`, ~L397-425) rather than returning an empty rank list
-- [ ] ensure the fallback triggers only for qualifier-filter emptiness, not for a legitimately
+- [x] ensure the fallback triggers only for qualifier-filter emptiness, not for a legitimately
       empty corpus/leg (guard so behavior is unchanged when the filter is inactive)
-- [ ] write tests: leg empty under qualifier filter → unfiltered retry returns candidates; no
+- [x] write tests: leg empty under qualifier filter → unfiltered retry returns candidates; no
       filter → unchanged; empty-corpus → still empty (no spurious retry)
-- [ ] run `go test ./... && go vet ./... && gofmt -l .` — must pass before next task
+- [x] run `go test ./... && go vet ./... && gofmt -l .` — must pass before next task
 
 ### Task 6: Verify acceptance criteria
 

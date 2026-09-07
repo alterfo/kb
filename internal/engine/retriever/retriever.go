@@ -256,12 +256,31 @@ func (r *Retriever) retrieve(ctx context.Context, query string, opt Options) ([]
 func (r *Retriever) retrieveLocal(ctx context.Context, query string, opt Options, k int) ([]vector.ScoredChunk, error) {
 	chunkByID := make(map[string]vector.Chunk)
 	rankLists := r.localLegs(ctx, query, opt.Filter, chunkByID)
+	filter := opt.Filter
+	if len(rankLists) == 0 && !isEmptyFilter(filter) && r.hasLocalCandidates(ctx) {
+		addDegraded(ctx, "qualifier filter excluded all local retrieval results; retrying unfiltered")
+		chunkByID = make(map[string]vector.Chunk)
+		rankLists = r.localLegs(ctx, query, vector.Filter{}, chunkByID)
+		filter = vector.Filter{}
+	}
 	if len(rankLists) == 0 {
 		addDegraded(ctx, "all retrieval legs unavailable for local query")
 		return nil, nil
 	}
-	scored := r.fuseRankLists(ctx, query, opt, k, chunkByID, rankLists)
-	return r.expandIntraDoc(ctx, scored, k, opt.Filter), nil
+	relaxed := opt
+	relaxed.Filter = filter
+	scored := r.fuseRankLists(ctx, query, relaxed, k, chunkByID, rankLists)
+	return r.expandIntraDoc(ctx, scored, k, filter), nil
+}
+
+func (r *Retriever) hasLocalCandidates(ctx context.Context) bool {
+	if r.cfg.Vector != nil {
+		all, err := r.cfg.Vector.AllForBM25(ctx)
+		if err == nil && len(all) > 0 {
+			return true
+		}
+	}
+	return r.cfg.BM25 != nil
 }
 
 // localLegs collects the hybrid + graph-aware rank lists of the local
