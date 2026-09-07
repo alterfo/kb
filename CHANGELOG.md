@@ -3,6 +3,20 @@
 All notable changes to this project are documented in this file. The format
 follows Keep a Changelog, and the project versions with Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- `kb bench slice` to build a category-targeted ERB corpus and question subset.
+- `kb bench score` to grade ERB submissions with gold-answer/facts/retrieval scoring.
+- `kb bench -answer-mode` for the `got` or `naive` answering path.
+
+### Changed
+
+- `kb bench` GoT answering now wires contradiction detection via `KB_DETECT_CONTRADICTIONS`.
+- Qualifier-filter retrieval now fails open to an unfiltered retry when the filter
+  excludes every local result.
+
 ## [1.0.0] - 2026-08-24
 
 First public release of `kb`, a self-contained pure-Go GraphRAG knowledge base.

@@ -24,5 +24,5 @@ release-readiness material.
 
 - `legal-gold-corpus.md` — legal gold-corpus methodology and eval metrics
 - EnterpriseRAG-Bench: `kb bench` runner, submission format and per-type metrics — see README
-  ("EnterpriseRAG-Bench" section) and `plans/20260826-enterpriserag-bench-submission.md`
-
+  ("EnterpriseRAG-Bench" section) and `plans/20260903-enterpriserag-bench-run.md`
+- `bench/erb-evolution-report.md` — ERB diagnostic slice and cumulative feature-evolution ladder

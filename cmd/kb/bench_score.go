@@ -43,11 +43,7 @@ func runBenchScoreCmd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "bench score: questions warning: %s\n", w)
 	}
 
-	rep, err := runbench.Score(submission, questions)
-	if err != nil {
-		fmt.Fprintf(stderr, "bench score: %v\n", err)
-		return 1
-	}
+	rep := runbench.Score(submission, questions)
 	fmt.Fprintf(stdout, "bench score: %s\n", rep.Summary())
 
 	outPath := *out

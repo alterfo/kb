@@ -28,3 +28,8 @@ docs/bench/evolution/*.pid
 docs/bench/evolution/*.start
 docs/bench/evolution/*.end
 docs/bench/evolution/*.exit
+docs/bench/erb-evolution/*.log
+docs/bench/erb-evolution/*.pid
+docs/bench/erb-evolution/*.start
+docs/bench/erb-evolution/*.end
+docs/bench/erb-evolution/*.exit

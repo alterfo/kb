@@ -274,11 +274,13 @@ Outputs: `answers.jsonl` in the official submission format
 (`*.report.json`) with document recall vs gold docs, abstention share and
 citation coverage. Bench-specific knobs: `KB_QUALIFIER_FILTER`,
 `KB_SUPERSEDE_MODE`, `KB_ABSTAIN_THRESHOLD`, `KB_SET_MAX_ROUNDS`,
-`KB_CANDIDATE_K`, `KB_PER_DOC_CAP`, `KB_INTRA_DOC_BUDGET` (see table above).
+`KB_CANDIDATE_K`, `KB_PER_DOC_CAP`, `KB_INTRA_DOC_BUDGET`,
+`KB_DETECT_CONTRADICTIONS` (see table above).
 `--smoke` uses the checked-in `testdata/lang-bench` subset (16 docs, 20
 questions). `--persist-dir` reuses a corpus index and skips unchanged docs via
 `doc_hashes`; `--history` (or the default next to the report) appends each
-run's metrics report. The command needs a live LLM endpoint.
+run's metrics report. `kb bench` itself needs a live LLM endpoint; the
+`slice` and `score` subcommands are local-only and do not call the LLM.
 
 `-answer-mode` selects the answering path: `got` (default, the existing
 Graph-of-Thoughts orchestrator) or `naive` (single-shot retrieval plus one
@@ -295,7 +297,7 @@ subset:
 ./bin/kb bench slice \
   --corpus /data/erb/corpus \
   --questions questions.jsonl \
-  --types conflicting_info,completeness,project_related,constrained \
+  --types basic,semantic,conflicting_info,completeness,project_related,constrained \
   --out-corpus docs/bench/erb-evolution/corpus \
   --out-questions docs/bench/erb-evolution/questions.jsonl
 ```
@@ -312,9 +314,10 @@ copies every referenced gold document, reporting any missing document IDs.
 using English gold-answer and fact stemming:
 
 ```sh
-./bin/kb bench score answers.jsonl \
+./bin/kb bench score \
   --questions questions.jsonl \
-  --out answers.score.json
+  --out answers.score.json \
+  answers.jsonl
 ```
 
 Flags: one positional `<submission.jsonl>` argument, `-questions` (required),

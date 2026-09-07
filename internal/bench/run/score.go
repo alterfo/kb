@@ -54,7 +54,7 @@ func (r *ScoreReport) Summary() string {
 	return b.String()
 }
 
-func Score(submission map[string]Answer, gold []corpus.Question) (*ScoreReport, error) {
+func Score(submission map[string]Answer, gold []corpus.Question) *ScoreReport {
 	rep := &ScoreReport{Total: len(gold), Types: map[string]*ScoreStat{}}
 	factsSums := map[string]float64{}
 	factsCounts := map[string]int{}
@@ -102,7 +102,7 @@ func Score(submission map[string]Answer, gold []corpus.Question) (*ScoreReport, 
 	if totalFactsCount > 0 {
 		rep.AvgFactsCoverage = totalFactsSum / float64(totalFactsCount)
 	}
-	return rep, nil
+	return rep
 }
 
 func retrievalHit(foundIDs, wantIDs []string) bool {
@@ -207,6 +207,9 @@ func LoadSubmission(path string) (map[string]Answer, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("bench: scan submission: %w", err)
 	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("bench: no valid submission records in %s", path)
+	}
 	return out, nil
 }
 
@@ -216,6 +219,11 @@ func SaveScoreReport(path string, rep *ScoreReport) error {
 		return fmt.Errorf("bench: encode score report: %w", err)
 	}
 	data = append(data, '\n')
+	if dir := filepath.Dir(path); dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("bench: create score report dir: %w", err)
+		}
+	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("bench: write score report: %w", err)
 	}

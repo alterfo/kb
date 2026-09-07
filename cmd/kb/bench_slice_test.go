@@ -275,3 +275,53 @@ func TestBenchSliceDispatchesViaRunBenchCmd(t *testing.T) {
 		t.Errorf("stdout = %q, want copied 1 documents", stdout.String())
 	}
 }
+
+func TestBenchSliceClearsPreExistingOutputCorpus(t *testing.T) {
+	src := sliceCorpusFixture(t)
+	questions := writeSliceQuestions(t, filepath.Join(t.TempDir(), "questions.jsonl"), []corpus.Question{
+		{ID: "q1", Type: "basic", Text: "one?", ExpectedDocIDs: []string{"dsid_docA"}},
+	})
+	outCorpus := filepath.Join(t.TempDir(), "out-corpus")
+	stale := writeSliceFile(t, outCorpus, filepath.Join("wiki", "general", "dsid_stale__x.txt"), "stale")
+
+	var stdout, stderr bytes.Buffer
+	code := runBenchSliceCmd([]string{
+		"-corpus", src,
+		"-questions", questions,
+		"-out-corpus", outCorpus,
+		"-out-questions", filepath.Join(t.TempDir(), "out.jsonl"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, stderr = %q", code, stderr.String())
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale output file still present: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outCorpus, "wiki", "general", "dsid_docA__semantic.txt")); err != nil {
+		t.Fatalf("expected referenced file after clear: %v", err)
+	}
+}
+
+func TestBenchSliceRejectsOutputEqualToSource(t *testing.T) {
+	src := sliceCorpusFixture(t)
+	questions := writeSliceQuestions(t, filepath.Join(t.TempDir(), "questions.jsonl"), []corpus.Question{
+		{ID: "q1", Type: "basic", Text: "one?", ExpectedDocIDs: []string{"dsid_docA"}},
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := runBenchSliceCmd([]string{
+		"-corpus", src,
+		"-questions", questions,
+		"-out-corpus", src,
+		"-out-questions", filepath.Join(t.TempDir(), "out.jsonl"),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "must not be the source corpus") {
+		t.Fatalf("stderr = %q, want overlap rejection", stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(src, "wiki", "general", "dsid_docA__semantic.txt")); err != nil {
+		t.Fatalf("source corpus was damaged: %v", err)
+	}
+}

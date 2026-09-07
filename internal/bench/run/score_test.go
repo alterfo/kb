@@ -2,6 +2,7 @@ package run
 
 import (
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -18,10 +19,7 @@ func TestScoreRetrievalHitAndAnswerContains(t *testing.T) {
 		{ID: "q2", Type: "basic", ExpectedDocIDs: []string{"dsid_y"}, GoldAnswer: "expected"},
 	}
 
-	rep, err := Score(submission, gold)
-	if err != nil {
-		t.Fatalf("Score: %v", err)
-	}
+	rep := Score(submission, gold)
 	if rep.Total != 2 || rep.Matched != 2 {
 		t.Fatalf("Total/Matched = %d/%d, want 2/2", rep.Total, rep.Matched)
 	}
@@ -41,10 +39,7 @@ func TestScoreUnmatchedGoldSkipped(t *testing.T) {
 	submission := map[string]Answer{}
 	gold := []corpus.Question{{ID: "q999", Type: "basic", GoldAnswer: "x"}}
 
-	rep, err := Score(submission, gold)
-	if err != nil {
-		t.Fatalf("Score: %v", err)
-	}
+	rep := Score(submission, gold)
 	if rep.Total != 1 || rep.Matched != 0 {
 		t.Fatalf("Total/Matched = %d/%d, want 1/0", rep.Total, rep.Matched)
 	}
@@ -64,10 +59,7 @@ func TestScoreFactsCoveragePartial(t *testing.T) {
 		},
 	}
 
-	rep, err := Score(submission, gold)
-	if err != nil {
-		t.Fatalf("Score: %v", err)
-	}
+	rep := Score(submission, gold)
 	if rep.AnswerContains != 1 {
 		t.Fatalf("AnswerContains = %d, want 1", rep.AnswerContains)
 	}
@@ -89,10 +81,7 @@ func TestScoreEmptyGoldAnswerNeverCounted(t *testing.T) {
 	}
 	gold := []corpus.Question{{ID: "q1", Type: "basic", GoldAnswer: "  "}}
 
-	rep, err := Score(submission, gold)
-	if err != nil {
-		t.Fatalf("Score: %v", err)
-	}
+	rep := Score(submission, gold)
 	if rep.AnswerContains != 0 {
 		t.Fatalf("AnswerContains = %d, want 0", rep.AnswerContains)
 	}
@@ -152,5 +141,25 @@ func TestLoadSubmission(t *testing.T) {
 	}
 	if submission["q1"].Answer != "one" || len(submission["q1"].DocumentIDs) != 1 {
 		t.Fatalf("submission[q1] = %+v", submission["q1"])
+	}
+}
+
+func TestLoadSubmissionRejectsEmptyFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "submission.jsonl")
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadSubmission(path); err == nil {
+		t.Fatal("LoadSubmission(empty) = nil error, want error")
+	}
+}
+
+func TestLoadSubmissionRejectsOnlyBlankQuestionIDs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "submission.jsonl")
+	if err := os.WriteFile(path, []byte(`{"question_id":"","answer":"x"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadSubmission(path); err == nil {
+		t.Fatal("LoadSubmission(blank id) = nil error, want error")
 	}
 }

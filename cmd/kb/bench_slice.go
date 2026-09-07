@@ -45,18 +45,26 @@ func runBenchSliceCmd(args []string, stdout, stderr io.Writer) int {
 		questions = limitQuestionsPerType(questions, *limitPerType)
 	}
 
-	if err := corpus.WriteQuestions(*outQuestions, questions); err != nil {
+	if len(questions) == 0 {
+		if err := prepareOutputCorpus(*outCorpus, *corpusDir); err != nil {
+			fmt.Fprintf(stderr, "bench slice: %v\n", err)
+			return 1
+		}
+		if err := corpus.WriteQuestions(*outQuestions, questions); err != nil {
+			fmt.Fprintf(stderr, "bench slice: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, "bench slice: no questions matched the filters")
+		return 0
+	}
+
+	if err := prepareOutputCorpus(*outCorpus, *corpusDir); err != nil {
 		fmt.Fprintf(stderr, "bench slice: %v\n", err)
 		return 1
 	}
-
-	if len(questions) == 0 {
-		fmt.Fprintln(stdout, "bench slice: no questions matched the filters")
-		if err := os.MkdirAll(*outCorpus, 0o755); err != nil {
-			fmt.Fprintf(stderr, "bench slice: create output corpus: %v\n", err)
-			return 1
-		}
-		return 0
+	if err := corpus.WriteQuestions(*outQuestions, questions); err != nil {
+		fmt.Fprintf(stderr, "bench slice: %v\n", err)
+		return 1
 	}
 
 	wanted := map[string]struct{}{}
@@ -141,18 +149,82 @@ func copyFile(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
+	srcAbs, err := filepath.Abs(src)
+	if err != nil {
+		return err
+	}
+	dstAbs, err := filepath.Abs(dst)
+	if err != nil {
+		return err
+	}
+	if srcAbs == dstAbs {
+		return fmt.Errorf("bench slice: source and destination are the same file: %s", src)
+	}
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.Create(dst)
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".slice-copy-*")
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
+	tmpName := tmp.Name()
+	defer func() {
+		if tmp != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if _, err := io.Copy(tmp, in); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	tmp = nil
+	if err := os.Rename(tmpName, dst); err != nil {
+		_ = os.Remove(tmpName)
 		return err
 	}
 	return nil
+}
+
+func prepareOutputCorpus(outCorpus, corpusDir string) error {
+	srcAbs, err := filepath.Abs(corpusDir)
+	if err != nil {
+		return fmt.Errorf("bench slice: resolve source corpus: %w", err)
+	}
+	dstAbs, err := filepath.Abs(outCorpus)
+	if err != nil {
+		return fmt.Errorf("bench slice: resolve output corpus: %w", err)
+	}
+	if pathsOverlap(srcAbs, dstAbs) {
+		return fmt.Errorf("bench slice: output corpus must not be the source corpus or inside it")
+	}
+	if err := os.RemoveAll(dstAbs); err != nil {
+		return fmt.Errorf("bench slice: clear output corpus: %w", err)
+	}
+	if err := os.MkdirAll(dstAbs, 0o755); err != nil {
+		return fmt.Errorf("bench slice: create output corpus: %w", err)
+	}
+	return nil
+}
+
+func pathsOverlap(a, b string) bool {
+	if a == b {
+		return true
+	}
+	return pathWithin(a, b) || pathWithin(b, a)
+}
+
+func pathWithin(path, root string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 }

@@ -32,6 +32,9 @@ func (f *fakeVectorStore) SetSuperseded(ctx context.Context, chunkIDs []string, 
 }
 func (f *fakeVectorStore) ClearSupersededBy(ctx context.Context, refDocID string) error { return nil }
 func (f *fakeVectorStore) ClearSupersededOnDoc(ctx context.Context, docID string) error { return nil }
+func (f *fakeVectorStore) HasChunks(ctx context.Context) (bool, error) {
+	return len(activeChunks(f.chunks)) > 0, nil
+}
 func (f *fakeVectorStore) AllForBM25(ctx context.Context) ([]vector.Chunk, error) {
 	return activeChunks(f.chunks), nil
 }

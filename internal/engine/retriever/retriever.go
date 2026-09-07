@@ -45,7 +45,8 @@ type Options struct {
 	Filter vector.Filter
 	Mode   Mode
 	// RelevantIDs, when non-empty, enables recall@k in Result.Metrics.
-	RelevantIDs []string
+	RelevantIDs        []string
+	relaxFilterOnEmpty bool
 }
 
 // Result is a retrieval outcome with observability metadata. It exists so
@@ -254,29 +255,33 @@ func (r *Retriever) retrieve(ctx context.Context, query string, opt Options) ([]
 }
 
 func (r *Retriever) retrieveLocal(ctx context.Context, query string, opt Options, k int) ([]vector.ScoredChunk, error) {
+	scored := r.retrieveLocalFiltered(ctx, query, opt, k)
+	if len(scored) == 0 && opt.relaxFilterOnEmpty && !isEmptyFilter(opt.Filter) && r.hasLocalCandidates(ctx) {
+		addDegraded(ctx, "qualifier filter excluded all local retrieval results; retrying unfiltered")
+		relaxed := opt
+		relaxed.Filter = vector.Filter{}
+		scored = r.retrieveLocalFiltered(ctx, query, relaxed, k)
+	}
+	if len(scored) == 0 {
+		addDegraded(ctx, "all retrieval legs unavailable for local query")
+	}
+	return scored, nil
+}
+
+func (r *Retriever) retrieveLocalFiltered(ctx context.Context, query string, opt Options, k int) []vector.ScoredChunk {
 	chunkByID := make(map[string]vector.Chunk)
 	rankLists := r.localLegs(ctx, query, opt.Filter, chunkByID)
-	filter := opt.Filter
-	if len(rankLists) == 0 && !isEmptyFilter(filter) && r.hasLocalCandidates(ctx) {
-		addDegraded(ctx, "qualifier filter excluded all local retrieval results; retrying unfiltered")
-		chunkByID = make(map[string]vector.Chunk)
-		rankLists = r.localLegs(ctx, query, vector.Filter{}, chunkByID)
-		filter = vector.Filter{}
-	}
 	if len(rankLists) == 0 {
-		addDegraded(ctx, "all retrieval legs unavailable for local query")
-		return nil, nil
+		return nil
 	}
-	relaxed := opt
-	relaxed.Filter = filter
-	scored := r.fuseRankLists(ctx, query, relaxed, k, chunkByID, rankLists)
-	return r.expandIntraDoc(ctx, scored, k, filter), nil
+	scored := r.fuseRankLists(ctx, query, opt, k, chunkByID, rankLists)
+	return r.expandIntraDoc(ctx, scored, k, opt.Filter)
 }
 
 func (r *Retriever) hasLocalCandidates(ctx context.Context) bool {
 	if r.cfg.Vector != nil {
-		all, err := r.cfg.Vector.AllForBM25(ctx)
-		if err == nil && len(all) > 0 {
+		has, err := r.cfg.Vector.HasChunks(ctx)
+		if err == nil && has {
 			return true
 		}
 	}
@@ -356,7 +361,7 @@ func (a Adapter) RetrieveMode(ctx context.Context, query string, k int, mode Mod
 // RetrieveModeFiltered is RetrieveMode with an explicit structured filter;
 // orchestrators that extract query qualifiers use it to constrain every leg.
 func (a Adapter) RetrieveModeFiltered(ctx context.Context, query string, k int, mode Mode, filter vector.Filter) ([]vector.ScoredChunk, error) {
-	return a.Retriever.Retrieve(ctx, query, Options{K: k, Mode: mode, Filter: filter})
+	return a.Retriever.Retrieve(ctx, query, Options{K: k, Mode: mode, Filter: filter, relaxFilterOnEmpty: true})
 }
 
 // rerank applies the configured Reranker, fail-open: any error or a

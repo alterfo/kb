@@ -521,6 +521,14 @@ func (s *VectorStore) AllForBM25(ctx context.Context) ([]vector.Chunk, error) {
 	return chunks, nil
 }
 
+func (s *VectorStore) HasChunks(ctx context.Context) (bool, error) {
+	var has int
+	if err := s.db.sql.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM chunks WHERE valid_to IS NULL)`).Scan(&has); err != nil {
+		return false, fmt.Errorf("sqlite: HasChunks: %w", err)
+	}
+	return has == 1, nil
+}
+
 func (s *VectorStore) ChunksByDoc(ctx context.Context, docID string) ([]vector.Chunk, error) {
 	rows, err := s.db.sql.QueryContext(ctx, `SELECT `+chunkSelectCols+` FROM chunks WHERE ref_doc_id = ? ORDER BY rowid`, docID)
 	if err != nil {

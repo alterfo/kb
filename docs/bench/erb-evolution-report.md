@@ -48,6 +48,7 @@ The slice is produced with:
 ./bin/kb bench slice \
   --corpus /path/to/unzipped/corpus \
   --questions questions.jsonl \
+  --types basic,semantic,conflicting_info,completeness,project_related,constrained \
   --out-corpus docs/bench/erb-evolution/corpus \
   --out-questions docs/bench/erb-evolution/questions.jsonl
 ```
