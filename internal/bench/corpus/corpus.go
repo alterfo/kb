@@ -87,6 +87,30 @@ func LoadQuestions(path string) ([]Question, []string, error) {
 	return qs, warns, nil
 }
 
+func WriteQuestions(path string, qs []Question) error {
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("corpus: create questions dir: %w", err)
+		}
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("corpus: create questions: %w", err)
+	}
+	defer f.Close()
+	w := bufio.NewWriter(f)
+	enc := json.NewEncoder(w)
+	for _, q := range qs {
+		if err := enc.Encode(q); err != nil {
+			return fmt.Errorf("corpus: encode question: %w", err)
+		}
+	}
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("corpus: flush questions: %w", err)
+	}
+	return nil
+}
+
 func LoadCorpus(root string) ([]Doc, []string, error) {
 	var (
 		docs  []Doc
@@ -140,9 +164,8 @@ func parseTXT(root, rel, path string) (*Doc, string) {
 		return nil, fmt.Sprintf("%s: file outside a source directory, skipped", rel)
 	}
 	base := filepath.Base(path)
-	name := strings.TrimSuffix(base, filepath.Ext(base))
-	idx := strings.Index(name, "__")
-	if idx <= 0 || !strings.HasPrefix(name[:idx], "dsid_") {
+	id, ok := DocIDFromFileName(base)
+	if !ok {
 		return nil, fmt.Sprintf("%s: filename does not match {dsid__semantic}.txt, skipped", rel)
 	}
 	data, err := os.ReadFile(path)
@@ -163,13 +186,23 @@ func parseTXT(root, rel, path string) (*Doc, string) {
 		return nil, fmt.Sprintf("%s: empty title, skipped", rel)
 	}
 	return &Doc{
-		ID:         name[:idx],
+		ID:         id,
 		SourceType: sourceType(rel),
 		RelPath:    rel,
 		FileName:   base,
 		Title:      title,
 		Body:       body,
 	}, ""
+}
+
+func DocIDFromFileName(fileName string) (string, bool) {
+	name := filepath.Base(fileName)
+	name = strings.TrimSuffix(name, filepath.Ext(name))
+	idx := strings.Index(name, "__")
+	if idx <= 0 || !strings.HasPrefix(name[:idx], "dsid_") {
+		return "", false
+	}
+	return name[:idx], true
 }
 
 func parseJSON(root, rel, path string) (*Doc, string) {

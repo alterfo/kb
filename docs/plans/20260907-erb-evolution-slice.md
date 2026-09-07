@@ -102,20 +102,20 @@ Dependencies identified:
 
 ### Task 3: Corpus-slice subcommand `kb bench slice`
 
-- [ ] add a `slice` subcommand dispatch in `runBenchCmd` (alongside the existing `compare`
+- [x] add a `slice` subcommand dispatch in `runBenchCmd` (alongside the existing `compare`
       branch at `cmd/kb/bench.go:20`)
-- [ ] implement `runBenchSliceCmd`: flags `-corpus`, `-questions`, `-types` (reuse `csvSet`),
+- [x] implement `runBenchSliceCmd`: flags `-corpus`, `-questions`, `-types` (reuse `csvSet`),
       `-out-corpus`, `-out-questions`, optional `-limit-per-type`
-- [ ] load questions, filter via `runbench.FilterQuestions` (`internal/bench/run/runner.go:99`),
+- [x] load questions, filter via `runbench.FilterQuestions` (`internal/bench/run/runner.go:99`),
       union their `ExpectedDocIDs`, copy only matching `dsid_*.txt` files into `-out-corpus`
       preserving the `<source_type>/` layout `corpus.parseTXT` requires
-- [ ] write the filtered questions to `-out-questions`; report copied-doc count and any
+- [x] write the filtered questions to `-out-questions`; report copied-doc count and any
       `ExpectedDocIDs` with no on-disk match
-- [ ] write tests: fake corpus tree + questions.jsonl → only referenced docs copied, source-type
+- [x] write tests: fake corpus tree + questions.jsonl → only referenced docs copied, source-type
       layout preserved, missing-doc reported, `-types` filter respected
-- [ ] write tests for edge cases (no matching questions → empty slice + warning; duplicate doc
+- [x] write tests for edge cases (no matching questions → empty slice + warning; duplicate doc
       ids deduped)
-- [ ] run `go test ./... && go vet ./... && gofmt -l .` — must pass before next task
+- [x] run `go test ./... && go vet ./... && gofmt -l .` — must pass before next task
 
 ### Task 4: ERB facts-based scorer and `kb bench score`
 

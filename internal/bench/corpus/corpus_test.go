@@ -104,6 +104,73 @@ func TestLoadQuestions_MissingFile(t *testing.T) {
 	}
 }
 
+func TestWriteQuestions_RoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "questions.jsonl")
+	qs := []Question{
+		{ID: "q1", Type: "basic", Text: "one?", ExpectedDocIDs: []string{"dsid_1"}},
+		{ID: "q2", Type: "constrained", Text: "two?", Language: "en"},
+	}
+	if err := WriteQuestions(path, qs); err != nil {
+		t.Fatalf("WriteQuestions: %v", err)
+	}
+	got, warns, err := LoadQuestions(path)
+	if err != nil {
+		t.Fatalf("LoadQuestions: %v", err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("warnings = %v, want none", warns)
+	}
+	if len(got) != 2 {
+		t.Fatalf("questions = %d, want 2", len(got))
+	}
+	if got[0].ID != "q1" || got[1].ID != "q2" {
+		t.Errorf("ids = %q,%q, want q1,q2", got[0].ID, got[1].ID)
+	}
+	if !reflect.DeepEqual(got[0].ExpectedDocIDs, []string{"dsid_1"}) {
+		t.Errorf("ExpectedDocIDs = %v, want [dsid_1]", got[0].ExpectedDocIDs)
+	}
+}
+
+func TestWriteQuestions_Empty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "empty.jsonl")
+	if err := WriteQuestions(path, nil); err != nil {
+		t.Fatalf("WriteQuestions: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(data) != 0 {
+		t.Errorf("empty questions file size = %d, want 0", len(data))
+	}
+}
+
+func TestDocIDFromFileName(t *testing.T) {
+	tests := []struct {
+		name     string
+		fileName string
+		wantID   string
+		wantOK   bool
+	}{
+		{name: "valid", fileName: "dsid_abc123__notes.txt", wantID: "dsid_abc123", wantOK: true},
+		{name: "full path", fileName: filepath.Join("wiki", "general", "dsid_abc123__notes.txt"), wantID: "dsid_abc123", wantOK: true},
+		{name: "missing separator", fileName: "plain-name.txt", wantOK: false},
+		{name: "missing dsid prefix", fileName: "doc_abc__notes.txt", wantOK: false},
+		{name: "empty prefix", fileName: "__notes.txt", wantOK: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, ok := DocIDFromFileName(tt.fileName)
+			if ok != tt.wantOK {
+				t.Fatalf("DocIDFromFileName(%q) ok = %v, want %v", tt.fileName, ok, tt.wantOK)
+			}
+			if ok && id != tt.wantID {
+				t.Errorf("DocIDFromFileName(%q) id = %q, want %q", tt.fileName, id, tt.wantID)
+			}
+		})
+	}
+}
+
 func TestLoadCorpus_TXT(t *testing.T) {
 	docs, warns, err := LoadCorpus(filepath.Join("testdata", "txt-corpus"))
 	if err != nil {

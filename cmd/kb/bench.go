@@ -21,6 +21,9 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "compare" {
 		return runBenchCompareCmd(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "slice" {
+		return runBenchSliceCmd(args[1:], stdout, stderr)
+	}
 	fset := flag.NewFlagSet("bench", flag.ContinueOnError)
 	fset.SetOutput(stderr)
 	corpusDir := fset.String("corpus", "", "benchmark corpus root (directory tree of .txt/.json docs)")
