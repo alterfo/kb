@@ -46,6 +46,8 @@ type TypeStat struct {
 type Report struct {
 	Total        int                  `json:"total"`
 	AbstainTotal int                  `json:"abstain_total"`
+	Failures     int                  `json:"failures,omitempty"`
+	FailedIDs    []string             `json:"failed_ids,omitempty"`
 	Types        map[string]*TypeStat `json:"types"`
 	Languages    map[string]*TypeStat `json:"languages"`
 }
@@ -58,6 +60,9 @@ func (r *Report) Summary() string {
 	sort.Strings(typeNames)
 	var b strings.Builder
 	fmt.Fprintf(&b, "total=%d abstain=%d", r.Total, r.AbstainTotal)
+	if r.Failures > 0 {
+		fmt.Fprintf(&b, " failures=%d", r.Failures)
+	}
 	for _, t := range typeNames {
 		st := r.Types[t]
 		extra := ""
@@ -126,6 +131,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 	var wg sync.WaitGroup
 	var errMu sync.Mutex
 	var firstErr error
+	var failedIDs []string
 	for i, q := range r.Questions {
 		wg.Add(1)
 		sem <- struct{}{}
@@ -138,6 +144,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 				if firstErr == nil {
 					firstErr = fmt.Errorf("bench: ask %s: %w", q.ID, askErr)
 				}
+				failedIDs = append(failedIDs, q.ID)
 				errMu.Unlock()
 				return
 			}
@@ -145,15 +152,18 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		}(i, q)
 	}
 	wg.Wait()
-	if firstErr != nil {
-		return nil, firstErr
-	}
 
 	if err := writeAnswers(r.OutPath, answers); err != nil {
 		return nil, err
 	}
 
 	rep := buildReport(r.Questions, answers)
+	sort.Strings(failedIDs)
+	rep.Failures = len(failedIDs)
+	rep.FailedIDs = append([]string(nil), failedIDs...)
+	if firstErr != nil {
+		return rep, firstErr
+	}
 	return rep, nil
 }
 
@@ -171,6 +181,9 @@ func writeAnswers(path string, answers []Answer) error {
 	w := bufio.NewWriter(f)
 	enc := json.NewEncoder(w)
 	for _, a := range answers {
+		if a.QuestionID == "" {
+			continue
+		}
 		if err := enc.Encode(a); err != nil {
 			return fmt.Errorf("bench: encode answer: %w", err)
 		}

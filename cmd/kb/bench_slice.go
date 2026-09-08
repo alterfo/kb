@@ -49,6 +49,10 @@ func runBenchSliceCmd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "bench slice: %v\n", err)
 		return 1
 	}
+	if err := validateInputQuestionsOutputCorpus(*questionsPath, *outCorpus); err != nil {
+		fmt.Fprintf(stderr, "bench slice: %v\n", err)
+		return 1
+	}
 
 	if len(questions) == 0 {
 		if err := prepareOutputCorpus(*outCorpus, *corpusDir); err != nil {
@@ -165,6 +169,23 @@ func validateQuestionsOutput(outQuestions, questionsPath, corpusDir string) erro
 		return fmt.Errorf("output questions must not be inside the source corpus: %s", outQuestions)
 	}
 
+	return nil
+}
+
+func validateInputQuestionsOutputCorpus(questionsPath, outCorpus string) error {
+	questionsAbs, err := filepath.Abs(questionsPath)
+	if err != nil {
+		return fmt.Errorf("resolve input questions: %w", err)
+	}
+	outAbs, err := filepath.Abs(outCorpus)
+	if err != nil {
+		return fmt.Errorf("resolve output corpus: %w", err)
+	}
+	questionsResolved := resolveExisting(questionsAbs)
+	outResolved := resolveExisting(outAbs)
+	if pathsOverlap(questionsResolved, outResolved) {
+		return fmt.Errorf("input questions must not be inside the output corpus: %s", questionsPath)
+	}
 	return nil
 }
 

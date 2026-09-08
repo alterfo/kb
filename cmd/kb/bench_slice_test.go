@@ -436,6 +436,32 @@ func TestBenchSliceMissingCorpusDoesNotClearOutput(t *testing.T) {
 	}
 }
 
+func TestBenchSliceRejectsInputQuestionsInsideOutputCorpus(t *testing.T) {
+	src := sliceCorpusFixture(t)
+	outCorpus := filepath.Join(t.TempDir(), "out-corpus")
+	questions := filepath.Join(outCorpus, "questions.jsonl")
+	writeSliceQuestions(t, questions, []corpus.Question{
+		{ID: "q1", Type: "basic", Text: "one?", ExpectedDocIDs: []string{"dsid_docA"}},
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := runBenchSliceCmd([]string{
+		"-corpus", src,
+		"-questions", questions,
+		"-out-corpus", outCorpus,
+		"-out-questions", filepath.Join(t.TempDir(), "out.jsonl"),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "input questions must not be inside the output corpus") {
+		t.Fatalf("stderr = %q, want input-questions/out-corpus overlap rejection", stderr.String())
+	}
+	if _, err := os.Stat(questions); err != nil {
+		t.Fatalf("input questions file was deleted: %v", err)
+	}
+}
+
 func TestValidateOutputDestination(t *testing.T) {
 	cwd := filepath.Join(t.TempDir(), "workspace")
 	if err := os.MkdirAll(cwd, 0o755); err != nil {

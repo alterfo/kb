@@ -94,7 +94,7 @@ func TestRunnerPreservesQuestionOrderWithConcurrency(t *testing.T) {
 	}
 }
 
-func TestRunnerReturnsAskErrorWithoutWritingAnswers(t *testing.T) {
+func TestRunnerWritesPartialAnswersOnAskError(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "answers.jsonl")
 	r := &Runner{Questions: sampleQuestions(t), OutPath: out, Concurrency: 2,
 		Ask: func(ctx context.Context, q corpus.Question) (string, []string, error) {
@@ -104,11 +104,34 @@ func TestRunnerReturnsAskErrorWithoutWritingAnswers(t *testing.T) {
 			return "answer for " + q.ID, nil, nil
 		}}
 
-	if _, err := r.Run(context.Background()); err == nil || !strings.Contains(err.Error(), "ask qst_0471") {
+	rep, err := r.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "ask qst_0471") {
 		t.Fatalf("Run error = %v, want ask qst_0471 failure", err)
 	}
-	if _, err := os.Stat(out); !os.IsNotExist(err) {
-		t.Fatalf("answers file was written despite ask failure: %v", err)
+	if rep == nil {
+		t.Fatal("Run report = nil, want partial report")
+	}
+	if rep.Failures != 1 || len(rep.FailedIDs) != 1 || rep.FailedIDs[0] != "qst_0471" {
+		t.Fatalf("Failures/FailedIDs = %d/%v, want 1/[qst_0471]", rep.Failures, rep.FailedIDs)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read partial answers: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("partial answers lines = %d, want 2 successful answers", len(lines))
+	}
+	var ids []string
+	for _, line := range lines {
+		var a Answer
+		if err := json.Unmarshal([]byte(line), &a); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, a.QuestionID)
+	}
+	if strings.Contains(strings.Join(ids, ","), "qst_0471") {
+		t.Fatalf("partial answers contain failed question: %v", ids)
 	}
 }
 

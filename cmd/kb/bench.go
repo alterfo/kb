@@ -135,10 +135,13 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 		Ask:         ask,
 	}
 
-	rep, err := runner.Run(ctx)
-	if err != nil {
-		fmt.Fprintf(stderr, "bench: %v\n", err)
+	rep, runErr := runner.Run(ctx)
+	if rep == nil {
+		fmt.Fprintf(stderr, "bench: %v\n", runErr)
 		return 1
+	}
+	if runErr != nil {
+		fmt.Fprintf(stderr, "bench: partial run: %v\n", runErr)
 	}
 
 	reportPath := *reportOut
@@ -167,6 +170,9 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "bench: answers written to %s\n", *out)
 	fmt.Fprintf(stdout, "bench: report written to %s\n", reportPath)
 	fmt.Fprintf(stdout, "bench: metrics history written to %s\n", metricsHistoryPath)
+	if runErr != nil {
+		return 1
+	}
 	return 0
 }
 
