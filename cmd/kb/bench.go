@@ -40,6 +40,7 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 	persistDir := fset.String("persist-dir", "", "reuse this persist/root dir instead of a temporary one; unchanged docs skip reindexing via doc_hashes")
 	historyPath := fset.String("history", "", "metrics history JSON path (default: persist-dir/bench-history.json, or out.history.json)")
 	smoke := fset.Bool("smoke", false, "use the checked-in testdata/lang-bench subset for a one-minute sanity run")
+	ruSmoke := fset.Bool("ru-smoke", false, "use the checked-in testdata/ru-bench subset for a sanity run")
 	answerMode := fset.String("answer-mode", "got", "answering path: got (Graph-of-Thoughts, default) or naive (single-shot retrieval + one chat call)")
 	if err := fset.Parse(args); err != nil {
 		return 2
@@ -54,6 +55,14 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 		}
 		if *questionsPath == "" {
 			*questionsPath = filepath.Join("testdata", "lang-bench", "questions.jsonl")
+		}
+	}
+	if *ruSmoke {
+		if *corpusDir == "" {
+			*corpusDir = filepath.Join("testdata", "ru-bench", "corpus")
+		}
+		if *questionsPath == "" {
+			*questionsPath = filepath.Join("testdata", "ru-bench", "questions.jsonl")
 		}
 	}
 	if *corpusDir == "" || *questionsPath == "" {

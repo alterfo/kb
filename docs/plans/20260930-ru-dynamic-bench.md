@@ -123,20 +123,20 @@
 
 ### Task 3: Ручной/полуручной seed-набор вопросов
 
-- [ ] составить seed JSONL по схеме `corpus.Question`
+- [x] составить seed JSONL по схеме `corpus.Question`
       (`question_id/question_type/source_types/question/expected_doc_ids/
       gold_answer/answer_facts/language:"ru"`) — несколько десятков
       вопросов вручную/полуручно по свежесобранному корпусу (Task 2),
       несколько типов вопросов (single-doc, multi-doc, constrained,
       info_not_found — по аналогии с категориями ERB/DRAGON)
-- [ ] сохранить как `testdata/ru-bench/questions.jsonl`
-- [ ] написать `kb bench -smoke`-эквивалент: добавить `-smoke` детект пути
+- [x] сохранить как `testdata/ru-bench/questions.jsonl`
+- [x] написать `kb bench -smoke`-эквивалент: добавить `-smoke` детект пути
       `testdata/ru-bench/` рядом с существующим `testdata/lang-bench/` ИЛИ
       (проще, без веток в коде) просто задокументировать команду
       `kb bench -corpus testdata/ru-bench/corpus -questions
       testdata/ru-bench/questions.jsonl -smoke` в README — выбрать при
       реализации по факту объёма seed-набора
-- [ ] прогнать `corpus.LoadQuestions` на файле — 0 warnings, все
+- [x] прогнать `corpus.LoadQuestions` на файле — 0 warnings, все
       `expected_doc_ids` существуют в корпусе из Task 2 (написать
       маленький sanity-тест/скрипт, не просто ручная проверка)
 
