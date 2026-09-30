@@ -2,6 +2,7 @@ package corpus
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -57,5 +58,37 @@ func TestLangBenchDatasetLoadsCleanly(t *testing.T) {
 		if got := langCounts[tc.lang]; got != tc.want {
 			t.Errorf("language %q count = %d, want %d", tc.lang, got, tc.want)
 		}
+	}
+}
+
+func TestRUBenchDatasetLoadsCleanly(t *testing.T) {
+	corpusRoot := filepath.Join("..", "..", "..", "testdata", "ru-bench", "corpus")
+
+	docs, warns, err := LoadCorpus(corpusRoot)
+	if err != nil {
+		t.Fatalf("LoadCorpus() error = %v", err)
+	}
+	if len(warns) != 0 {
+		t.Fatalf("LoadCorpus() warnings = %v, want none", warns)
+	}
+	if len(docs) != 298 {
+		t.Fatalf("LoadCorpus() count = %d, want 298", len(docs))
+	}
+
+	seen := make(map[string]struct{}, len(docs))
+	for _, d := range docs {
+		if d.SourceType != "doka" {
+			t.Errorf("doc %q source type = %q, want doka", d.ID, d.SourceType)
+		}
+		if !strings.HasPrefix(d.ID, "dsid_ru") {
+			t.Errorf("doc %q id missing dsid_ru prefix", d.ID)
+		}
+		if d.Title == "" || d.Body == "" {
+			t.Errorf("doc %q has empty title or body", d.ID)
+		}
+		if _, dup := seen[d.ID]; dup {
+			t.Errorf("duplicate doc id %q", d.ID)
+		}
+		seen[d.ID] = struct{}{}
 	}
 }

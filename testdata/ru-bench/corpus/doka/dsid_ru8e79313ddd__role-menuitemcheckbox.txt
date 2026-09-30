@@ -1,0 +1,11 @@
+`menuitemcheckbox`
+
+Кратко
+Самостоятельная роль виджета из WAI-ARIA для пункта в виде чекбокса или флажка из «настоящего» меню как в программе, операционной системе или в приложении.
+В HTML нет тега с такой ролью.
+Как пишется
+Задайте role="menuitemcheckbox" любому тегу, лучше всего ,  или .
+Элемент с menuitemcheckbox обязательно должен находится внутри другого с menu или menubar.
+Не забудьте добавить menuitemcheckbox в порядок фокуса с помощью tabindex.
+У элемента с menuitemcheckbox обязательно должен быть атрибут aria-checked, как у любого другого чекбокса.
+С ролью menuitemcheckbox можно сочетать все глобальные ARIA-атрибуты и некоторые другие атрибуты виджетов — aria-disabled, aria-expanded, aria-haspopup, aria-posinset и aria-setsize.

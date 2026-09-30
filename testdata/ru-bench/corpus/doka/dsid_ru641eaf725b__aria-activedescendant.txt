@@ -1,0 +1,12 @@
+`aria-activedescendant`
+
+Кратко
+Свойство связи из WAI-ARIA для обозначения текущего, активного элемента из составного интерактивного элемента. Например, из меню, сетки, комбинированного списка и так далее.
+Как пишется
+Добавьте к родительскому элементу aria-activedescendant со значением в виде ID и свяжите с ним активный дочерний элемент с помощью атрибута id с таким же значением.
+aria-activedescendant можно задавать только некоторым тегам и ролям:
+,  с типами text, email, tel, url или роли textbox.
+, ,  или group.
+или combobox.
+application.
+Этот атрибут есть по умолчанию у  с ролью listbox,  или row,  или searchbox,  или spinbutton, radiogroup, tablist, grid, toolbar, menu, menubar, tree и treegrid.

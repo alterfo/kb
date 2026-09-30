@@ -1,0 +1,10 @@
+`scrollbar`
+
+Кратко
+Самостоятельная роль виджета из WAI-ARIA для полосы прокрутки.
+В HTML нет тега с такой ролью.
+Как пишется
+Задайте role="scrollbar" любому тегу, лучше всего  или . Не забудьте добавить scrollbar в порядок фокуса с помощью tabindex.
+У элемента со scrollbar обязательно должны быть атрибуты aria-controls и aria-valuenow.
+С ролью scrollbar можно сочетать все глобальные ARIA-атрибуты и некоторые другие атрибуты виджетов — aria-disabled, aria-orientation, aria-valuemax, aria-valuemin и aria-valuetext.
+По умолчанию у scrollbar есть атрибуты aria-orientation="vertical", aria-valuemin="0" и aria-valuemax="100".
