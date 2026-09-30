@@ -282,6 +282,39 @@ func TestRetrieveHybridOffExcludesBM25OnlyMatches(t *testing.T) {
 	}
 }
 
+func TestRetrieveLexicalOnlyUsesBM25WithoutDense(t *testing.T) {
+	// "a" is a dense-only match (query "kiwi" does not match its text), "b"
+	// is a lexical-only match with a zero embedding. LexicalOnly must return
+	// "b" via BM25 and never call the embedder, so the failing embedder is
+	// the assertion that the dense leg was skipped.
+	chunks := []vector.Chunk{
+		{ID: "a", RefDocID: "doc-a", Text: "apple", FilePath: "notes/a.md", Embedding: []float32{1, 0}},
+		{ID: "b", RefDocID: "doc-b", Text: "kiwi", FilePath: "notes/b.md", Embedding: []float32{0, 0}},
+	}
+	idx := bm25.New()
+	idx.Rebuild(chunks, 1)
+
+	r := New(Config{
+		Vector:      &fakeVectorStore{chunks: chunks},
+		BM25:        idx,
+		Embed:       fakeEmbedder{err: errors.New("dense leg must not run in lexical-only mode")},
+		LexicalOnly: true,
+	})
+
+	got, err := r.Retrieve(context.Background(), "kiwi", Options{K: 10})
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if len(got) == 0 || got[0].Chunk.ID != "b" {
+		t.Fatalf("expected lexical-only to return BM25 match b, got %+v", got)
+	}
+	for _, sc := range got {
+		if sc.Chunk.ID == "a" {
+			t.Fatalf("lexical-only must not return dense-only match a, got %+v", got)
+		}
+	}
+}
+
 func TestRetrievePerDocCoverageCap(t *testing.T) {
 	var chunks []vector.Chunk
 	for i := 0; i < 5; i++ {

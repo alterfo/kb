@@ -666,6 +666,64 @@ Edited messages are re-delivered (not skipped) and carry a normalized
   extraction path for chat-sourced documents) only emits decision-tracking
   edges, not typed facts, so it doesn't produce a relation to close.
 
+## Feature evolution ladder (benchmarks)
+
+`kb` is built as a cumulative ladder: each rung adds exactly one capability on
+top of the previous one, so the delta between adjacent rungs is attributable to
+that single feature. Every capability is switched on with one env var, which is
+what makes this measurable at all.
+
+Run on the DRAGON RU RAG-Bench diagnostic slice (192 docs, N=150 for rungs 0–3
+and N=100 for rungs 4–6; chat/graph `qwen3.8:latest`, embeddings
+`qwen3-embedding:0.6b`). Absolute numbers are a reduced diagnostic slice and are
+**not** comparable to the full-corpus run — only the deltas between adjacent
+rungs are meaningful.
+
+The numbers below are the **mean of two full runs** of the same ladder on the
+same slice (run 1: 2026-09-03, run 2: 2026-09-14). The answering path is
+LLM-driven, so results are not bit-for-bit reproducible and the two runs differ
+by a few questions per rung; the per-rung counts below are averaged across both.
+Treat them as "what this slice showed across two runs", not as a stable
+benchmark score. Run-1/run-2 raw counts are in `docs/bench/evolution/` and
+`docs/bench/evolution/rerun-20260914/`.
+
+| # | Rung | Adds | Path | N | retrieval_hit | answer_contains | Δ retrieval | Δ answer | Wall time |
+|---|------|------|------|---|---------------|-----------------|-------------|----------|-----------|
+| 0 | Native | dense-only retrieval, one LLM call | naive | 150 | 3.0% (4.5/150) | 33.7% (50.5/150) | — | — | 16.2m |
+| 1 | +Hybrid | `KB_HYBRID=true` (BM25 + RRF) | naive | 150 | 2.0% (3.0/150) | 34.0% (51.0/150) | −1.5 | +0.5 | 16.1m |
+| 2 | +Graph | `KB_INDEX_GRAPH=true` | naive | 150 | 4.0% (6.0/150) | 35.7% (53.5/150) | +3.0 | +2.5 | 53.8m |
+| 3 | +Rerank | `KB_RERANK=llm` | naive | 150 | 3.7% (5.5/150) | 36.7% (55.0/150) | −0.5 | +1.5 | 46.4m |
+| 4 | +Logic | Graph-of-Thoughts (`-answer-mode=got`) | got | 100 | 5.0% (5.0/100) | 39.0% (39.0/100) | +2.5* | 0.0* | 105.4m |
+| 5 | +Temporal | `KB_SUPERSEDE_MODE=strict`, `KB_DETECT_CONTRADICTIONS=true` | got | 100 | 4.5% (4.5/100) | 37.0% (37.0/100) | −0.5 | −2.0 | 128.5m |
+| 6 | +Qualifiers | `KB_QUALIFIER_FILTER=true` | got | 100 | 3.0% (3.0/100) | 33.0% (33.0/100) | −1.5 | −4.0 | 129.4m |
+
+\* Rungs 0–3 are scored on N=150, rungs 4–6 on N=100, so the 3→4 delta is only
+comparable on the shared 100-question subset: there the averaged step goes
+retrieval_hit 2.5→5.0 and answer_contains 39.0→39.0 (reasoning improves
+retrieval, not the final answer count).
+
+What the ladder shows across the two runs:
+
+- **+Graph** is the rung with the clearest positive delta — it lifts retrieval
+  on multi-hop questions and adds to the final answer.
+- **+Rerank** is the cleanest gain on the final answer among the retrieval-side
+  rungs, at no retrieval cost.
+- **+Hybrid** is flat here because the slice is homogeneous and does not
+  exercise lexical matches (typos, code identifiers); it needs a noisier corpus
+  to show up.
+- **+Temporal** is structurally inert on a one-shot static import — there is
+  nothing to supersede. The mechanism is verified separately by a live
+  chat-actualization run (10/10 affected answers update) plus a deterministic
+  fake-LLM test asserting `superseded_by`/`valid_to`.
+- **+Qualifiers** reads as a small regression here (answer 37%→33%), which the
+  methodology attributes to the lack of `constrained`-type questions, not to a
+  broken feature.
+
+See `docs/bench/dragon-evolution-report.md` for the full methodology, per-type
+breakdown, and noise discussion, and `docs/bench/dragon-report.md` for the
+full-corpus (542-doc / 600-question) run: **75.2% (451/600)** answer-contains-gold,
+with **0 hallucinated citations** in the verified sample.
+
 ## Development
 
 ```sh
@@ -697,6 +755,9 @@ Start from the docs index: `docs/README.md`.
 - `docs/sources.md` — `sources.yaml` format and per-connector options
 - `docs/new-connector.md` — how to add a new connector
 - `docs/legal-gold-corpus.md` — legal gold-corpus methodology and eval metrics
+- `docs/bench/dragon-report.md` — DRAGON RU RAG-Bench full-corpus run (75.2%)
+- `docs/bench/dragon-evolution-report.md` — feature evolution ladder (per-rung deltas)
+- `docs/bench/erb-evolution-report.md` — EnterpriseRAG-Bench slice (methodology; run pending)
 - `docs/bench/actualization-report.md` — chat-actualization demo (temporal updates change answers)
 - `CONTRIBUTING.md` — development and testing conventions
 - `SECURITY.md` — loopback/no-auth design and vulnerability reporting

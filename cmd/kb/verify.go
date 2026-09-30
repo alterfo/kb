@@ -78,6 +78,7 @@ func runVerifyCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 		LLMModel:       env.LLMModel,
 		EmbedModel:     env.EmbedModel,
 		Hybrid:         env.Hybrid,
+		LexicalOnly:    env.LexicalOnly,
 		AuthorityBonus: env.AuthorityBonus,
 		RRFK:           env.RRFK,
 		DefaultK:       env.TopK,

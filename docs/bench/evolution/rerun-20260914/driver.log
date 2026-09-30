@@ -1,0 +1,58 @@
+=== stage stage0-native: start 2026-09-14T11:11:13Z ===
+=== stage stage0-native: bench-dragon ok, scoring ===
+=== stage stage0-native: done 2026-09-14T11:26:51Z ===
+=== stage stage1-hybrid: start 2026-09-14T11:26:51Z ===
+=== stage stage1-hybrid: bench-dragon ok, scoring ===
+=== stage stage0-native: start 2026-09-14T11:42:56Z ===
+=== stage stage0-native: answers already present, skipping bench-dragon ===
+=== stage stage0-native: score already present, skipping ===
+=== stage stage0-native: done 2026-09-14T11:42:56Z ===
+=== stage stage1-hybrid: start 2026-09-14T11:42:56Z ===
+=== stage stage1-hybrid: answers already present, skipping bench-dragon ===
+=== stage stage1-hybrid: done 2026-09-14T11:43:00Z ===
+=== stage stage2-graph: start 2026-09-14T11:43:00Z ===
+=== stage stage2-graph: done 2026-09-14T11:59:42Z ===
+=== stage stage3-rerank: start 2026-09-14T11:59:42Z ===
+=== stage stage3-rerank: done 2026-09-14T12:36:34Z ===
+=== stage stage4-logic: start 2026-09-14T12:36:34Z ===
+=== stage stage0-native: start 2026-09-14T13:23:26Z ===
+=== stage stage0-native: answers already present, skipping bench-dragon ===
+=== stage stage0-native: score already present, skipping ===
+=== stage stage0-native: done 2026-09-14T13:23:26Z ===
+=== stage stage1-hybrid: start 2026-09-14T13:23:26Z ===
+=== stage stage1-hybrid: answers already present, skipping bench-dragon ===
+=== stage stage1-hybrid: score already present, skipping ===
+=== stage stage1-hybrid: done 2026-09-14T13:23:26Z ===
+=== stage stage2-graph: start 2026-09-14T13:23:26Z ===
+=== stage stage2-graph: answers already present, skipping bench-dragon ===
+=== stage stage2-graph: score already present, skipping ===
+=== stage stage2-graph: done 2026-09-14T13:23:26Z ===
+=== stage stage3-rerank: start 2026-09-14T13:23:26Z ===
+=== stage stage3-rerank: answers already present, skipping bench-dragon ===
+=== stage stage3-rerank: score already present, skipping ===
+=== stage stage3-rerank: done 2026-09-14T13:23:26Z ===
+=== stage stage4-logic: start 2026-09-14T13:23:26Z ===
+(eval):4: command not found: setsid
+=== stage stage0-native: start 2026-09-14T13:53:28Z ===
+=== stage stage0-native: answers already present, skipping bench-dragon ===
+=== stage stage0-native: score already present, skipping ===
+=== stage stage0-native: done 2026-09-14T13:53:28Z ===
+=== stage stage1-hybrid: start 2026-09-14T13:53:28Z ===
+=== stage stage1-hybrid: answers already present, skipping bench-dragon ===
+=== stage stage1-hybrid: score already present, skipping ===
+=== stage stage1-hybrid: done 2026-09-14T13:53:28Z ===
+=== stage stage2-graph: start 2026-09-14T13:53:28Z ===
+=== stage stage2-graph: answers already present, skipping bench-dragon ===
+=== stage stage2-graph: score already present, skipping ===
+=== stage stage2-graph: done 2026-09-14T13:53:28Z ===
+=== stage stage3-rerank: start 2026-09-14T13:53:28Z ===
+=== stage stage3-rerank: answers already present, skipping bench-dragon ===
+=== stage stage3-rerank: score already present, skipping ===
+=== stage stage3-rerank: done 2026-09-14T13:53:28Z ===
+=== stage stage4-logic: start 2026-09-14T13:53:28Z ===
+=== stage stage4-logic: done 2026-09-14T15:34:08Z ===
+=== stage stage5-temporal: start 2026-09-14T15:34:08Z ===
+=== stage stage5-temporal: done 2026-09-14T17:20:15Z ===
+=== stage stage6-qualifiers: start 2026-09-14T17:20:15Z ===
+=== stage stage6-qualifiers: done 2026-09-14T19:34:27Z ===
+=== all stages done 2026-09-14T19:34:27Z ===

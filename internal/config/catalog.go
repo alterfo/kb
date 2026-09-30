@@ -259,6 +259,7 @@ func envVars(e Env) []EffectiveVar {
 		{Name: "KB_DESCRIBE_MODEL", Value: e.DescribeModel, Default: "qwen3.8:latest"},
 		{Name: "KB_DESCRIBE_BATCH", Value: strconv.Itoa(e.DescribeBatch), Default: "10"},
 		{Name: "KB_HYBRID", Value: strconv.FormatBool(e.Hybrid), Default: "true"},
+		{Name: "KB_LEXICAL_ONLY", Value: strconv.FormatBool(e.LexicalOnly), Default: "false"},
 		{Name: "KB_RERANK", Value: e.Rerank, Default: "off"},
 		{Name: "KB_AUTHORITY_BONUS", Value: formatAuthorityBonus(e.AuthorityBonus), Default: "notes/=0.15,notes/approved/=0.30"},
 		{Name: "KB_NO_PROXY", Value: strings.Join(e.NoProxy, ","), Default: "127.0.0.1"},

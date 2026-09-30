@@ -1,0 +1,26 @@
+bench-dragon: reusing persisted index at docs/bench/evolution/persist-a (192 chunks)
+bench-dragon: skipping corpus fetch and indexing
+bench-dragon: fetching questions from HuggingFace...
+bench-dragon: matched 212/600 questions to doc subset (0 malformed gold entries skipped)
+bench-dragon: 150 questions selected
+bench-dragon: answering questions...
+bench-dragon: answered 25/150 questions
+bench-dragon: answered 50/150 questions
+bench-dragon: answered 75/150 questions
+bench-dragon: answered 100/150 questions
+bench-dragon: answered 125/150 questions
+bench-dragon: answered 150/150 questions
+bench-dragon: submission written to docs/bench/evolution/rerun-20260914/stage1-hybrid.json (150 answers)
+bench-dragon: this is a self-run submission file (kb's own found_ids/model_answer), not an official DRAGON leaderboard score
+bench-dragon score: fetching gold QA from HuggingFace...
+bench-dragon score: dragon: fetch ai-forever/hist-rag-bench-private-qa offset 100: status 502
+=== stage stage1-hybrid: answers already present, skipping bench-dragon ===
+bench-dragon score: fetching gold QA from HuggingFace...
+bench-dragon score: fetched 600 gold QA pairs
+bench-dragon score: total=600 matched=150 retrieval_hit=3/150 answer_contains=51/150 cond(n=37 retrieval=0 answer=18) mh(n=36 retrieval=1 answer=13) set(n=33 retrieval=1 answer=8) simple(n=44 retrieval=1 answer=12)
+bench-dragon score: report written to docs/bench/evolution/rerun-20260914/stage1-hybrid.score.json
+bench-dragon score: metrics history written to docs/bench/evolution/rerun-20260914/stage1-hybrid.score.json.history.json
+=== stage stage1-hybrid: answers already present, skipping bench-dragon ===
+=== stage stage1-hybrid: score already present, skipping ===
+=== stage stage1-hybrid: answers already present, skipping bench-dragon ===
+=== stage stage1-hybrid: score already present, skipping ===

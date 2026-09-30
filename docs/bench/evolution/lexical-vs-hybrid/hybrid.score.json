@@ -1,0 +1,28 @@
+{
+  "total": 600,
+  "matched": 150,
+  "retrieval_hits": 6,
+  "answer_contains_gold": 51,
+  "types": {
+    "cond": {
+      "count": 37,
+      "retrieval_hits": 0,
+      "answer_contains_gold": 17
+    },
+    "mh": {
+      "count": 36,
+      "retrieval_hits": 2,
+      "answer_contains_gold": 13
+    },
+    "set": {
+      "count": 33,
+      "retrieval_hits": 1,
+      "answer_contains_gold": 9
+    },
+    "simple": {
+      "count": 44,
+      "retrieval_hits": 3,
+      "answer_contains_gold": 12
+    }
+  }
+}

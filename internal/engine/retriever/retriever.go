@@ -98,6 +98,7 @@ type Config struct {
 	LLMModel       string
 	EmbedModel     string
 	Hybrid         bool
+	LexicalOnly    bool
 	AuthorityBonus map[string]float64
 	Feedback       FeedbackPrior
 	FeedbackBonus  float64
@@ -333,19 +334,26 @@ func (r *Retriever) hasLocalCandidates(ctx context.Context) bool {
 func (r *Retriever) localLegs(ctx context.Context, query string, filter vector.Filter, chunkByID map[string]vector.Chunk) [][]string {
 	var rankLists [][]string
 
-	subqueries := expandQuery(ctx, r.cfg.Chat, r.cfg.LLMModel, query)
-	if list := r.denseRankLists(ctx, query, subqueries, filter, chunkByID); len(list) > 0 {
-		rankLists = append(rankLists, list...)
+	// LexicalOnly is the "bare BM25" ablation: no query expansion, no dense
+	// leg, no graph expansion, only the lexical rank list. It overrides
+	// Hybrid so the lexical leg runs even when Hybrid is off.
+	if !r.cfg.LexicalOnly {
+		subqueries := expandQuery(ctx, r.cfg.Chat, r.cfg.LLMModel, query)
+		if list := r.denseRankLists(ctx, query, subqueries, filter, chunkByID); len(list) > 0 {
+			rankLists = append(rankLists, list...)
+		}
 	}
 
-	if r.cfg.Hybrid && r.cfg.BM25 != nil {
+	if (r.cfg.Hybrid || r.cfg.LexicalOnly) && r.cfg.BM25 != nil {
 		if ids := r.bm25RankList(query, filter, chunkByID); len(ids) > 0 {
 			rankLists = append(rankLists, ids)
 		}
 	}
 
-	if lists := r.graphRankLists(ctx, query, filter, chunkByID); len(lists) > 0 {
-		rankLists = append(rankLists, lists...)
+	if !r.cfg.LexicalOnly {
+		if lists := r.graphRankLists(ctx, query, filter, chunkByID); len(lists) > 0 {
+			rankLists = append(rankLists, lists...)
+		}
 	}
 	return rankLists
 }

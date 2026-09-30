@@ -20,6 +20,7 @@ type Env struct {
 	DescribeModel         string
 	DescribeBatch         int
 	Hybrid                bool
+	LexicalOnly           bool
 	Rerank                string
 	AuthorityBonus        map[string]float64
 	NoProxy               []string
@@ -145,6 +146,13 @@ func LoadEnv(lookup EnvLookup) (Env, error) {
 			return Env{}, fmt.Errorf("KB_HYBRID: invalid bool %q: %w", v, err)
 		}
 		e.Hybrid = b
+	}
+	if v, ok := lookup("KB_LEXICAL_ONLY"); ok && v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return Env{}, fmt.Errorf("KB_LEXICAL_ONLY: invalid bool %q: %w", v, err)
+		}
+		e.LexicalOnly = b
 	}
 	if v, ok := lookup("KB_RERANK"); ok && v != "" {
 		switch v {

@@ -1,0 +1,17 @@
+bench-dragon: reusing persisted index at docs/bench/evolution/persist-b (192 chunks)
+bench-dragon: skipping corpus fetch and indexing
+bench-dragon: fetching questions from HuggingFace...
+bench-dragon: matched 212/600 questions to doc subset (0 malformed gold entries skipped)
+bench-dragon: 100 questions selected
+bench-dragon: answering questions...
+bench-dragon: answered 25/100 questions
+bench-dragon: answered 50/100 questions
+bench-dragon: answered 75/100 questions
+bench-dragon: answered 100/100 questions
+bench-dragon: submission written to docs/bench/evolution/rerun-20260914/stage5-temporal.json (100 answers)
+bench-dragon: this is a self-run submission file (kb's own found_ids/model_answer), not an official DRAGON leaderboard score
+bench-dragon score: fetching gold QA from HuggingFace...
+bench-dragon score: fetched 600 gold QA pairs
+bench-dragon score: total=600 matched=100 retrieval_hit=5/100 answer_contains=37/100 cond(n=22 retrieval=0 answer=12) mh(n=23 retrieval=2 answer=9) set(n=20 retrieval=0 answer=6) simple(n=35 retrieval=3 answer=10)
+bench-dragon score: report written to docs/bench/evolution/rerun-20260914/stage5-temporal.score.json
+bench-dragon score: metrics history written to docs/bench/evolution/rerun-20260914/stage5-temporal.score.json.history.json

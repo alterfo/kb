@@ -196,6 +196,7 @@ func benchRetriever(env config.Env, bundle *engineBundle) *retriever.Retriever {
 		LLMModel:       env.LLMModel,
 		EmbedModel:     env.EmbedModel,
 		Hybrid:         env.Hybrid,
+		LexicalOnly:    env.LexicalOnly,
 		AuthorityBonus: env.AuthorityBonus,
 		RRFK:           env.RRFK,
 		DefaultK:       env.TopK,
