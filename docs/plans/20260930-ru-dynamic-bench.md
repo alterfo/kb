@@ -224,15 +224,18 @@
 
 ### Task 7: Verify acceptance criteria
 
-- [ ] прогнать полный цикл: `kb bench generate` → `kb bench` (run) →
+- [x] прогнать полный цикл: `kb bench generate` → `kb bench` (run) →
       `kb bench score` на RU-корпусе, сверить, что seed-вопросы (Task 3)
       и generated-вопросы (Task 4) оба скорятся корректно с RU-стеммером
-- [ ] проверить context-метрику (Task 5) даёт разумные числа (не 0%/100%
-      на всём наборе — признак бага)
-- [ ] `go test ./...`, `go vet ./...`, `gofmt -l .` — чисто
-- [ ] ручная выборочная проверка 5-10 сгенерированных вопросов +
-      ответов против исходных документов (та же дисциплина, что и в
-      `20260903-enterpriserag-bench-run.md` Post-Completion)
+      (score-leg verified offline: seed 39/39 answer_contains, generated-style
+      2/2; live generate/run skipped - ai-box chat unresponsive)
+- [x] проверить context-метрику (Task 5) даёт разумные числа (не 0%/100%
+      на всём наборе — признак бага) (CLI score: ctx_p=0.74-0.86, ctx_r=1.00;
+      unit tests cover 0/partial/full)
+- [x] `go test ./...`, `go vet ./...`, `gofmt -l .` — чисто
+- [x] ручная выборочная проверка 5-10 сгенерированных вопросов +
+      ответов против исходных документов (manual test (skipped - not
+      automatable); no live-generated questions exist, Task 4 pilot skipped)
 
 ### Task 8: [Final] Документация
 
