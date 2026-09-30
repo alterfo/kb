@@ -13,6 +13,7 @@ import (
 
 	"github.com/alterfo/kb/internal/bench/corpus"
 	"github.com/kljensen/snowball/english"
+	"github.com/kljensen/snowball/russian"
 )
 
 type ScoreStat struct {
@@ -76,14 +77,14 @@ func Score(submission map[string]Answer, gold []corpus.Question) *ScoreReport {
 			rep.RetrievalHits++
 			st.RetrievalHits++
 		}
-		if answerContainsGold(entry.Answer, q.GoldAnswer) {
+		if answerContainsGold(entry.Answer, q.GoldAnswer, q.Language) {
 			rep.AnswerContains++
 			st.AnswerContains++
 		}
 		if len(q.AnswerFacts) > 0 {
 			covered := 0
 			for _, fact := range q.AnswerFacts {
-				if answerContainsGold(entry.Answer, fact) {
+				if factCovered(entry.Answer, fact, q.Language) {
 					covered++
 				}
 			}
@@ -124,17 +125,28 @@ func retrievalHit(foundIDs, wantIDs []string) bool {
 var setItemRe = regexp.MustCompile(`'([^']*)'`)
 var wordRe = regexp.MustCompile(`[\p{L}\p{N}]+`)
 
-func stemSequence(s string) []string {
+func isRussian(lang string) bool {
+	return strings.EqualFold(strings.TrimSpace(lang), "ru")
+}
+
+func stem(t, lang string) string {
+	if isRussian(lang) {
+		return russian.Stem(t, true)
+	}
+	return english.Stem(t, true)
+}
+
+func stemSequence(s, lang string) []string {
 	tokens := wordRe.FindAllString(strings.ToLower(s), -1)
 	stems := make([]string, len(tokens))
 	for i, t := range tokens {
-		stems[i] = english.Stem(t, true)
+		stems[i] = stem(t, lang)
 	}
 	return stems
 }
 
-func phraseStemsPresent(modelStems []string, phrase string) bool {
-	phraseStems := stemSequence(phrase)
+func phraseStemsPresent(modelStems []string, phrase, lang string) bool {
+	phraseStems := stemSequence(phrase, lang)
 	if len(phraseStems) == 0 || len(phraseStems) > len(modelStems) {
 		return false
 	}
@@ -153,12 +165,12 @@ func phraseStemsPresent(modelStems []string, phrase string) bool {
 	return false
 }
 
-func answerContainsGold(modelAnswer, goldAnswer string) bool {
+func answerContainsGold(modelAnswer, goldAnswer, lang string) bool {
 	gold := strings.TrimSpace(goldAnswer)
 	if gold == "" {
 		return false
 	}
-	modelStems := stemSequence(modelAnswer)
+	modelStems := stemSequence(modelAnswer, lang)
 	if strings.HasPrefix(gold, "[") && strings.HasSuffix(gold, "]") {
 		items := setItemRe.FindAllStringSubmatch(gold, -1)
 		if len(items) == 0 {
@@ -169,13 +181,96 @@ func answerContainsGold(modelAnswer, goldAnswer string) bool {
 			if item == "" {
 				continue
 			}
-			if !phraseStemsPresent(modelStems, item) {
+			if !phraseStemsPresent(modelStems, item, lang) {
 				return false
 			}
 		}
 		return true
 	}
-	return phraseStemsPresent(modelStems, gold)
+	return phraseStemsPresent(modelStems, gold, lang)
+}
+
+const factCoverageThreshold = 0.8
+
+var factStopwordsEN = map[string]struct{}{
+	"a": {}, "an": {}, "the": {}, "and": {}, "or": {}, "of": {}, "to": {},
+	"in": {}, "on": {}, "at": {}, "for": {}, "is": {}, "are": {}, "was": {},
+	"were": {}, "be": {}, "been": {}, "being": {}, "it": {}, "its": {},
+	"this": {}, "that": {}, "these": {}, "those": {}, "as": {}, "by": {},
+	"with": {}, "from": {}, "into": {}, "per": {}, "than": {}, "then": {},
+	"there": {}, "their": {}, "they": {}, "you": {}, "your": {}, "we": {},
+	"our": {}, "us": {}, "he": {}, "she": {}, "his": {}, "her": {}, "him": {},
+	"which": {}, "who": {}, "whom": {}, "what": {}, "when": {}, "where": {},
+	"how": {}, "not": {}, "no": {}, "if": {}, "so": {}, "such": {}, "can": {},
+	"may": {}, "will": {}, "would": {}, "should": {}, "could": {}, "must": {},
+	"has": {}, "have": {}, "had": {}, "do": {}, "does": {}, "did": {},
+	"about": {}, "over": {}, "under": {}, "between": {}, "any": {}, "all": {},
+	"each": {}, "other": {}, "some": {}, "more": {}, "most": {}, "also": {},
+}
+
+var factStopwordsRU = map[string]struct{}{
+	"и": {}, "в": {}, "во": {}, "на": {}, "с": {}, "со": {}, "по": {},
+	"из": {}, "от": {}, "к": {}, "ко": {}, "для": {}, "о": {}, "об": {},
+	"обо": {}, "не": {}, "ни": {}, "что": {}, "это": {}, "как": {}, "так": {},
+	"его": {}, "её": {}, "их": {}, "мы": {}, "вы": {}, "они": {}, "он": {},
+	"она": {}, "оно": {}, "был": {}, "была": {}, "было": {}, "были": {},
+	"есть": {}, "будет": {}, "будут": {}, "может": {}, "могут": {},
+	"также": {}, "при": {}, "без": {}, "до": {}, "за": {}, "под": {},
+	"над": {}, "между": {}, "через": {}, "или": {}, "а": {}, "но": {},
+	"то": {}, "же": {}, "ли": {}, "бы": {}, "уже": {}, "ещё": {}, "все": {},
+	"весь": {}, "вся": {}, "всё": {}, "который": {}, "которая": {},
+	"которое": {}, "которые": {}, "этот": {}, "эта": {}, "эти": {},
+	"тот": {}, "та": {}, "те": {},
+}
+
+func factStopwordsFor(lang string) map[string]struct{} {
+	if isRussian(lang) {
+		return factStopwordsRU
+	}
+	return factStopwordsEN
+}
+
+var digitLetterBoundaryRe = regexp.MustCompile(`([0-9])([[:alpha:]])|([[:alpha:]])([0-9])`)
+
+func factContentStems(s, lang string) []string {
+	s = digitLetterBoundaryRe.ReplaceAllStringFunc(s, func(m string) string {
+		return string(m[0]) + " " + string(m[1])
+	})
+	tokens := wordRe.FindAllString(strings.ToLower(s), -1)
+	stopwords := factStopwordsFor(lang)
+	stems := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		if len([]rune(t)) < 2 {
+			continue
+		}
+		if _, stop := stopwords[t]; stop {
+			continue
+		}
+		stems = append(stems, stem(t, lang))
+	}
+	return stems
+}
+
+func factCovered(modelAnswer, fact, lang string) bool {
+	modelStems := factContentStems(modelAnswer, lang)
+	if len(modelStems) == 0 {
+		return false
+	}
+	present := make(map[string]struct{}, len(modelStems))
+	for _, s := range modelStems {
+		present[s] = struct{}{}
+	}
+	factStems := factContentStems(fact, lang)
+	if len(factStems) == 0 {
+		return false
+	}
+	hit := 0
+	for _, s := range factStems {
+		if _, ok := present[s]; ok {
+			hit++
+		}
+	}
+	return float64(hit)/float64(len(factStems)) >= factCoverageThreshold
 }
 
 func LoadSubmission(path string) (map[string]Answer, error) {

@@ -47,7 +47,7 @@ func TestScoreUnmatchedGoldSkipped(t *testing.T) {
 
 func TestScoreFactsCoveragePartial(t *testing.T) {
 	submission := map[string]Answer{
-		"q1": {QuestionID: "q1", Answer: "Alpha beta gamma delta.", DocumentIDs: []string{"dsid_d1"}},
+		"q1": {QuestionID: "q1", Answer: "The max file size is 10MiB and the request total is 50MiB.", DocumentIDs: []string{"dsid_d1"}},
 	}
 	gold := []corpus.Question{
 		{
@@ -55,13 +55,17 @@ func TestScoreFactsCoveragePartial(t *testing.T) {
 			Type:           "basic",
 			ExpectedDocIDs: []string{"dsid_d1"},
 			GoldAnswer:     "alpha beta",
-			AnswerFacts:    []string{"alpha beta", "gamma", "omega"},
+			AnswerFacts: []string{
+				"The maximum file size is 10 MiB.",
+				"The total request size is 50 MiB.",
+				"The default timeout is 30 seconds.",
+			},
 		},
 	}
 
 	rep := Score(submission, gold)
-	if rep.AnswerContains != 1 {
-		t.Fatalf("AnswerContains = %d, want 1", rep.AnswerContains)
+	if rep.AnswerContains != 0 {
+		t.Fatalf("AnswerContains = %d, want 0 (gold phrase not contiguous)", rep.AnswerContains)
 	}
 	st := rep.Types["basic"]
 	if st == nil {
@@ -72,6 +76,28 @@ func TestScoreFactsCoveragePartial(t *testing.T) {
 	}
 	if math.Abs(rep.AvgFactsCoverage-2.0/3.0) > 1e-9 {
 		t.Fatalf("AvgFactsCoverage = %v, want %.9f", rep.AvgFactsCoverage, 2.0/3.0)
+	}
+}
+
+func TestFactCoveredParaphrase(t *testing.T) {
+	answer := "Based on the sources, the default file upload size limit (max_file_size) is 10MiB for multipart uploads."
+	fact := "The default per file upload size limit (max_file_size) for multipart uploads on OpenAI-compatible endpoints is 10 MiB."
+	if !factCovered(answer, fact, "en") {
+		t.Fatal("expected paraphrased numeric fact to be covered")
+	}
+}
+
+func TestFactCoveredMissingNumber(t *testing.T) {
+	answer := "The default file upload size limit is small."
+	fact := "The default per file upload size limit is 10 MiB."
+	if factCovered(answer, fact, "en") {
+		t.Fatal("expected fact with missing number to be uncovered")
+	}
+}
+
+func TestFactCoveredEmptyAnswer(t *testing.T) {
+	if factCovered("", "The default limit is 10 MiB.", "en") {
+		t.Fatal("empty answer must never cover a fact")
 	}
 }
 
@@ -88,37 +114,37 @@ func TestScoreEmptyGoldAnswerNeverCounted(t *testing.T) {
 }
 
 func TestAnswerContainsGoldCaseInsensitive(t *testing.T) {
-	if !answerContainsGold("Alpha Beta Gamma", "alpha beta") {
+	if !answerContainsGold("Alpha Beta Gamma", "alpha beta", "en") {
 		t.Fatal("expected case-insensitive phrase match")
 	}
 }
 
 func TestAnswerContainsGoldStemming(t *testing.T) {
-	if !answerContainsGold("The cat is running quickly.", "run") {
+	if !answerContainsGold("The cat is running quickly.", "run", "en") {
 		t.Fatal("expected stemmed running to match gold run")
 	}
 }
 
 func TestAnswerContainsGoldRejectsScatteredWords(t *testing.T) {
-	if answerContainsGold("Alpha is first. Beta is second.", "alpha beta") {
+	if answerContainsGold("Alpha is first. Beta is second.", "alpha beta", "en") {
 		t.Fatal("expected no match for scattered words")
 	}
 }
 
 func TestAnswerContainsGoldSetTypeAllItemsPresent(t *testing.T) {
-	if !answerContainsGold("Alpha beta gamma delta", "['alpha', 'gamma']") {
+	if !answerContainsGold("Alpha beta gamma delta", "['alpha', 'gamma']", "en") {
 		t.Fatal("expected all set items to match")
 	}
 }
 
 func TestAnswerContainsGoldSetTypeMissingItem(t *testing.T) {
-	if answerContainsGold("Alpha beta", "['alpha', 'gamma']") {
+	if answerContainsGold("Alpha beta", "['alpha', 'gamma']", "en") {
 		t.Fatal("expected match to fail when an item is missing")
 	}
 }
 
 func TestAnswerContainsGoldSetTypeEmptyList(t *testing.T) {
-	if answerContainsGold("anything", "[]") {
+	if answerContainsGold("anything", "[]", "en") {
 		t.Fatal("expected empty set list to never match")
 	}
 }
@@ -161,5 +187,50 @@ func TestLoadSubmissionRejectsOnlyBlankQuestionIDs(t *testing.T) {
 	}
 	if _, err := LoadSubmission(path); err == nil {
 		t.Fatal("LoadSubmission(blank id) = nil error, want error")
+	}
+}
+
+func TestAnswerContainsGoldRussianStemming(t *testing.T) {
+	if !answerContainsGold("Кошка быстро бегает по улице.", "бегала", "ru") {
+		t.Fatal("expected russian-stemmed бегает to match gold бегала")
+	}
+}
+
+func TestAnswerContainsGoldRussianInflection(t *testing.T) {
+	if !answerContainsGold("Он сейчас проживает в Израиле.", "Израиль", "ru") {
+		t.Fatal("expected inflected form (Израиле) to match nominative gold (Израиль)")
+	}
+}
+
+func TestAnswerContainsGoldRussianSetType(t *testing.T) {
+	if !answerContainsGold("Россия обогнала США, Великобританию и Францию.", "['Великобритания', 'США', 'Франция']", "ru") {
+		t.Fatal("expected russian set items to match across grammatical case")
+	}
+}
+
+func TestFactCoveredRussian(t *testing.T) {
+	answer := "Максимальный размер файла составляет 10 МиБ."
+	fact := "Максимальный размер файла — 10 МиБ."
+	if !factCovered(answer, fact, "ru") {
+		t.Fatal("expected russian fact to be covered")
+	}
+}
+
+func TestScoreMixedLanguageUsesPerQuestionStemmer(t *testing.T) {
+	submission := map[string]Answer{
+		"q_ru": {QuestionID: "q_ru", Answer: "Кошка быстро бегает по улице.", DocumentIDs: []string{"dsid_r"}},
+		"q_en": {QuestionID: "q_en", Answer: "The cat is running quickly.", DocumentIDs: []string{"dsid_e"}},
+	}
+	gold := []corpus.Question{
+		{ID: "q_ru", Type: "basic", Language: "ru", ExpectedDocIDs: []string{"dsid_r"}, GoldAnswer: "бегала"},
+		{ID: "q_en", Type: "basic", Language: "en", ExpectedDocIDs: []string{"dsid_e"}, GoldAnswer: "run"},
+	}
+
+	rep := Score(submission, gold)
+	if rep.Total != 2 || rep.Matched != 2 {
+		t.Fatalf("Total/Matched = %d/%d, want 2/2", rep.Total, rep.Matched)
+	}
+	if rep.AnswerContains != 2 {
+		t.Fatalf("AnswerContains = %d, want 2 (one per language)", rep.AnswerContains)
 	}
 }
