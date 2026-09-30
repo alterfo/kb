@@ -21,13 +21,19 @@ type ChatClient interface {
 }
 
 func NaiveAnswer(ctx context.Context, r Retriever, chat ChatClient, model string, topK int, text string) (string, []string, error) {
+	answer, docIDs, _, err := NaiveAnswerWithContext(ctx, r, chat, model, topK, text)
+	return answer, docIDs, err
+}
+
+func NaiveAnswerWithContext(ctx context.Context, r Retriever, chat ChatClient, model string, topK int, text string) (string, []string, []ContextChunk, error) {
 	chunks, err := r.Retrieve(ctx, text, retriever.Options{K: topK})
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
 	var sources strings.Builder
 	docIDs := make([]string, 0, len(chunks))
+	contextChunks := make([]ContextChunk, 0, len(chunks))
 	seen := make(map[string]struct{}, len(chunks))
 	for i, sc := range chunks {
 		docID := sc.RefDocID
@@ -40,6 +46,7 @@ func NaiveAnswer(ctx context.Context, r Retriever, chat ChatClient, model string
 				docIDs = append(docIDs, docID)
 			}
 		}
+		contextChunks = append(contextChunks, ContextChunk{DocID: docID, Text: sc.Text})
 		fmt.Fprintf(&sources, "\n[%d] (doc %s) %s", i+1, docID, strings.TrimSpace(sc.Text))
 	}
 
@@ -56,7 +63,7 @@ func NaiveAnswer(ctx context.Context, r Retriever, chat ChatClient, model string
 		},
 	})
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
-	return strings.TrimSpace(resp.Content), docIDs, nil
+	return strings.TrimSpace(resp.Content), docIDs, contextChunks, nil
 }

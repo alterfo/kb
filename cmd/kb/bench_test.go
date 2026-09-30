@@ -165,9 +165,9 @@ func TestBenchAskNaiveSkipsOrchestrator(t *testing.T) {
 	r := retriever.New(retriever.Config{Vector: vs})
 
 	chat := &decomposeCountingChat{resp: "naive answer"}
-	ask := benchAsk(config.Env{LLMModel: "test-model"}, r, chat, "naive", 5)
+	ask := benchAsk(config.Env{LLMModel: "test-model"}, r, chat, nil, "naive", 5)
 
-	answer, docIDs, err := ask(context.Background(), corpus.Question{ID: "1", Text: "what is kb"})
+	answer, docIDs, chunks, err := ask(context.Background(), corpus.Question{ID: "1", Text: "what is kb"})
 
 	if err != nil {
 		t.Fatalf("ask: %v", err)
@@ -184,6 +184,9 @@ func TestBenchAskNaiveSkipsOrchestrator(t *testing.T) {
 	if len(docIDs) != 0 {
 		t.Errorf("docIDs = %v, want empty", docIDs)
 	}
+	if len(chunks) != 0 {
+		t.Errorf("context chunks = %v, want empty (no retrieval legs configured)", chunks)
+	}
 }
 
 func TestBenchAskNaivePropagatesError(t *testing.T) {
@@ -192,9 +195,9 @@ func TestBenchAskNaivePropagatesError(t *testing.T) {
 	r := retriever.New(retriever.Config{Vector: vs})
 
 	chat := &decomposeCountingChat{resp: "unused", chatErr: errors.New("chat failed")}
-	ask := benchAsk(config.Env{LLMModel: "test-model"}, r, chat, "naive", 5)
+	ask := benchAsk(config.Env{LLMModel: "test-model"}, r, chat, nil, "naive", 5)
 
-	answer, docIDs, err := ask(context.Background(), corpus.Question{ID: "1", Text: "what is kb"})
+	answer, docIDs, _, err := ask(context.Background(), corpus.Question{ID: "1", Text: "what is kb"})
 
 	if err == nil || err.Error() != "chat failed" {
 		t.Fatalf("err = %v, want chat failed", err)

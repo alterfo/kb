@@ -1,20 +1,24 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 
 	"github.com/alterfo/kb/internal/bench/corpus"
 	runbench "github.com/alterfo/kb/internal/bench/run"
+	"github.com/alterfo/kb/internal/config"
+	"github.com/alterfo/kb/internal/llm"
 )
 
-func runBenchScoreCmd(args []string, stdout, stderr io.Writer) int {
+func runBenchScoreCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 	fset := flag.NewFlagSet("bench score", flag.ContinueOnError)
 	fset.SetOutput(stderr)
 	questionsPath := fset.String("questions", "", "questions JSONL path (required)")
 	out := fset.String("out", "", "score report JSON output path (default: <submission>.score.json)")
 	historyPath := fset.String("history", "", "score history JSON path (default: <out>.history.json)")
+	judgeFaithfulness := fset.Bool("judge-faithfulness", false, "LLM-judge answer faithfulness against the retrieved context (one extra chat call per question)")
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
@@ -43,7 +47,21 @@ func runBenchScoreCmd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "bench score: questions warning: %s\n", w)
 	}
 
-	rep := runbench.Score(submission, questions)
+	var rep *runbench.ScoreReport
+	if *judgeFaithfulness {
+		chat := llm.NewClient(llm.Config{
+			BaseURL:           env.LLMBaseURL,
+			NoProxyHosts:      env.NoProxy,
+			DefaultEmbedModel: env.EmbedModel,
+			RequestTimeout:    env.LLMTimeout,
+			MaxTokens:         env.LLMMaxTokens,
+			NoThink:           env.LLMNoThink,
+			RedactPII:         env.PIIRedact,
+		})
+		rep = runbench.ScoreWithJudge(context.Background(), submission, questions, runbench.NewLLMFaithfulnessJudge(chat, env.LLMModel))
+	} else {
+		rep = runbench.Score(submission, questions)
+	}
 	fmt.Fprintf(stdout, "bench score: %s\n", rep.Summary())
 
 	outPath := *out

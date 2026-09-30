@@ -2,6 +2,7 @@ package run
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,19 +18,25 @@ import (
 )
 
 type ScoreStat struct {
-	Count          int     `json:"count"`
-	RetrievalHits  int     `json:"retrieval_hits"`
-	AnswerContains int     `json:"answer_contains_gold"`
-	FactsCoverage  float64 `json:"avg_facts_coverage,omitempty"`
+	Count               int     `json:"count"`
+	RetrievalHits       int     `json:"retrieval_hits"`
+	AnswerContains      int     `json:"answer_contains_gold"`
+	FactsCoverage       float64 `json:"avg_facts_coverage,omitempty"`
+	AvgContextPrecision float64 `json:"avg_context_precision,omitempty"`
+	AvgContextRecall    float64 `json:"avg_context_recall,omitempty"`
+	AvgFaithfulness     float64 `json:"avg_faithfulness,omitempty"`
 }
 
 type ScoreReport struct {
-	Total            int                   `json:"total"`
-	Matched          int                   `json:"matched"`
-	RetrievalHits    int                   `json:"retrieval_hits"`
-	AnswerContains   int                   `json:"answer_contains_gold"`
-	AvgFactsCoverage float64               `json:"avg_facts_coverage,omitempty"`
-	Types            map[string]*ScoreStat `json:"types"`
+	Total               int                   `json:"total"`
+	Matched             int                   `json:"matched"`
+	RetrievalHits       int                   `json:"retrieval_hits"`
+	AnswerContains      int                   `json:"answer_contains_gold"`
+	AvgFactsCoverage    float64               `json:"avg_facts_coverage,omitempty"`
+	AvgContextPrecision float64               `json:"avg_context_precision,omitempty"`
+	AvgContextRecall    float64               `json:"avg_context_recall,omitempty"`
+	AvgFaithfulness     float64               `json:"avg_faithfulness,omitempty"`
+	Types               map[string]*ScoreStat `json:"types"`
 }
 
 func (r *ScoreReport) Summary() string {
@@ -38,6 +45,12 @@ func (r *ScoreReport) Summary() string {
 		r.Total, r.Matched, r.RetrievalHits, r.Matched, r.AnswerContains, r.Matched)
 	if r.AvgFactsCoverage > 0 {
 		fmt.Fprintf(&b, " facts_coverage=%.2f", r.AvgFactsCoverage)
+	}
+	if r.AvgContextPrecision > 0 || r.AvgContextRecall > 0 {
+		fmt.Fprintf(&b, " context_precision=%.2f context_recall=%.2f", r.AvgContextPrecision, r.AvgContextRecall)
+	}
+	if r.AvgFaithfulness > 0 {
+		fmt.Fprintf(&b, " faithfulness=%.2f", r.AvgFaithfulness)
 	}
 	types := make([]string, 0, len(r.Types))
 	for t := range r.Types {
@@ -50,15 +63,31 @@ func (r *ScoreReport) Summary() string {
 		if st.Count > 0 && st.FactsCoverage > 0 {
 			extra = fmt.Sprintf(" facts=%.2f", st.FactsCoverage)
 		}
+		if st.Count > 0 && (st.AvgContextPrecision > 0 || st.AvgContextRecall > 0) {
+			if extra != "" {
+				extra += " "
+			}
+			extra += fmt.Sprintf("ctx_p=%.2f ctx_r=%.2f", st.AvgContextPrecision, st.AvgContextRecall)
+		}
 		fmt.Fprintf(&b, " %s(n=%d retrieval=%d answer=%d%s)", t, st.Count, st.RetrievalHits, st.AnswerContains, extra)
 	}
 	return b.String()
 }
 
 func Score(submission map[string]Answer, gold []corpus.Question) *ScoreReport {
+	return ScoreWithJudge(context.Background(), submission, gold, nil)
+}
+
+func ScoreWithJudge(ctx context.Context, submission map[string]Answer, gold []corpus.Question, judge FaithfulnessJudge) *ScoreReport {
 	rep := &ScoreReport{Total: len(gold), Types: map[string]*ScoreStat{}}
 	factsSums := map[string]float64{}
 	factsCounts := map[string]int{}
+	ctxPrecSums := map[string]float64{}
+	ctxPrecCounts := map[string]int{}
+	ctxRecallSums := map[string]float64{}
+	ctxRecallCounts := map[string]int{}
+	faithSums := map[string]float64{}
+	faithCounts := map[string]int{}
 	for _, q := range gold {
 		entry, ok := submission[q.ID]
 		if !ok {
@@ -92,6 +121,19 @@ func Score(submission map[string]Answer, gold []corpus.Question) *ScoreReport {
 			factsSums[q.Type] += frac
 			factsCounts[q.Type]++
 		}
+		facts := contextGoldFacts(q)
+		if len(entry.ContextChunks) > 0 && len(facts) > 0 {
+			ctxPrecSums[q.Type] += ContextPrecision(entry.ContextChunks, facts, q.Language)
+			ctxPrecCounts[q.Type]++
+			ctxRecallSums[q.Type] += ContextRecall(entry.ContextChunks, facts, q.Language)
+			ctxRecallCounts[q.Type]++
+		}
+		if judge != nil && len(entry.ContextChunks) > 0 {
+			if f, err := judge.Judge(ctx, entry.Answer, entry.ContextChunks); err == nil {
+				faithSums[q.Type] += f
+				faithCounts[q.Type]++
+			}
+		}
 	}
 	var totalFactsSum float64
 	var totalFactsCount int
@@ -102,6 +144,34 @@ func Score(submission map[string]Answer, gold []corpus.Question) *ScoreReport {
 	}
 	if totalFactsCount > 0 {
 		rep.AvgFactsCoverage = totalFactsSum / float64(totalFactsCount)
+	}
+	var totalCtxPrec, totalCtxRecall float64
+	var totalCtxPrecCount, totalCtxRecallCount int
+	for t, sum := range ctxPrecSums {
+		rep.Types[t].AvgContextPrecision = sum / float64(ctxPrecCounts[t])
+		totalCtxPrec += sum
+		totalCtxPrecCount += ctxPrecCounts[t]
+	}
+	for t, sum := range ctxRecallSums {
+		rep.Types[t].AvgContextRecall = sum / float64(ctxRecallCounts[t])
+		totalCtxRecall += sum
+		totalCtxRecallCount += ctxRecallCounts[t]
+	}
+	if totalCtxPrecCount > 0 {
+		rep.AvgContextPrecision = totalCtxPrec / float64(totalCtxPrecCount)
+	}
+	if totalCtxRecallCount > 0 {
+		rep.AvgContextRecall = totalCtxRecall / float64(totalCtxRecallCount)
+	}
+	var totalFaith float64
+	var totalFaithCount int
+	for t, sum := range faithSums {
+		rep.Types[t].AvgFaithfulness = sum / float64(faithCounts[t])
+		totalFaith += sum
+		totalFaithCount += faithCounts[t]
+	}
+	if totalFaithCount > 0 {
+		rep.AvgFaithfulness = totalFaith / float64(totalFaithCount)
 	}
 	return rep
 }

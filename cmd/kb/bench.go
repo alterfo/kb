@@ -25,7 +25,7 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 		return runBenchSliceCmd(args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "score" {
-		return runBenchScoreCmd(args[1:], stdout, stderr)
+		return runBenchScoreCmd(args[1:], env, stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "generate" {
 		return runBenchGenerateCmd(args[1:], env, stdout, stderr)
@@ -138,13 +138,13 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 	}
 
 	r := benchRetriever(env, bundle)
-	ask := benchAsk(env, r, bundle.chat, *answerMode, *topK)
+	ask := benchAsk(env, r, bundle.chat, bundle.bm25, *answerMode, *topK)
 
 	runner := &runbench.Runner{
 		Questions:   questions,
 		OutPath:     *out,
 		Concurrency: *concurrency,
-		Ask:         ask,
+		AskCtx:      ask,
 	}
 
 	rep, runErr := runner.Run(ctx)
@@ -212,25 +212,54 @@ func benchRetriever(env config.Env, bundle *engineBundle) *retriever.Retriever {
 	})
 }
 
-func benchAsk(env config.Env, r *retriever.Retriever, chat runbench.ChatClient, answerMode string, topK int) runbench.AskFunc {
+func benchAsk(env config.Env, r *retriever.Retriever, chat runbench.ChatClient, searcher retriever.BM25Searcher, answerMode string, topK int) runbench.AskFuncWithContext {
 	if answerMode == "naive" {
-		return func(ctx context.Context, q corpus.Question) (string, []string, error) {
-			answer, docIDs, err := runbench.NaiveAnswer(ctx, r, chat, env.LLMModel, topK, q.Text)
+		return func(ctx context.Context, q corpus.Question) (string, []string, []runbench.ContextChunk, error) {
+			answer, docIDs, chunks, err := runbench.NaiveAnswerWithContext(ctx, r, chat, env.LLMModel, topK, q.Text)
 			if err != nil {
-				return "", nil, err
+				return "", nil, nil, err
 			}
-			return answer, runbench.CorpusDocumentIDs(docIDs), nil
+			return answer, runbench.CorpusDocumentIDs(docIDs), chunks, nil
 		}
 	}
 	orch := got.New(benchGotConfig(env, r, chat, topK))
-	return func(ctx context.Context, q corpus.Question) (string, []string, error) {
+	return func(ctx context.Context, q corpus.Question) (string, []string, []runbench.ContextChunk, error) {
 		g := orch.Run(ctx, q.Text)
 		docIDs := make([]string, 0, len(g.Sources))
 		for _, s := range g.Sources {
 			docIDs = append(docIDs, s.DocID)
 		}
-		return g.FinalAnswer, runbench.CorpusDocumentIDs(docIDs), nil
+		return g.FinalAnswer, runbench.CorpusDocumentIDs(docIDs), gotContextChunks(g, searcher), nil
 	}
+}
+
+func gotContextChunks(g got.ThoughtGraph, searcher retriever.BM25Searcher) []runbench.ContextChunk {
+	out := make([]runbench.ContextChunk, 0, len(g.Sources))
+	seen := make(map[string]struct{}, len(g.Sources))
+	for _, s := range g.Sources {
+		key := s.ChunkID
+		if key == "" {
+			key = s.DocID
+		}
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		chunk := runbench.ContextChunk{DocID: s.DocID}
+		if s.ChunkID != "" && searcher != nil {
+			if c, ok := searcher.Chunk(s.ChunkID); ok {
+				chunk.Text = c.Text
+				if chunk.DocID == "" {
+					chunk.DocID = c.RefDocID
+				}
+			}
+		}
+		out = append(out, chunk)
+	}
+	return out
 }
 
 func benchGotConfig(env config.Env, r *retriever.Retriever, chat runbench.ChatClient, topK int) got.Config {

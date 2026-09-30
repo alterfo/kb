@@ -10,6 +10,7 @@ import (
 
 	"github.com/alterfo/kb/internal/bench/corpus"
 	runbench "github.com/alterfo/kb/internal/bench/run"
+	"github.com/alterfo/kb/internal/config"
 )
 
 func writeScoreSubmission(t *testing.T, path string, answers []runbench.Answer) string {
@@ -45,7 +46,7 @@ func TestBenchScoreWritesReportAndHistory(t *testing.T) {
 	history := filepath.Join(dir, "answers.score.history.json")
 
 	var stdout, stderr bytes.Buffer
-	code := runBenchScoreCmd([]string{"-questions", questionsPath, "-out", out, "-history", history, submissionPath}, &stdout, &stderr)
+	code := runBenchScoreCmd([]string{"-questions", questionsPath, "-out", out, "-history", history, submissionPath}, config.Env{}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, stderr = %q", code, stderr.String())
 	}
@@ -104,7 +105,7 @@ func TestBenchScoreDefaultOutPath(t *testing.T) {
 	})
 
 	var stdout, stderr bytes.Buffer
-	code := runBenchScoreCmd([]string{"-questions", questionsPath, submissionPath}, &stdout, &stderr)
+	code := runBenchScoreCmd([]string{"-questions", questionsPath, submissionPath}, config.Env{}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, stderr = %q", code, stderr.String())
 	}
@@ -118,7 +119,7 @@ func TestBenchScoreDefaultOutPath(t *testing.T) {
 
 func TestBenchScoreMissingArgs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := runBenchScoreCmd(nil, &stdout, &stderr)
+	code := runBenchScoreCmd(nil, config.Env{}, &stdout, &stderr)
 	if code != 2 {
 		t.Errorf("code = %d, want 2", code)
 	}
@@ -129,7 +130,7 @@ func TestBenchScoreMissingArgs(t *testing.T) {
 
 func TestBenchScoreMissingQuestionsFlag(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := runBenchScoreCmd([]string{filepath.Join(t.TempDir(), "answers.jsonl")}, &stdout, &stderr)
+	code := runBenchScoreCmd([]string{filepath.Join(t.TempDir(), "answers.jsonl")}, config.Env{}, &stdout, &stderr)
 	if code != 2 {
 		t.Errorf("code = %d, want 2", code)
 	}
@@ -145,11 +146,41 @@ func TestBenchScoreUnreadableSubmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	code := runBenchScoreCmd([]string{"-questions", questionsPath, filepath.Join(dir, "missing.jsonl")}, &stdout, &stderr)
+	code := runBenchScoreCmd([]string{"-questions", questionsPath, filepath.Join(dir, "missing.jsonl")}, config.Env{}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("code = %d, want 1", code)
 	}
 	if !strings.Contains(stderr.String(), "open submission") {
 		t.Errorf("stderr = %q, want open submission error", stderr.String())
+	}
+}
+
+func TestBenchScoreJudgeFlagNoContextMakesNoLLMCalls(t *testing.T) {
+	dir := t.TempDir()
+	questionsPath := filepath.Join(dir, "questions.jsonl")
+	if err := corpus.WriteQuestions(questionsPath, []corpus.Question{
+		{ID: "q1", Type: "basic", Text: "one?", GoldAnswer: "alpha", ExpectedDocIDs: []string{"dsid_d1"}},
+	}); err != nil {
+		t.Fatalf("write questions: %v", err)
+	}
+	submissionPath := writeScoreSubmission(t, filepath.Join(dir, "answers.jsonl"), []runbench.Answer{
+		{QuestionID: "q1", Answer: "alpha", DocumentIDs: []string{"dsid_d1"}},
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := runBenchScoreCmd([]string{"-questions", questionsPath, "-judge-faithfulness", submissionPath}, config.Env{LLMModel: "test-model"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, stderr = %q", code, stderr.String())
+	}
+	var rep runbench.ScoreReport
+	data, err := os.ReadFile(submissionPath + ".score.json")
+	if err != nil {
+		t.Fatalf("read score report: %v", err)
+	}
+	if err := json.Unmarshal(data, &rep); err != nil {
+		t.Fatalf("unmarshal score report: %v", err)
+	}
+	if rep.AvgFaithfulness != 0 {
+		t.Errorf("AvgFaithfulness = %v, want 0 (no context chunks to judge)", rep.AvgFaithfulness)
 	}
 }

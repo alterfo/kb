@@ -18,14 +18,17 @@ import (
 
 // Answer is one line of the EnterpriseRAG-Bench submission format.
 type Answer struct {
-	QuestionID  string   `json:"question_id"`
-	Answer      string   `json:"answer"`
-	DocumentIDs []string `json:"document_ids"`
+	QuestionID    string         `json:"question_id"`
+	Answer        string         `json:"answer"`
+	DocumentIDs   []string       `json:"document_ids"`
+	ContextChunks []ContextChunk `json:"context_chunks,omitempty"`
 }
 
 // AskFunc answers a single benchmark question and reports the document ids
 // its pipeline used as evidence.
 type AskFunc func(ctx context.Context, q corpus.Question) (string, []string, error)
+
+type AskFuncWithContext func(ctx context.Context, q corpus.Question) (answer string, docIDs []string, chunks []ContextChunk, err error)
 
 // Runner drives the question set through Ask, writes the submission JSONL
 // and computes local proxy metrics per question type.
@@ -33,6 +36,7 @@ type Runner struct {
 	Questions   []corpus.Question
 	OutPath     string
 	Ask         AskFunc
+	AskCtx      AskFuncWithContext
 	Concurrency int
 }
 
@@ -118,7 +122,7 @@ func FilterQuestions(qs []corpus.Question, types map[string]struct{}, limit int)
 }
 
 func (r *Runner) Run(ctx context.Context) (*Report, error) {
-	if r.Ask == nil {
+	if r.Ask == nil && r.AskCtx == nil {
 		return nil, fmt.Errorf("bench: runner has no Ask function")
 	}
 
@@ -138,7 +142,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		go func(i int, q corpus.Question) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			text, docIDs, askErr := r.Ask(ctx, q)
+			text, docIDs, chunks, askErr := r.ask(ctx, q)
 			if askErr != nil {
 				errMu.Lock()
 				if firstErr == nil {
@@ -148,7 +152,7 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 				errMu.Unlock()
 				return
 			}
-			answers[i] = Answer{QuestionID: q.ID, Answer: text, DocumentIDs: CorpusDocumentIDs(docIDs)}
+			answers[i] = Answer{QuestionID: q.ID, Answer: text, DocumentIDs: CorpusDocumentIDs(docIDs), ContextChunks: chunks}
 		}(i, q)
 	}
 	wg.Wait()
@@ -165,6 +169,14 @@ func (r *Runner) Run(ctx context.Context) (*Report, error) {
 		return rep, firstErr
 	}
 	return rep, nil
+}
+
+func (r *Runner) ask(ctx context.Context, q corpus.Question) (string, []string, []ContextChunk, error) {
+	if r.AskCtx != nil {
+		return r.AskCtx(ctx, q)
+	}
+	text, docIDs, err := r.Ask(ctx, q)
+	return text, docIDs, nil, err
 }
 
 func writeAnswers(path string, answers []Answer) error {

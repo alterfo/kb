@@ -177,31 +177,31 @@
 Закрывает реальный пробел (ни один текущий скорер не меряет качество
 контекста, только пересечение doc-id) — и прямой совет Алёны (RAGAS-подобно).
 
-- [ ] расширить `run.Answer` (`internal/bench/run/runner.go:20-24`) полем
+- [x] расширить `run.Answer` (`internal/bench/run/runner.go:20-24`) полем
       `ContextChunks []ContextChunk` (`{DocID, Text}`) — заполняется
       `AskFunc`; для naive-пути источник — `retriever.Result.Chunks`
       (`vector.Chunk.Text`/`.RefDocID`), уже доступны внутри
       `runbench.NaiveAnswer`; для GoT-пути — резолвить `got.Source.ChunkID`
       через `bundle.bm25.Chunk(id)` в `benchAsk`/`benchDragonAsk`-подобной
       обвязке
-  - [ ] проверить обратную совместимость: старые вызовы `AskFunc` без
+  - [x] проверить обратную совместимость: старые вызовы `AskFunc` без
         context на этом шаге не ломаются (поле опционально/добавляется
         новой сигнатурой с fallback)
-- [ ] новая функция в `internal/bench/run/score.go` (или новый файл
+- [x] новая функция в `internal/bench/run/score.go` (или новый файл
       `context_score.go`): `ContextPrecision`/`ContextRecall` — пересечение
       стемов `ContextChunks` с `AnswerFacts`/`GoldAnswer` (тем же
       языко-зависимым стеммером из Task 1, не LLM-judge — дёшево и
       детерминированно для первой версии)
-- [ ] опционально (если бюджет ai-box позволяет — см. риски): LLM-judge
+- [x] опционально (если бюджет ai-box позволяет — см. риски): LLM-judge
       `Faithfulness` — один доп. вызов chat с промптом "ответ ⊆
       контекст?", кладётся в `ScoreStat.AvgFaithfulness`; закрыть флагом
       `-judge-faithfulness` в CLI, по умолчанию выключено (дорого)
-- [ ] `ScoreReport`/`ScoreStat` — новые поля `AvgContextPrecision`,
+- [x] `ScoreReport`/`ScoreStat` — новые поля `AvgContextPrecision`,
       `AvgContextRecall`, (опц.) `AvgFaithfulness`, отражены в `Summary()`
-- [ ] тесты: синтетические `ContextChunks` с известным пересечением по
+- [x] тесты: синтетические `ContextChunks` с известным пересечением по
       фактам — проверить precision/recall на вручную посчитанных случаях
       (полное совпадение, частичное, ноль)
-- [ ] `go test ./internal/bench/run/...` — зелено
+- [x] `go test ./internal/bench/run/...` — зелено
 
 ### Task 6: Лестница эволюции для RU-корпуса
 
