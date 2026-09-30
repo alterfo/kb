@@ -404,6 +404,68 @@ The `verify` command needs a live LLM endpoint (retrieval + synthesis);
 integration tests for the QA harness are gated behind
 `-tags integration` + `KB_LLM_IT=1`.
 
+### RU dynamic bench (`kb bench generate` / `kb bench evolve`)
+
+An own Russian-language RAG benchmark on an enterprise-like corpus, built on
+the DRAGON mechanics (hand-written seed questions for validation + questions
+generated from the corpus on the fly, scored separately for retrieval,
+context, and answer). It reuses the language-agnostic `kb bench` pipeline and
+adds a Russian-aware scorer, a question generator, a context metric, and the
+generic feature-evolution ladder. Full report: `docs/bench/ru-dynamic/report.md`;
+corpus provenance and license: `docs/bench/ru-dynamic/SOURCE.md`.
+
+The checked-in RU corpus and seed live under `testdata/ru-bench/` (298 doka.guide
+documents, 39 Russian questions in 4 types). Generate one single-doc question
+per document with the LLM, anchored to the document and gated so a hallucinated
+gold answer is dropped:
+
+```sh
+./bin/kb bench generate \
+  --corpus testdata/ru-bench/corpus \
+  --seed testdata/ru-bench/questions.jsonl \
+  --out generated-ru-questions.jsonl \
+  --count 20
+```
+
+Run the questions through the pipeline and grade them with the Russian-aware
+scorer (`retrieval_hit`, `answer_contains_gold`, `avg_facts_coverage`,
+`context_precision`/`context_recall`, optional LLM-judge `faithfulness`):
+
+```sh
+./bin/kb bench --ru-smoke
+
+./bin/kb bench \
+  --corpus testdata/ru-bench/corpus \
+  --questions testdata/ru-bench/questions.jsonl \
+  --out ru-answers.jsonl
+
+./bin/kb bench score \
+  --questions testdata/ru-bench/questions.jsonl \
+  ru-answers.jsonl
+```
+
+`-ru-smoke` aliases the checked-in `testdata/ru-bench/` subset. `bench generate`
+flags: `-corpus`, `-seed` (few-shot examples), `-out`, `-count` (one question per
+document, 0 = all), `-model`. `bench score` picks the snowball stemmer by each
+question's `language` field (`ru` → Russian, otherwise English) and adds
+`-judge-faithfulness` for the optional per-question LLM judge (off by default).
+
+Run the seven-stage cumulative feature ladder (Native → Hybrid → Graph → Rerank
+→ Logic → Temporal → Qualifiers), reusing `persist-a` (no graph) for stages 0–1
+and `persist-b` (graph on) for stages 2–6:
+
+```sh
+./bin/kb bench evolve \
+  --corpus testdata/ru-bench/corpus \
+  --questions testdata/ru-bench/questions.jsonl \
+  --out-dir docs/bench/ru-dynamic/evolution
+```
+
+`bench evolve` writes per-stage submissions, score reports, and score history to
+`--out-dir`; flags: `-corpus`, `-questions`, `-persist-dir-a`, `-persist-dir-b`,
+`-out-dir`, `-concurrency`, `-top-k`, `-limit`, `-types`. Both `bench generate`
+and `bench evolve` need a live LLM endpoint.
+
 ### serve
 
 Starts the web dashboard (`internal/web`):

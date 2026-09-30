@@ -239,10 +239,10 @@
 
 ### Task 8: [Final] Документация
 
-- [ ] README.md — секция "RU dynamic bench" рядом с существующими
+- [x] README.md — секция "RU dynamic bench" рядом с существующими
       DRAGON/ERB секциями: команды `bench generate`/`bench evolve`,
       ссылка на `docs/bench/ru-dynamic/`
-- [ ] `docs/bench/ru-dynamic/report.md` — сводный отчёт: корпус, seed,
+- [x] `docs/bench/ru-dynamic/report.md` — сводный отчёт: корпус, seed,
       генератор, метрики (retrieval/context/answer), лестница стадий
 
 ## Technical Details
