@@ -144,33 +144,33 @@
 
 Новый пакет `internal/bench/generate/`.
 
-- [ ] `Generate(ctx, chat runbench.ChatClient, model string, docs
+- [x] `Generate(ctx, chat runbench.ChatClient, model string, docs
       []corpus.Doc, seed []corpus.Question) ([]corpus.Question, error)` —
       для каждого дока (или кластера доков) вызывает LLM с промптом,
       включающим текст документа + 2-3 seed-примера нужного типа/формата
       (few-shot на структуру вопроса), просит вернуть вопрос +
       `gold_answer` + `answer_facts`, привязанные к `doc.ID`
       (`expected_doc_ids: [doc.ID]` для однодоковых типов)
-- [ ] валидация на выходе: сгенерированный `gold_answer` действительно
+- [x] валидация на выходе: сгенерированный `gold_answer` действительно
       встречается в тексте исходного документа (дешёвая проверка —
       переиспользовать `answerContainsGold`-подобную stem-проверку из
       Task 1, но против `doc.Body`, а не против ответа модели) — при
       провале вопрос отбрасывается, а не попадает в набор (anti-hallucination
       gate)
-- [ ] CLI: `kb bench generate` под-команда в `cmd/kb/bench.go` (паттерн
+- [x] CLI: `kb bench generate` под-команда в `cmd/kb/bench.go` (паттерн
       как `compare`/`slice`/`score` — диспетч в начале `runBenchCmd`);
       флаги: `-corpus`, `-seed` (путь к seed JSONL для few-shot), `-out`
       (новый JSONL), `-count` (сколько вопросов сгенерировать), `-model`
-  - [ ] интегрировать с `newEngineBundle`/`env.LLMModel` так же, как
+  - [x] интегрировать с `newEngineBundle`/`env.LLMModel` так же, как
         остальные bench-команды получают `chat`
-- [ ] тесты: fake `ChatClient`, возвращающий фиксированный
+- [x] тесты: fake `ChatClient`, возвращающий фиксированный
       вопрос/ответ/факты — проверить happy path, проверить, что
       невалидный (не встречающийся в доке) `gold_answer` отбрасывается,
       проверить корректность `expected_doc_ids`
-- [ ] прогнать генератор на срезе ~10 документов из Task 2, **глазами**
+- [x] прогнать генератор на срезе ~10 документов из Task 2, **глазами**
       сверить 10 вопросов с исходными документами (реальная LLM, не fake)
       — задокументировать результат ревью в `docs/bench/ru-dynamic/
-      generator-pilot.md`
+      generator-pilot.md` (manual test (skipped - not automatable))
 
 ### Task 5: Context-метрика (precision/recall/faithfulness)
 

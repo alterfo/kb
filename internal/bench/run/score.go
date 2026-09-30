@@ -190,6 +190,15 @@ func answerContainsGold(modelAnswer, goldAnswer, lang string) bool {
 	return phraseStemsPresent(modelStems, gold, lang)
 }
 
+// GoldAnswerInText reports whether the gold answer phrase appears in the
+// candidate text, matched by language-aware stems. It reuses the same
+// contiguous-phrase check as answerContainsGold but against an arbitrary text
+// (for example a source document body), so generators can gate generated
+// gold answers on the corpus without duplicating scorer logic.
+func GoldAnswerInText(candidate, gold, lang string) bool {
+	return answerContainsGold(candidate, gold, lang)
+}
+
 const factCoverageThreshold = 0.8
 
 var factStopwordsEN = map[string]struct{}{
