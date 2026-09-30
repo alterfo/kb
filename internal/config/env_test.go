@@ -299,3 +299,40 @@ func TestLoadEnv_EmptyValuesFallBackToDefaults(t *testing.T) {
 		t.Errorf("expected defaults for empty values, got %+v", e)
 	}
 }
+
+func TestOverrideEnv_AppliesStageOverridesAndKeepsOthers(t *testing.T) {
+	base := Defaults()
+	base.TopK = 25
+	base.LLMModel = "custom-model"
+
+	e, err := OverrideEnv(base, map[string]string{
+		"KB_INDEX_GRAPH": "false",
+		"KB_HYBRID":      "false",
+		"KB_RERANK":      "llm",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if e.IndexGraph {
+		t.Errorf("IndexGraph = true, want false from override")
+	}
+	if e.Hybrid {
+		t.Errorf("Hybrid = true, want false from override")
+	}
+	if e.Rerank != "llm" {
+		t.Errorf("Rerank = %q, want llm from override", e.Rerank)
+	}
+	if e.TopK != 25 {
+		t.Errorf("TopK = %d, want 25 (kept from base)", e.TopK)
+	}
+	if e.LLMModel != "custom-model" {
+		t.Errorf("LLMModel = %q, want custom-model (kept from base)", e.LLMModel)
+	}
+}
+
+func TestOverrideEnv_RejectsInvalidOverride(t *testing.T) {
+	_, err := OverrideEnv(Defaults(), map[string]string{"KB_RERANK": "bogus"})
+	if err == nil {
+		t.Fatal("expected error for invalid KB_RERANK override, got nil")
+	}
+}

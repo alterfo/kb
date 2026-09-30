@@ -1,4 +1,4 @@
-package dragon
+package run
 
 import (
 	"reflect"
@@ -7,9 +7,9 @@ import (
 )
 
 func TestEvolutionStages(t *testing.T) {
-	stages := evolutionStages()
+	stages := EvolutionStages()
 	if len(stages) != 7 {
-		t.Fatalf("len(evolutionStages) = %d, want 7", len(stages))
+		t.Fatalf("len(EvolutionStages) = %d, want 7", len(stages))
 	}
 
 	want := []Stage{
@@ -107,7 +107,7 @@ func TestEvolutionStages(t *testing.T) {
 }
 
 func TestEvolutionStagesKeySetNeverShrinks(t *testing.T) {
-	stages := evolutionStages()
+	stages := EvolutionStages()
 	for i := 1; i < len(stages); i++ {
 		prev := stages[i-1].EnvOverrides
 		for k := range prev {
@@ -137,8 +137,8 @@ func TestMaxQuestionCount(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := maxQuestionCount(tc.secondsPerQuestion, tc.budget, tc.poolSize); got != tc.want {
-				t.Errorf("maxQuestionCount(%v, %v, %d) = %d, want %d",
+			if got := MaxQuestionCount(tc.secondsPerQuestion, tc.budget, tc.poolSize); got != tc.want {
+				t.Errorf("MaxQuestionCount(%v, %v, %d) = %d, want %d",
 					tc.secondsPerQuestion, tc.budget, tc.poolSize, got, tc.want)
 			}
 		})

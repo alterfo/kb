@@ -400,3 +400,28 @@ func splitAndTrim(v string) []string {
 	}
 	return out
 }
+
+// OverrideEnv returns a copy of base with the given env-var overrides applied.
+// Override names and validation are identical to LoadEnv (e.g. KB_HYBRID,
+// KB_INDEX_GRAPH, KB_RERANK); every non-overridden field keeps its current
+// value. It is the per-stage environment builder for the bench evolution
+// ladder.
+func OverrideEnv(base Env, overrides map[string]string) (Env, error) {
+	vars := make(map[string]string, len(envVars(base))+len(overrides))
+	for _, v := range envVars(base) {
+		if v.Value == "" {
+			continue
+		}
+		if v.Name == "KB_LLM_MAX_TOKENS" && v.Value == "0" {
+			continue
+		}
+		vars[v.Name] = v.Value
+	}
+	for k, v := range overrides {
+		vars[k] = v
+	}
+	return LoadEnv(func(key string) (string, bool) {
+		v, ok := vars[key]
+		return v, ok
+	})
+}

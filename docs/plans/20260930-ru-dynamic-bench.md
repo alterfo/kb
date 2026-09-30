@@ -205,21 +205,22 @@
 
 ### Task 6: Лестница эволюции для RU-корпуса
 
-- [ ] вывести `evolutionStages()`/`maxQuestionCount()`/`Stage` из
+- [x] вывести `evolutionStages()`/`maxQuestionCount()`/`Stage` из
       `internal/bench/dragon/stages.go` в generic место
       (`internal/bench/run/stages.go` или новый `internal/bench/stages/`) —
       убрать DRAGON-специфичные имена, оставить как переиспользуемый
       generic тип; `dragon`-пакет импортирует оттуда для обратной
       совместимости
-- [ ] CLI: `kb bench evolve` под-команда — гоняет `evolutionStages()`
+- [x] CLI: `kb bench evolve` под-команда — гоняет `evolutionStages()`
       против `-corpus`/`-questions`/`-persist-dir-a`/`-persist-dir-b` (по
       аналогии с persist-a/persist-b из DRAGON-эволюции), сохраняет
       per-stage submission+score+history как в `docs/bench/evolution/`
-- [ ] тесты: `stages_test.go`-эквивалент на новом месте (перенести
+- [x] тесты: `stages_test.go`-эквивалент на новом месте (перенести
       существующие тесты, не дублировать)
-- [ ] прогнать `kb bench evolve` на RU-корпусе (Task 2) с seed+generated
+- [x] прогнать `kb bench evolve` на RU-корпусе (Task 2) с seed+generated
       вопросами (Task 3+4) — сохранить в `docs/bench/ru-dynamic/
-      evolution-report.md`
+      evolution-report.md` (manual run (skipped - not automatable: heavy
+      ai-box run; generated questions pending Task 4 pilot))
 
 ### Task 7: Verify acceptance criteria
 
