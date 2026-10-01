@@ -252,6 +252,23 @@ func TestAnswerContainsGoldToleratesUnrelatedNegationElsewhere(t *testing.T) {
 	}
 }
 
+func TestFactCoveredInTextIgnoresDocumentWideNegationParity(t *testing.T) {
+	doc := "Docker не требует отдельного гипервизора. Он не является виртуальной машиной. " +
+		"Docker применяется для развёртывания серверных приложений."
+	fact := "Docker применяется для развёртывания серверных приложений."
+	if !FactCoveredInText(doc, fact, "ru") {
+		t.Fatal("expected a non-negated fact to be grounded even though the document contains an odd number of unrelated negations elsewhere")
+	}
+}
+
+func TestFactCoveredStillAppliesPolarityGuard(t *testing.T) {
+	fact := "The default timeout is 30 seconds."
+	answer := "The default timeout is not 30 seconds."
+	if factCovered(answer, fact, "en") {
+		t.Fatal("expected factCovered (answer scoring) to still reject a negated answer")
+	}
+}
+
 func TestFactCoveredRussian(t *testing.T) {
 	answer := "Максимальный размер файла составляет 10 МиБ."
 	fact := "Максимальный размер файла — 10 МиБ."

@@ -315,11 +315,17 @@ func GoldAnswerInText(candidate, gold, lang string) bool {
 }
 
 // FactCoveredInText reports whether fact is grounded in text at the same
-// bag-of-stems threshold used to score facts coverage against a model
-// answer, so generators can reject hallucinated facts against the source
-// document without duplicating scorer logic.
+// bag-of-stems threshold factCovered uses, so generators can reject
+// hallucinated facts against the source document without duplicating
+// scorer logic. Unlike factCovered, it does not apply the negation-parity
+// polarity guard: that guard assumes both sides are short, focused texts
+// (a model answer, a fact), but text here is a whole source document, where
+// the total count of negation words is unrelated to whether this particular
+// fact is itself negated - applying it would reject well-grounded facts
+// whenever the document happens to contain an odd number of negations
+// anywhere in it.
 func FactCoveredInText(text, fact, lang string) bool {
-	return factCovered(text, fact, lang)
+	return stemCoverage(text, fact, lang)
 }
 
 const factCoverageThreshold = 0.8
@@ -398,7 +404,11 @@ func factContentStems(s, lang string) []string {
 // negationParity counts negation markers in s and reports it modulo 2, so a
 // fact and an answer that disagree on parity (one negated, the other not)
 // are known to disagree in polarity even though they may share every other
-// content word.
+// content word. This is only meaningful when both s and the text it is
+// compared against are short, focused texts (a model answer, a fact) where
+// a handful of negation markers plausibly all bear on the same claim - it is
+// noise over a multi-paragraph document, where the total negation count has
+// nothing to do with whether any particular fact is itself negated.
 func negationParity(s, lang string) int {
 	tokens := wordRe.FindAllString(strings.ToLower(s), -1)
 	neg := negationWordsFor(lang)
@@ -411,16 +421,13 @@ func negationParity(s, lang string) int {
 	return count % 2
 }
 
-func factCovered(modelAnswer, fact, lang string) bool {
-	if negationParity(modelAnswer, lang) != negationParity(fact, lang) {
+func stemCoverage(haystack, fact, lang string) bool {
+	haystackStems := factContentStems(haystack, lang)
+	if len(haystackStems) == 0 {
 		return false
 	}
-	modelStems := factContentStems(modelAnswer, lang)
-	if len(modelStems) == 0 {
-		return false
-	}
-	present := make(map[string]struct{}, len(modelStems))
-	for _, s := range modelStems {
+	present := make(map[string]struct{}, len(haystackStems))
+	for _, s := range haystackStems {
 		present[s] = struct{}{}
 	}
 	factStems := factContentStems(fact, lang)
@@ -434,6 +441,13 @@ func factCovered(modelAnswer, fact, lang string) bool {
 		}
 	}
 	return float64(hit)/float64(len(factStems)) >= factCoverageThreshold
+}
+
+func factCovered(modelAnswer, fact, lang string) bool {
+	if negationParity(modelAnswer, lang) != negationParity(fact, lang) {
+		return false
+	}
+	return stemCoverage(modelAnswer, fact, lang)
 }
 
 func LoadSubmission(path string) (map[string]Answer, error) {
