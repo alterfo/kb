@@ -208,6 +208,50 @@ func TestAnswerContainsGoldRussianSetType(t *testing.T) {
 	}
 }
 
+func TestFactCoveredRejectsNegatedAnswer(t *testing.T) {
+	fact := "The default timeout is 30 seconds."
+	answer := "The default timeout is not 30 seconds."
+	if factCovered(answer, fact, "en") {
+		t.Fatal("expected negated answer to not cover a non-negated fact")
+	}
+}
+
+func TestFactCoveredRejectsNegatedAnswerRussian(t *testing.T) {
+	fact := "В HTML нет тега с ролью application."
+	answer := "В HTML есть тег с ролью application."
+	if factCovered(answer, fact, "ru") {
+		t.Fatal("expected opposite-polarity russian answer to not cover the fact")
+	}
+}
+
+func TestFactCoveredSingleDigitMismatch(t *testing.T) {
+	fact := "The default timeout is 5 seconds."
+	answer := "The default timeout is 9 seconds."
+	if factCovered(answer, fact, "en") {
+		t.Fatal("expected a different single-digit number to not cover the fact")
+	}
+}
+
+func TestFactCoveredSingleDigitMatch(t *testing.T) {
+	fact := "The default timeout is 5 seconds."
+	answer := "The default timeout is 5 seconds."
+	if !factCovered(answer, fact, "en") {
+		t.Fatal("expected matching single-digit number to cover the fact")
+	}
+}
+
+func TestAnswerContainsGoldRejectsImmediateNegation(t *testing.T) {
+	if answerContainsGold("The default timeout is not 30 seconds.", "30 seconds", "en") {
+		t.Fatal("expected immediately-negated gold phrase to not match")
+	}
+}
+
+func TestAnswerContainsGoldToleratesUnrelatedNegationElsewhere(t *testing.T) {
+	if !answerContainsGold("I would not say this is simple, but the answer is alpha beta.", "alpha beta", "en") {
+		t.Fatal("expected an unrelated negation elsewhere in the answer to not block an unrelated phrase match")
+	}
+}
+
 func TestFactCoveredRussian(t *testing.T) {
 	answer := "Максимальный размер файла составляет 10 МиБ."
 	fact := "Максимальный размер файла — 10 МиБ."

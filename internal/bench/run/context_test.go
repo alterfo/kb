@@ -90,7 +90,7 @@ func TestScoreAggregatesContextMetrics(t *testing.T) {
 	}
 }
 
-func TestScoreSkipsContextMetricsWithoutChunks(t *testing.T) {
+func TestScoreCountsEmptyContextAsZeroNotExcluded(t *testing.T) {
 	submission := map[string]Answer{
 		"q1": {QuestionID: "q1", Answer: "the cat runs", DocumentIDs: []string{"d1"}},
 	}
@@ -101,5 +101,32 @@ func TestScoreSkipsContextMetricsWithoutChunks(t *testing.T) {
 	rep := Score(submission, gold)
 	if rep.AvgContextPrecision != 0 || rep.AvgContextRecall != 0 {
 		t.Fatalf("AvgContextPrecision/Recall = %v/%v, want 0/0", rep.AvgContextPrecision, rep.AvgContextRecall)
+	}
+	if rep.ContextEligible != 1 {
+		t.Fatalf("ContextEligible = %d, want 1 (an empty-context question must count in the denominator, not be excluded)", rep.ContextEligible)
+	}
+}
+
+func TestScoreContextAverageDilutedByMissingRetrieval(t *testing.T) {
+	submission := map[string]Answer{
+		"q1": {
+			QuestionID:    "q1",
+			Answer:        "the cat runs",
+			DocumentIDs:   []string{"d1"},
+			ContextChunks: []ContextChunk{{DocID: "d1", Text: "the cat runs"}},
+		},
+		"q2": {QuestionID: "q2", Answer: "the cat runs", DocumentIDs: []string{"d2"}},
+	}
+	gold := []corpus.Question{
+		{ID: "q1", Type: "basic", AnswerFacts: []string{"the cat runs"}, ExpectedDocIDs: []string{"d1"}},
+		{ID: "q2", Type: "basic", AnswerFacts: []string{"the cat runs"}, ExpectedDocIDs: []string{"d2"}},
+	}
+
+	rep := Score(submission, gold)
+	if rep.ContextEligible != 2 {
+		t.Fatalf("ContextEligible = %d, want 2", rep.ContextEligible)
+	}
+	if rep.AvgContextPrecision != 0.5 || rep.AvgContextRecall != 0.5 {
+		t.Fatalf("AvgContextPrecision/Recall = %v/%v, want 0.5/0.5 (one perfect hit, one empty-context miss)", rep.AvgContextPrecision, rep.AvgContextRecall)
 	}
 }

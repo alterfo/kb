@@ -113,4 +113,22 @@ func TestScoreWithJudgeSkipsErrors(t *testing.T) {
 	if rep.AvgFaithfulness != 0 {
 		t.Fatalf("AvgFaithfulness = %v, want 0 when judge errors", rep.AvgFaithfulness)
 	}
+	if rep.FaithEligible != 1 || rep.FaithFailed != 1 {
+		t.Fatalf("FaithEligible/FaithFailed = %d/%d, want 1/1 (failure must be visible, not silently dropped)", rep.FaithEligible, rep.FaithFailed)
+	}
+}
+
+func TestScoreWithJudgeCountsEmptyContextAsFailed(t *testing.T) {
+	submission := map[string]Answer{
+		"q1": {QuestionID: "q1", Answer: "the cat runs", DocumentIDs: []string{"d1"}},
+	}
+	gold := []corpus.Question{{ID: "q1", Type: "basic", ExpectedDocIDs: []string{"d1"}}}
+
+	rep := ScoreWithJudge(context.Background(), submission, gold, &staticFaithfulnessJudge{score: 1})
+	if rep.FaithEligible != 1 || rep.FaithFailed != 1 {
+		t.Fatalf("FaithEligible/FaithFailed = %d/%d, want 1/1 for a question with no retrieved context", rep.FaithEligible, rep.FaithFailed)
+	}
+	if rep.AvgFaithfulness != 0 {
+		t.Fatalf("AvgFaithfulness = %v, want 0 (no context to judge must not inflate the average)", rep.AvgFaithfulness)
+	}
 }

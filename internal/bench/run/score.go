@@ -24,7 +24,10 @@ type ScoreStat struct {
 	FactsCoverage       float64 `json:"avg_facts_coverage,omitempty"`
 	AvgContextPrecision float64 `json:"avg_context_precision,omitempty"`
 	AvgContextRecall    float64 `json:"avg_context_recall,omitempty"`
+	ContextEligible     int     `json:"context_eligible,omitempty"`
 	AvgFaithfulness     float64 `json:"avg_faithfulness,omitempty"`
+	FaithEligible       int     `json:"faith_eligible,omitempty"`
+	FaithFailed         int     `json:"faith_failed,omitempty"`
 }
 
 type ScoreReport struct {
@@ -35,7 +38,10 @@ type ScoreReport struct {
 	AvgFactsCoverage    float64               `json:"avg_facts_coverage,omitempty"`
 	AvgContextPrecision float64               `json:"avg_context_precision,omitempty"`
 	AvgContextRecall    float64               `json:"avg_context_recall,omitempty"`
+	ContextEligible     int                   `json:"context_eligible,omitempty"`
 	AvgFaithfulness     float64               `json:"avg_faithfulness,omitempty"`
+	FaithEligible       int                   `json:"faith_eligible,omitempty"`
+	FaithFailed         int                   `json:"faith_failed,omitempty"`
 	Types               map[string]*ScoreStat `json:"types"`
 }
 
@@ -46,11 +52,11 @@ func (r *ScoreReport) Summary() string {
 	if r.AvgFactsCoverage > 0 {
 		fmt.Fprintf(&b, " facts_coverage=%.2f", r.AvgFactsCoverage)
 	}
-	if r.AvgContextPrecision > 0 || r.AvgContextRecall > 0 {
-		fmt.Fprintf(&b, " context_precision=%.2f context_recall=%.2f", r.AvgContextPrecision, r.AvgContextRecall)
+	if r.ContextEligible > 0 {
+		fmt.Fprintf(&b, " context_precision=%.2f context_recall=%.2f (n=%d)", r.AvgContextPrecision, r.AvgContextRecall, r.ContextEligible)
 	}
-	if r.AvgFaithfulness > 0 {
-		fmt.Fprintf(&b, " faithfulness=%.2f", r.AvgFaithfulness)
+	if r.FaithEligible > 0 {
+		fmt.Fprintf(&b, " faithfulness=%.2f (n=%d failed=%d)", r.AvgFaithfulness, r.FaithEligible, r.FaithFailed)
 	}
 	types := make([]string, 0, len(r.Types))
 	for t := range r.Types {
@@ -87,7 +93,8 @@ func ScoreWithJudge(ctx context.Context, submission map[string]Answer, gold []co
 	ctxRecallSums := map[string]float64{}
 	ctxRecallCounts := map[string]int{}
 	faithSums := map[string]float64{}
-	faithCounts := map[string]int{}
+	faithEligCounts := map[string]int{}
+	faithFailedCounts := map[string]int{}
 	for _, q := range gold {
 		entry, ok := submission[q.ID]
 		if !ok {
@@ -122,16 +129,23 @@ func ScoreWithJudge(ctx context.Context, submission map[string]Answer, gold []co
 			factsCounts[q.Type]++
 		}
 		facts := contextGoldFacts(q)
-		if len(entry.ContextChunks) > 0 && len(facts) > 0 {
+		if len(facts) > 0 {
 			ctxPrecSums[q.Type] += ContextPrecision(entry.ContextChunks, facts, q.Language)
 			ctxPrecCounts[q.Type]++
 			ctxRecallSums[q.Type] += ContextRecall(entry.ContextChunks, facts, q.Language)
 			ctxRecallCounts[q.Type]++
 		}
-		if judge != nil && len(entry.ContextChunks) > 0 {
-			if f, err := judge.Judge(ctx, entry.Answer, entry.ContextChunks); err == nil {
+		if judge != nil {
+			faithEligCounts[q.Type]++
+			var f float64
+			err := fmt.Errorf("bench: no context to judge")
+			if len(entry.ContextChunks) > 0 {
+				f, err = judge.Judge(ctx, entry.Answer, entry.ContextChunks)
+			}
+			if err == nil {
 				faithSums[q.Type] += f
-				faithCounts[q.Type]++
+			} else {
+				faithFailedCounts[q.Type]++
 			}
 		}
 	}
@@ -146,32 +160,34 @@ func ScoreWithJudge(ctx context.Context, submission map[string]Answer, gold []co
 		rep.AvgFactsCoverage = totalFactsSum / float64(totalFactsCount)
 	}
 	var totalCtxPrec, totalCtxRecall float64
-	var totalCtxPrecCount, totalCtxRecallCount int
-	for t, sum := range ctxPrecSums {
-		rep.Types[t].AvgContextPrecision = sum / float64(ctxPrecCounts[t])
-		totalCtxPrec += sum
-		totalCtxPrecCount += ctxPrecCounts[t]
+	var totalCtxEligible int
+	for t, eligible := range ctxPrecCounts {
+		rep.Types[t].AvgContextPrecision = ctxPrecSums[t] / float64(eligible)
+		rep.Types[t].AvgContextRecall = ctxRecallSums[t] / float64(ctxRecallCounts[t])
+		rep.Types[t].ContextEligible = eligible
+		totalCtxPrec += ctxPrecSums[t]
+		totalCtxRecall += ctxRecallSums[t]
+		totalCtxEligible += eligible
 	}
-	for t, sum := range ctxRecallSums {
-		rep.Types[t].AvgContextRecall = sum / float64(ctxRecallCounts[t])
-		totalCtxRecall += sum
-		totalCtxRecallCount += ctxRecallCounts[t]
-	}
-	if totalCtxPrecCount > 0 {
-		rep.AvgContextPrecision = totalCtxPrec / float64(totalCtxPrecCount)
-	}
-	if totalCtxRecallCount > 0 {
-		rep.AvgContextRecall = totalCtxRecall / float64(totalCtxRecallCount)
+	if totalCtxEligible > 0 {
+		rep.AvgContextPrecision = totalCtxPrec / float64(totalCtxEligible)
+		rep.AvgContextRecall = totalCtxRecall / float64(totalCtxEligible)
+		rep.ContextEligible = totalCtxEligible
 	}
 	var totalFaith float64
-	var totalFaithCount int
-	for t, sum := range faithSums {
-		rep.Types[t].AvgFaithfulness = sum / float64(faithCounts[t])
-		totalFaith += sum
-		totalFaithCount += faithCounts[t]
+	var totalFaithEligible, totalFaithFailed int
+	for t, eligible := range faithEligCounts {
+		rep.Types[t].AvgFaithfulness = faithSums[t] / float64(eligible)
+		rep.Types[t].FaithEligible = eligible
+		rep.Types[t].FaithFailed = faithFailedCounts[t]
+		totalFaith += faithSums[t]
+		totalFaithEligible += eligible
+		totalFaithFailed += faithFailedCounts[t]
 	}
-	if totalFaithCount > 0 {
-		rep.AvgFaithfulness = totalFaith / float64(totalFaithCount)
+	if totalFaithEligible > 0 {
+		rep.AvgFaithfulness = totalFaith / float64(totalFaithEligible)
+		rep.FaithEligible = totalFaithEligible
+		rep.FaithFailed = totalFaithFailed
 	}
 	return rep
 }
@@ -215,7 +231,35 @@ func stemSequence(s, lang string) []string {
 	return stems
 }
 
-func phraseStemsPresent(modelStems []string, phrase, lang string) bool {
+var negationWordsEN = map[string]struct{}{
+	"not": {}, "no": {}, "never": {}, "none": {}, "neither": {}, "nor": {}, "cannot": {},
+}
+
+var negationWordsRU = map[string]struct{}{
+	"не": {}, "ни": {}, "нет": {}, "никогда": {}, "нельзя": {},
+}
+
+func negationWordsFor(lang string) map[string]struct{} {
+	if isRussian(lang) {
+		return negationWordsRU
+	}
+	return negationWordsEN
+}
+
+// negatedAt reports whether one of the two tokens immediately preceding
+// position i in rawTokens is a negation marker, e.g. "not" in "... is not
+// 30 seconds" immediately before a contiguous-stem match on "30 seconds".
+func negatedAt(rawTokens []string, i int, lang string) bool {
+	neg := negationWordsFor(lang)
+	for back := 1; back <= 2 && i-back >= 0; back++ {
+		if _, ok := neg[rawTokens[i-back]]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func phraseStemsPresent(modelStems, modelTokens []string, phrase, lang string) bool {
 	phraseStems := stemSequence(phrase, lang)
 	if len(phraseStems) == 0 || len(phraseStems) > len(modelStems) {
 		return false
@@ -228,7 +272,7 @@ func phraseStemsPresent(modelStems []string, phrase, lang string) bool {
 				break
 			}
 		}
-		if match {
+		if match && !negatedAt(modelTokens, i, lang) {
 			return true
 		}
 	}
@@ -240,6 +284,7 @@ func answerContainsGold(modelAnswer, goldAnswer, lang string) bool {
 	if gold == "" {
 		return false
 	}
+	modelTokens := wordRe.FindAllString(strings.ToLower(modelAnswer), -1)
 	modelStems := stemSequence(modelAnswer, lang)
 	if strings.HasPrefix(gold, "[") && strings.HasSuffix(gold, "]") {
 		items := setItemRe.FindAllStringSubmatch(gold, -1)
@@ -251,13 +296,13 @@ func answerContainsGold(modelAnswer, goldAnswer, lang string) bool {
 			if item == "" {
 				continue
 			}
-			if !phraseStemsPresent(modelStems, item, lang) {
+			if !phraseStemsPresent(modelStems, modelTokens, item, lang) {
 				return false
 			}
 		}
 		return true
 	}
-	return phraseStemsPresent(modelStems, gold, lang)
+	return phraseStemsPresent(modelStems, modelTokens, gold, lang)
 }
 
 // GoldAnswerInText reports whether the gold answer phrase appears in the
@@ -311,6 +356,18 @@ func factStopwordsFor(lang string) map[string]struct{} {
 
 var digitLetterBoundaryRe = regexp.MustCompile(`([0-9])([[:alpha:]])|([[:alpha:]])([0-9])`)
 
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func factContentStems(s, lang string) []string {
 	s = digitLetterBoundaryRe.ReplaceAllStringFunc(s, func(m string) string {
 		return string(m[0]) + " " + string(m[1])
@@ -319,7 +376,7 @@ func factContentStems(s, lang string) []string {
 	stopwords := factStopwordsFor(lang)
 	stems := make([]string, 0, len(tokens))
 	for _, t := range tokens {
-		if len([]rune(t)) < 2 {
+		if len([]rune(t)) < 2 && !isDigits(t) {
 			continue
 		}
 		if _, stop := stopwords[t]; stop {
@@ -330,7 +387,26 @@ func factContentStems(s, lang string) []string {
 	return stems
 }
 
+// negationParity counts negation markers in s and reports it modulo 2, so a
+// fact and an answer that disagree on parity (one negated, the other not)
+// are known to disagree in polarity even though they may share every other
+// content word.
+func negationParity(s, lang string) int {
+	tokens := wordRe.FindAllString(strings.ToLower(s), -1)
+	neg := negationWordsFor(lang)
+	count := 0
+	for _, t := range tokens {
+		if _, ok := neg[t]; ok {
+			count++
+		}
+	}
+	return count % 2
+}
+
 func factCovered(modelAnswer, fact, lang string) bool {
+	if negationParity(modelAnswer, lang) != negationParity(fact, lang) {
+		return false
+	}
 	modelStems := factContentStems(modelAnswer, lang)
 	if len(modelStems) == 0 {
 		return false
