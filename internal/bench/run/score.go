@@ -314,46 +314,46 @@ func GoldAnswerInText(candidate, gold, lang string) bool {
 	return answerContainsGold(candidate, gold, lang)
 }
 
-var sentenceSplitRe = regexp.MustCompile(`[.!?\n]+`)
-
-func splitSentences(text string) []string {
-	parts := sentenceSplitRe.Split(text, -1)
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if s := strings.TrimSpace(p); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
 // FactCoveredInText reports whether fact is grounded in text (typically a
-// whole source document) using the same per-sentence check as factCovered.
+// whole source document) using the same negation-aware stem overlap as
+// factCovered.
 func FactCoveredInText(text, fact, lang string) bool {
 	return factGrounded(text, fact, lang)
 }
 
-// factGrounded reports whether fact is covered by some sentence of haystack,
-// both on bag-of-stems overlap and on negation polarity. Checking polarity
-// per sentence rather than across the whole of haystack is what makes this
-// safe for both callers: a short model answer may hedge in one sentence and
-// state the fact plainly in another, and a multi-paragraph source document
-// may contain any number of negations unrelated to this fact elsewhere -
-// in both cases a whole-text negation count is noise, but dropping the
-// guard entirely would let a fact and its exact negated opposite read as
-// equally "grounded", since negation markers are stopwords for stem
-// matching and so make no difference to stemCoverage on their own.
+// factGrounded reports whether fact is covered by haystack on negation-aware
+// bag-of-stems overlap: both sides are stemmed with negatedContentStems,
+// which tags a content word as negated only when a negation marker occurs
+// within negationWindow tokens before it, so negation scope is local to the
+// specific claim a marker modifies rather than global over a sentence or a
+// whole document. This is what makes the same function safe for a short
+// model answer that hedges in one clause and states the fact plainly in
+// another ("I'm not sure about the timeout, but the max size is 10 MiB"),
+// for a multi-paragraph source document with negations unrelated to this
+// fact anywhere else, and for a single sentence that itself mixes clauses
+// of different polarity ("X, but it is not Y") - none of those make the
+// specific content words this fact is about negated, and tagging only the
+// words actually inside a negation's window is what tells them apart.
 func factGrounded(haystack, fact, lang string) bool {
-	factParity := negationParity(fact, lang)
-	for _, sentence := range splitSentences(haystack) {
-		if negationParity(sentence, lang) != factParity {
-			continue
-		}
-		if stemCoverage(sentence, fact, lang) {
-			return true
+	haystackStems := negatedContentStems(haystack, lang)
+	if len(haystackStems) == 0 {
+		return false
+	}
+	present := make(map[string]struct{}, len(haystackStems))
+	for _, s := range haystackStems {
+		present[s] = struct{}{}
+	}
+	factStems := negatedContentStems(fact, lang)
+	if len(factStems) == 0 {
+		return false
+	}
+	hit := 0
+	for _, s := range factStems {
+		if _, ok := present[s]; ok {
+			hit++
 		}
 	}
-	return false
+	return float64(hit)/float64(len(factStems)) >= factCoverageThreshold
 }
 
 const factCoverageThreshold = 0.8
@@ -429,46 +429,50 @@ func factContentStems(s, lang string) []string {
 	return stems
 }
 
-// negationParity counts negation markers in s and reports it modulo 2, so a
-// fact and an answer that disagree on parity (one negated, the other not)
-// are known to disagree in polarity even though they may share every other
-// content word. This is only meaningful when both s and the text it is
-// compared against are short, focused texts (a model answer, a fact) where
-// a handful of negation markers plausibly all bear on the same claim - it is
-// noise over a multi-paragraph document, where the total negation count has
-// nothing to do with whether any particular fact is itself negated.
-func negationParity(s, lang string) int {
+// negationWindow is how many tokens after a negation marker are tagged as
+// negated by negatedContentStems - enough to span "does not require",
+// "не будет растягиваться", without reaching into an unrelated clause.
+const negationWindow = 3
+
+const negatedStemPrefix = "¬"
+
+// negatedContentStems is factContentStems plus local negation scoping: a
+// content word is tagged with negatedStemPrefix when a negation marker
+// occurs within negationWindow tokens before it, so "require" in "does not
+// require X" produces a different stem than the plain "require" in a
+// non-negated sentence, while a negation marker many tokens away (a
+// different clause, a different sentence, a different paragraph) leaves the
+// word untagged. This makes bag-of-stems overlap polarity-sensitive exactly
+// where a marker actually scopes over a word, without needing to find
+// sentence or document boundaries (which a decimal number, abbreviation, or
+// version string can put a misleading period inside of).
+func negatedContentStems(s, lang string) []string {
+	s = digitLetterBoundaryRe.ReplaceAllStringFunc(s, func(m string) string {
+		return string(m[0]) + " " + string(m[1])
+	})
 	tokens := wordRe.FindAllString(strings.ToLower(s), -1)
 	neg := negationWordsFor(lang)
-	count := 0
-	for _, t := range tokens {
-		if _, ok := neg[t]; ok {
-			count++
+	stopwords := factStopwordsFor(lang)
+	stems := make([]string, 0, len(tokens))
+	negatedUntil := -1
+	for i, t := range tokens {
+		if _, isNeg := neg[t]; isNeg {
+			negatedUntil = i + negationWindow
+			continue
 		}
-	}
-	return count % 2
-}
-
-func stemCoverage(haystack, fact, lang string) bool {
-	haystackStems := factContentStems(haystack, lang)
-	if len(haystackStems) == 0 {
-		return false
-	}
-	present := make(map[string]struct{}, len(haystackStems))
-	for _, s := range haystackStems {
-		present[s] = struct{}{}
-	}
-	factStems := factContentStems(fact, lang)
-	if len(factStems) == 0 {
-		return false
-	}
-	hit := 0
-	for _, s := range factStems {
-		if _, ok := present[s]; ok {
-			hit++
+		if len([]rune(t)) < 2 && !isDigits(t) {
+			continue
 		}
+		if _, stop := stopwords[t]; stop {
+			continue
+		}
+		st := stem(t, lang)
+		if i <= negatedUntil {
+			st = negatedStemPrefix + st
+		}
+		stems = append(stems, st)
 	}
-	return float64(hit)/float64(len(factStems)) >= factCoverageThreshold
+	return stems
 }
 
 func factCovered(modelAnswer, fact, lang string) bool {

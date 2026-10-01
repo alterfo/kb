@@ -288,6 +288,39 @@ func TestFactCoveredToleratesUnrelatedHedgeInAnotherSentence(t *testing.T) {
 	}
 }
 
+func TestFactCoveredInTextHandlesDecimalPeriods(t *testing.T) {
+	text := "The maximum file size is 10.5 MiB."
+	fact := "The maximum file size is 10.5 MiB."
+	if !FactCoveredInText(text, fact, "en") {
+		t.Fatal("expected a verbatim self-match containing a decimal number to be grounded")
+	}
+}
+
+func TestFactCoveredInTextDecimalPeriodRussianCorpusCase(t *testing.T) {
+	// Real sentence from testdata/ru-bench/corpus/doka/dsid_rueb6d629cda__color-contrast.txt.
+	text := "Текст меньше 24px (обычное начертание): не ниже 4.5:1."
+	fact := "Текст меньше 24px: не ниже 4.5:1."
+	if !FactCoveredInText(text, fact, "ru") {
+		t.Fatal("expected the real corpus ratio '4.5:1' to stay grounded instead of being fragmented at the decimal point")
+	}
+}
+
+func TestFactCoveredInTextIgnoresUnrelatedNegationInSameSentence(t *testing.T) {
+	text := "В примере значение 1024px ограничивает контент, хотя сам контент не будет растягиваться."
+	fact := "В примере значение 1024px ограничивает контент."
+	if !FactCoveredInText(text, fact, "ru") {
+		t.Fatal("expected a fact to stay grounded when an unrelated negated clause shares its sentence")
+	}
+}
+
+func TestFactCoveredRejectsDistantNegationFalseAccept(t *testing.T) {
+	answer := "The default timeout is 30 seconds, but it is not configurable."
+	fact := "The default timeout is not 30 seconds."
+	if factCovered(answer, fact, "en") {
+		t.Fatal("expected a negated fact to not match an answer whose own negation scopes over a different, distant word")
+	}
+}
+
 func TestFactCoveredStillAppliesPolarityGuard(t *testing.T) {
 	fact := "The default timeout is 30 seconds."
 	answer := "The default timeout is not 30 seconds."
