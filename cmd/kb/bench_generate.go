@@ -71,12 +71,12 @@ func benchGenerate(ctx context.Context, chat runbench.ChatClient, model, corpusD
 		}
 	}
 
-	questions, err := generate.Generate(ctx, chat, model, docs, seed)
-	if err != nil {
-		return len(questions), warns, err
+	questions, genErr := generate.Generate(ctx, chat, model, docs, seed)
+	if writeErr := corpus.WriteQuestions(outPath, questions); writeErr != nil {
+		if genErr != nil {
+			return len(questions), warns, fmt.Errorf("%w (also failed to write partial output: %v)", genErr, writeErr)
+		}
+		return len(questions), warns, writeErr
 	}
-	if err := corpus.WriteQuestions(outPath, questions); err != nil {
-		return len(questions), warns, err
-	}
-	return len(questions), warns, nil
+	return len(questions), warns, genErr
 }
