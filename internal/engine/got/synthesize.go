@@ -275,3 +275,26 @@ func dedupSources(all []Source) []Source {
 	sort.Slice(out, func(i, j int) bool { return out[i].FilePath < out[j].FilePath })
 	return out
 }
+
+// dedupSourcesByChunk merges sources by chunk rather than by document, so
+// multiple chunks retrieved from the same document all survive - unlike
+// dedupSources, which collapses a document's citation to its first chunk.
+func dedupSourcesByChunk(all []Source) []Source {
+	seen := make(map[string]bool)
+	out := make([]Source, 0, len(all))
+	for _, s := range all {
+		key := s.ChunkID
+		if key == "" {
+			key = s.FilePath
+		}
+		if key == "" {
+			key = s.FileName
+		}
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, s)
+	}
+	return out
+}

@@ -237,9 +237,9 @@ func benchAsk(env config.Env, r *retriever.Retriever, chat runbench.ChatClient, 
 }
 
 func gotContextChunks(g got.ThoughtGraph, searcher retriever.BM25Searcher) []runbench.ContextChunk {
-	out := make([]runbench.ContextChunk, 0, len(g.Sources))
-	seen := make(map[string]struct{}, len(g.Sources))
-	for _, s := range g.Sources {
+	out := make([]runbench.ContextChunk, 0, len(g.ChunkSources))
+	seen := make(map[string]struct{}, len(g.ChunkSources))
+	for _, s := range g.ChunkSources {
 		key := s.ChunkID
 		if key == "" {
 			key = s.DocID

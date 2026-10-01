@@ -313,8 +313,9 @@ func (o *Orchestrator) Run(ctx context.Context, query string) ThoughtGraph {
 	}
 
 	finalSources := dedupSources(allSources(allResults))
+	finalChunkSources := dedupSourcesByChunk(allSources(allResults))
 	b.setNode(Node{ID: NodeFinalize, Type: NodeFinalize, Status: StatusRunning})
-	b.setFinal(refined, finalAnswer, finalSources)
+	b.setFinal(refined, finalAnswer, finalSources, finalChunkSources)
 	b.setNode(Node{ID: NodeFinalize, Type: NodeFinalize, Status: StatusDone, Answer: finalAnswer, Sources: finalSources})
 
 	cost, degraded, retrieved := rc.snapshot()

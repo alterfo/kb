@@ -79,7 +79,7 @@ func TestGraphBuilderProgressCallback(t *testing.T) {
 
 	b.setNode(Node{ID: "x", Status: StatusPending})
 	b.setStage("x", StageRetrieving)
-	b.setFinal(false, "answer", nil)
+	b.setFinal(false, "answer", nil, nil)
 
 	if len(snapshots) != 3 {
 		t.Fatalf("got %d progress calls, want 3", len(snapshots))
@@ -115,6 +115,22 @@ func TestDedupSourcesByFilePathSorted(t *testing.T) {
 	}
 	if out[0].FilePath != "" || out[1].FilePath != "notes/a.md" || out[2].FilePath != "notes/b.md" {
 		t.Fatalf("unexpected order: %+v", out)
+	}
+}
+
+func TestDedupSourcesByChunkKeepsMultipleChunksPerDoc(t *testing.T) {
+	in := []Source{
+		{FileName: "a.md", FilePath: "notes/a.md", ChunkID: "chunk-1"},
+		{FileName: "a.md", FilePath: "notes/a.md", ChunkID: "chunk-2"},
+		{FileName: "a.md", FilePath: "notes/a.md", ChunkID: "chunk-1"},
+		{FileName: "b.md", FilePath: "notes/b.md", ChunkID: "chunk-3"},
+	}
+	out := dedupSourcesByChunk(in)
+	if len(out) != 3 {
+		t.Fatalf("got %d sources, want 3 (two distinct chunks from a.md plus one from b.md): %+v", len(out), out)
+	}
+	if got := len(dedupSources(in)); got != 2 {
+		t.Fatalf("sanity check: dedupSources(by document) = %d sources, want 2 (it must stay collapsed to one per document)", got)
 	}
 }
 

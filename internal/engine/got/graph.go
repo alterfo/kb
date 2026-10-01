@@ -64,13 +64,18 @@ type Node struct {
 // produced plus the final answer and its sources. It has no unexported
 // fields, so it marshals to JSON directly and copies safely by value.
 type ThoughtGraph struct {
-	Query       string         `json:"query"`
-	Nodes       []Node         `json:"nodes"`
-	Refined     bool           `json:"refined"`
-	FinalAnswer string         `json:"final_answer,omitempty"`
-	Sources     []Source       `json:"sources,omitempty"`
-	Degraded    []string       `json:"degraded,omitempty"`
-	Metrics     metrics.Values `json:"metrics"`
+	Query       string   `json:"query"`
+	Nodes       []Node   `json:"nodes"`
+	Refined     bool     `json:"refined"`
+	FinalAnswer string   `json:"final_answer,omitempty"`
+	Sources     []Source `json:"sources,omitempty"`
+	// ChunkSources is every retrieved chunk behind the final answer,
+	// deduplicated by chunk rather than by document like Sources (the
+	// citation list) is. Callers that need the actual evidence text per
+	// chunk - not just which documents were cited - read this instead.
+	ChunkSources []Source       `json:"chunk_sources,omitempty"`
+	Degraded     []string       `json:"degraded,omitempty"`
+	Metrics      metrics.Values `json:"metrics"`
 }
 
 // ProgressFunc receives a snapshot of the ThoughtGraph after every node
@@ -125,11 +130,12 @@ func (b *graphBuilder) setStage(id, stage string) {
 	b.notify(snap)
 }
 
-func (b *graphBuilder) setFinal(refined bool, answer string, sources []Source) {
+func (b *graphBuilder) setFinal(refined bool, answer string, sources, chunkSources []Source) {
 	b.mu.Lock()
 	b.g.Refined = refined
 	b.g.FinalAnswer = answer
 	b.g.Sources = append([]Source(nil), sources...)
+	b.g.ChunkSources = append([]Source(nil), chunkSources...)
 	snap := b.snapshotLocked()
 	b.mu.Unlock()
 	b.notify(snap)
@@ -137,13 +143,14 @@ func (b *graphBuilder) setFinal(refined bool, answer string, sources []Source) {
 
 func (b *graphBuilder) snapshotLocked() ThoughtGraph {
 	return ThoughtGraph{
-		Query:       b.g.Query,
-		Nodes:       append([]Node(nil), b.g.Nodes...),
-		Refined:     b.g.Refined,
-		FinalAnswer: b.g.FinalAnswer,
-		Sources:     append([]Source(nil), b.g.Sources...),
-		Degraded:    append([]string(nil), b.g.Degraded...),
-		Metrics:     b.g.Metrics,
+		Query:        b.g.Query,
+		Nodes:        append([]Node(nil), b.g.Nodes...),
+		Refined:      b.g.Refined,
+		FinalAnswer:  b.g.FinalAnswer,
+		Sources:      append([]Source(nil), b.g.Sources...),
+		ChunkSources: append([]Source(nil), b.g.ChunkSources...),
+		Degraded:     append([]string(nil), b.g.Degraded...),
+		Metrics:      b.g.Metrics,
 	}
 }
 
