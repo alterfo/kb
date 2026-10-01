@@ -314,6 +314,14 @@ func GoldAnswerInText(candidate, gold, lang string) bool {
 	return answerContainsGold(candidate, gold, lang)
 }
 
+// FactCoveredInText reports whether fact is grounded in text at the same
+// bag-of-stems threshold used to score facts coverage against a model
+// answer, so generators can reject hallucinated facts against the source
+// document without duplicating scorer logic.
+func FactCoveredInText(text, fact, lang string) bool {
+	return factCovered(text, fact, lang)
+}
+
 const factCoverageThreshold = 0.8
 
 var factStopwordsEN = map[string]struct{}{

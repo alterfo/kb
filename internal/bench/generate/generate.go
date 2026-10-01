@@ -85,7 +85,7 @@ func generateOne(ctx context.Context, chat runbench.ChatClient, model string, do
 		Text:           strings.TrimSpace(gen.Question),
 		ExpectedDocIDs: []string{doc.ID},
 		GoldAnswer:     strings.TrimSpace(gen.GoldAnswer),
-		AnswerFacts:    nonEmptyFacts(gen.AnswerFacts),
+		AnswerFacts:    groundedFacts(nonEmptyFacts(gen.AnswerFacts), doc.Body, defaultLanguage),
 		Language:       defaultLanguage,
 	}
 	if !validQuestion(q, doc) {
@@ -109,6 +109,19 @@ func nonEmptyFacts(facts []string) []string {
 	for _, f := range facts {
 		if s := strings.TrimSpace(f); s != "" {
 			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// groundedFacts drops facts not covered by docBody at the scorer's own
+// facts-coverage threshold, so a hallucinated fact never reaches the
+// generated question even when the gold answer itself passes the gate.
+func groundedFacts(facts []string, docBody, lang string) []string {
+	out := make([]string, 0, len(facts))
+	for _, f := range facts {
+		if runbench.FactCoveredInText(docBody, f, lang) {
+			out = append(out, f)
 		}
 	}
 	return out

@@ -92,6 +92,35 @@ func TestGenerateDropsHallucinatedGoldAnswer(t *testing.T) {
 	}
 }
 
+func TestGenerateDropsHallucinatedFactsButKeepsQuestion(t *testing.T) {
+	doc := corpus.Doc{
+		ID:         "dsid_ru0000000006",
+		SourceType: "doka",
+		Title:      "Docker",
+		Body:       "Docker чаще всего применяется для развёртывания серверных приложений.",
+	}
+	chat := &scriptedChat{responses: []string{
+		`{"question":"Для чего чаще всего применяется Docker?","gold_answer":"для развёртывания серверных приложений","answer_facts":["Docker применяется для развёртывания серверных приложений.","Docker был выпущен в 2013 году."]}`,
+	}}
+
+	got, err := Generate(context.Background(), chat, "test-model", []corpus.Doc{doc}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("generated = %d, want 1 (gold answer is grounded, question must survive)", len(got))
+	}
+	facts := got[0].AnswerFacts
+	if len(facts) != 1 {
+		t.Fatalf("AnswerFacts = %v, want exactly the one fact grounded in doc.Body", facts)
+	}
+	for _, f := range facts {
+		if strings.Contains(f, "2013") {
+			t.Fatalf("hallucinated fact %q (not present in doc.Body) was not dropped", f)
+		}
+	}
+}
+
 func TestGenerateStripsCodeFence(t *testing.T) {
 	doc := corpus.Doc{
 		ID:         "dsid_ru0000000003",
