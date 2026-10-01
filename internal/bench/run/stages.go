@@ -19,81 +19,106 @@ type Stage struct {
 	PersistDir   string
 }
 
+// evolutionBaseline holds every capability flag the ladder touches, forced to
+// its off/default value. config.OverrideEnv builds a stage's environment from
+// the CALLER's ambient Env plus the stage's own EnvOverrides, so any flag a
+// stage does not mention is inherited from whatever the caller already has
+// set - silently breaking the "each rung adds exactly one capability" promise
+// for any caller whose environment isn't already a blank slate. Every stage
+// below starts from a copy of this baseline so each EnvOverrides map is
+// complete, not a delta.
+var evolutionBaseline = map[string]string{
+	"KB_INDEX_GRAPH":           "false",
+	"KB_HYBRID":                "false",
+	"KB_LEXICAL_ONLY":          "false",
+	"KB_RERANK":                "off",
+	"KB_SUPERSEDE_MODE":        "soft",
+	"KB_DETECT_CONTRADICTIONS": "false",
+	"KB_QUALIFIER_FILTER":      "false",
+}
+
+func stageEnv(overrides map[string]string) map[string]string {
+	env := make(map[string]string, len(evolutionBaseline))
+	for k, v := range evolutionBaseline {
+		env[k] = v
+	}
+	for k, v := range overrides {
+		env[k] = v
+	}
+	return env
+}
+
 // EvolutionStages returns the 7 cumulative stages from the evolution ladder:
 // Native -> Hybrid -> Graph -> Rerank -> Logic -> Temporal -> Qualifiers.
 func EvolutionStages() []Stage {
 	return []Stage{
 		{
-			Name:       "native",
-			AnswerMode: "naive",
-			PersistDir: "persist-a",
-			EnvOverrides: map[string]string{
-				"KB_INDEX_GRAPH": "false",
-				"KB_HYBRID":      "false",
-			},
+			Name:         "native",
+			AnswerMode:   "naive",
+			PersistDir:   "persist-a",
+			EnvOverrides: stageEnv(nil),
 		},
 		{
 			Name:       "hybrid",
 			AnswerMode: "naive",
 			PersistDir: "persist-a",
-			EnvOverrides: map[string]string{
-				"KB_INDEX_GRAPH": "false",
-				"KB_HYBRID":      "true",
-			},
+			EnvOverrides: stageEnv(map[string]string{
+				"KB_HYBRID": "true",
+			}),
 		},
 		{
 			Name:       "graph",
 			AnswerMode: "naive",
 			PersistDir: "persist-b",
-			EnvOverrides: map[string]string{
+			EnvOverrides: stageEnv(map[string]string{
 				"KB_INDEX_GRAPH": "true",
 				"KB_HYBRID":      "true",
-			},
+			}),
 		},
 		{
 			Name:       "rerank",
 			AnswerMode: "naive",
 			PersistDir: "persist-b",
-			EnvOverrides: map[string]string{
+			EnvOverrides: stageEnv(map[string]string{
 				"KB_INDEX_GRAPH": "true",
 				"KB_HYBRID":      "true",
 				"KB_RERANK":      "llm",
-			},
+			}),
 		},
 		{
 			Name:       "logic",
 			AnswerMode: "got",
 			PersistDir: "persist-b",
-			EnvOverrides: map[string]string{
+			EnvOverrides: stageEnv(map[string]string{
 				"KB_INDEX_GRAPH": "true",
 				"KB_HYBRID":      "true",
 				"KB_RERANK":      "llm",
-			},
+			}),
 		},
 		{
 			Name:       "temporal",
 			AnswerMode: "got",
 			PersistDir: "persist-b",
-			EnvOverrides: map[string]string{
+			EnvOverrides: stageEnv(map[string]string{
 				"KB_INDEX_GRAPH":           "true",
 				"KB_HYBRID":                "true",
 				"KB_RERANK":                "llm",
 				"KB_SUPERSEDE_MODE":        "strict",
 				"KB_DETECT_CONTRADICTIONS": "true",
-			},
+			}),
 		},
 		{
 			Name:       "qualifiers",
 			AnswerMode: "got",
 			PersistDir: "persist-b",
-			EnvOverrides: map[string]string{
+			EnvOverrides: stageEnv(map[string]string{
 				"KB_INDEX_GRAPH":           "true",
 				"KB_HYBRID":                "true",
 				"KB_RERANK":                "llm",
 				"KB_SUPERSEDE_MODE":        "strict",
 				"KB_DETECT_CONTRADICTIONS": "true",
 				"KB_QUALIFIER_FILTER":      "true",
-			},
+			}),
 		},
 	}
 }

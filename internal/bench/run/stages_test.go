@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/alterfo/kb/internal/config"
 )
 
 func TestEvolutionStages(t *testing.T) {
@@ -18,8 +20,13 @@ func TestEvolutionStages(t *testing.T) {
 			AnswerMode: "naive",
 			PersistDir: "persist-a",
 			EnvOverrides: map[string]string{
-				"KB_INDEX_GRAPH": "false",
-				"KB_HYBRID":      "false",
+				"KB_INDEX_GRAPH":           "false",
+				"KB_HYBRID":                "false",
+				"KB_LEXICAL_ONLY":          "false",
+				"KB_RERANK":                "off",
+				"KB_SUPERSEDE_MODE":        "soft",
+				"KB_DETECT_CONTRADICTIONS": "false",
+				"KB_QUALIFIER_FILTER":      "false",
 			},
 		},
 		{
@@ -27,8 +34,13 @@ func TestEvolutionStages(t *testing.T) {
 			AnswerMode: "naive",
 			PersistDir: "persist-a",
 			EnvOverrides: map[string]string{
-				"KB_INDEX_GRAPH": "false",
-				"KB_HYBRID":      "true",
+				"KB_INDEX_GRAPH":           "false",
+				"KB_HYBRID":                "true",
+				"KB_LEXICAL_ONLY":          "false",
+				"KB_RERANK":                "off",
+				"KB_SUPERSEDE_MODE":        "soft",
+				"KB_DETECT_CONTRADICTIONS": "false",
+				"KB_QUALIFIER_FILTER":      "false",
 			},
 		},
 		{
@@ -36,8 +48,13 @@ func TestEvolutionStages(t *testing.T) {
 			AnswerMode: "naive",
 			PersistDir: "persist-b",
 			EnvOverrides: map[string]string{
-				"KB_INDEX_GRAPH": "true",
-				"KB_HYBRID":      "true",
+				"KB_INDEX_GRAPH":           "true",
+				"KB_HYBRID":                "true",
+				"KB_LEXICAL_ONLY":          "false",
+				"KB_RERANK":                "off",
+				"KB_SUPERSEDE_MODE":        "soft",
+				"KB_DETECT_CONTRADICTIONS": "false",
+				"KB_QUALIFIER_FILTER":      "false",
 			},
 		},
 		{
@@ -45,9 +62,13 @@ func TestEvolutionStages(t *testing.T) {
 			AnswerMode: "naive",
 			PersistDir: "persist-b",
 			EnvOverrides: map[string]string{
-				"KB_INDEX_GRAPH": "true",
-				"KB_HYBRID":      "true",
-				"KB_RERANK":      "llm",
+				"KB_INDEX_GRAPH":           "true",
+				"KB_HYBRID":                "true",
+				"KB_LEXICAL_ONLY":          "false",
+				"KB_RERANK":                "llm",
+				"KB_SUPERSEDE_MODE":        "soft",
+				"KB_DETECT_CONTRADICTIONS": "false",
+				"KB_QUALIFIER_FILTER":      "false",
 			},
 		},
 		{
@@ -55,9 +76,13 @@ func TestEvolutionStages(t *testing.T) {
 			AnswerMode: "got",
 			PersistDir: "persist-b",
 			EnvOverrides: map[string]string{
-				"KB_INDEX_GRAPH": "true",
-				"KB_HYBRID":      "true",
-				"KB_RERANK":      "llm",
+				"KB_INDEX_GRAPH":           "true",
+				"KB_HYBRID":                "true",
+				"KB_LEXICAL_ONLY":          "false",
+				"KB_RERANK":                "llm",
+				"KB_SUPERSEDE_MODE":        "soft",
+				"KB_DETECT_CONTRADICTIONS": "false",
+				"KB_QUALIFIER_FILTER":      "false",
 			},
 		},
 		{
@@ -67,9 +92,11 @@ func TestEvolutionStages(t *testing.T) {
 			EnvOverrides: map[string]string{
 				"KB_INDEX_GRAPH":           "true",
 				"KB_HYBRID":                "true",
+				"KB_LEXICAL_ONLY":          "false",
 				"KB_RERANK":                "llm",
 				"KB_SUPERSEDE_MODE":        "strict",
 				"KB_DETECT_CONTRADICTIONS": "true",
+				"KB_QUALIFIER_FILTER":      "false",
 			},
 		},
 		{
@@ -79,6 +106,7 @@ func TestEvolutionStages(t *testing.T) {
 			EnvOverrides: map[string]string{
 				"KB_INDEX_GRAPH":           "true",
 				"KB_HYBRID":                "true",
+				"KB_LEXICAL_ONLY":          "false",
 				"KB_RERANK":                "llm",
 				"KB_SUPERSEDE_MODE":        "strict",
 				"KB_DETECT_CONTRADICTIONS": "true",
@@ -115,6 +143,47 @@ func TestEvolutionStagesKeySetNeverShrinks(t *testing.T) {
 				t.Errorf("stage %d dropped override %s from the previous stage", i, k)
 			}
 		}
+	}
+}
+
+func TestEvolutionStagesDoNotLeakAmbientCapabilities(t *testing.T) {
+	ambient, err := config.LoadEnv(func(string) (string, bool) { return "", false })
+	if err != nil {
+		t.Fatalf("LoadEnv: %v", err)
+	}
+	ambient.Rerank = "llm"
+	ambient.SupersedeMode = "strict"
+	ambient.DetectContradictions = true
+	ambient.QualifierFilter = true
+	ambient.LexicalOnly = true
+	ambient.Hybrid = true
+	ambient.IndexGraph = true
+
+	native := EvolutionStages()[0]
+	got, err := config.OverrideEnv(ambient, native.EnvOverrides)
+	if err != nil {
+		t.Fatalf("OverrideEnv: %v", err)
+	}
+	if got.Rerank != "off" {
+		t.Errorf("stage %q Rerank = %q, want off despite ambient KB_RERANK=llm", native.Name, got.Rerank)
+	}
+	if got.SupersedeMode != "soft" {
+		t.Errorf("stage %q SupersedeMode = %q, want soft despite ambient strict", native.Name, got.SupersedeMode)
+	}
+	if got.DetectContradictions {
+		t.Errorf("stage %q DetectContradictions = true, want false despite ambient true", native.Name)
+	}
+	if got.QualifierFilter {
+		t.Errorf("stage %q QualifierFilter = true, want false despite ambient true", native.Name)
+	}
+	if got.LexicalOnly {
+		t.Errorf("stage %q LexicalOnly = true, want false despite ambient true", native.Name)
+	}
+	if got.Hybrid {
+		t.Errorf("stage %q Hybrid = true, want false (native is the pre-hybrid baseline)", native.Name)
+	}
+	if got.IndexGraph {
+		t.Errorf("stage %q IndexGraph = true, want false (native is the pre-graph baseline)", native.Name)
 	}
 }
 
