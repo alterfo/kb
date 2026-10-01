@@ -317,6 +317,21 @@ func TestFactCoveredStillAppliesPolarityGuard(t *testing.T) {
 	}
 }
 
+// TestFactCoveredKnownGapMatchingParityDifferentScope documents, rather than
+// guards against, the accepted limitation named in negationParity's doc
+// comment: when an answer's own negation count happens to match the fact's,
+// the gate does not look at which word each negation actually scopes over.
+// This is intentionally a passing test, not a bug report - it exists so a
+// future change to this function does not silently alter this known,
+// accepted behavior without a test noticing.
+func TestFactCoveredKnownGapMatchingParityDifferentScope(t *testing.T) {
+	fact := "The default timeout is not 30 seconds."
+	answer := "The default timeout is 30 seconds, but it is not configurable."
+	if !factCovered(answer, fact, "en") {
+		t.Fatal("this is the known, accepted gap: matching parity with different scope is not detected - if this now fails, negationParity's doc comment needs updating, not this test")
+	}
+}
+
 func TestFactCoveredRussian(t *testing.T) {
 	answer := "Максимальный размер файла составляет 10 МиБ."
 	fact := "Максимальный размер файла — 10 МиБ."

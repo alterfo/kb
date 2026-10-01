@@ -332,9 +332,11 @@ func GoldAnswerInText(candidate, gold, lang string) bool {
 // to do reliably, and is not worth the complexity or the repeated
 // regressions here. The residual risk this accepts - a generated fact that
 // is the exact negated opposite of what the document says still reads as
-// "grounded" - is caught instead by the mandatory human spot-check of
-// generated questions before any generated set is trusted (see the
-// generator-pilot review step in the RU dynamic bench plan).
+// "grounded" - is not caught by any code path. The RU dynamic bench plan's
+// generator-pilot review step (a human spot-check of generated questions)
+// is intended to backstop exactly this, but is a manual step that has to
+// actually be run before any generated set is trusted - it is not an
+// automatic guarantee this function or its callers provide.
 func FactCoveredInText(text, fact, lang string) bool {
 	return stemCoverage(text, fact, lang)
 }
@@ -443,6 +445,15 @@ func factContentStems(s, lang string) []string {
 // whole-answer negation count is a reasonable, if imperfect, proxy for
 // which specific claim is negated. See FactCoveredInText's doc comment for
 // why the same approach does not hold up for a whole source document.
+//
+// Known gap, accepted rather than chased further (see FactCoveredInText's
+// comment for why): two negations in the same answer can share parity while
+// scoping over different words, e.g. answer "The default timeout is 30
+// seconds, but it is not configurable." (one negation, parity 1) against
+// fact "The default timeout is not 30 seconds." (also parity 1) - parity
+// matches, so the gate does not reject, and stemCoverage then matches on
+// the shared non-negated words, scoring a contradictory answer as covering
+// the fact.
 func negationParity(s, lang string) int {
 	tokens := wordRe.FindAllString(strings.ToLower(s), -1)
 	neg := negationWordsFor(lang)

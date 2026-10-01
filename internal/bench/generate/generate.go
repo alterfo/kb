@@ -119,9 +119,14 @@ func nonEmptyFacts(facts []string) []string {
 	return out
 }
 
-// groundedFacts drops facts not covered by docBody at the scorer's own
-// facts-coverage threshold, so a hallucinated fact never reaches the
-// generated question even when the gold answer itself passes the gate.
+// groundedFacts drops facts whose content words have no meaningful overlap
+// with docBody (the scorer's own bag-of-stems facts-coverage threshold via
+// runbench.FactCoveredInText), so an unrelated/fabricated fact never reaches
+// the generated question even when the gold answer itself passes the gate.
+// This check carries no negation/polarity detection (see FactCoveredInText's
+// own doc comment for why): a fact that is the exact negated opposite of
+// what docBody says can still pass. That residual risk is accepted, not
+// caught here.
 func groundedFacts(facts []string, docBody, lang string) []string {
 	out := make([]string, 0, len(facts))
 	for _, f := range facts {
