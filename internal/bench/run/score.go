@@ -315,27 +315,32 @@ func GoldAnswerInText(candidate, gold, lang string) bool {
 }
 
 // FactCoveredInText reports whether fact is grounded in text (typically a
-// whole source document) using the same negation-aware stem overlap as
-// factCovered.
+// whole source document) on bag-of-stems overlap alone, with no negation
+// check.
+//
+// This is a deliberately narrower guarantee than factCovered's, reached
+// after four escalating attempts at automatic polarity detection here
+// (global parity over the whole text, no check at all, per-sentence parity,
+// a local token-window tag) each had a reviewer find a concrete real input
+// it mis-scored: global and per-sentence parity both false-rejected valid
+// facts on negations unrelated to the fact's own claim (including on real
+// corpus sentences), splitting text into "sentences" fragmented decimal
+// numbers and ratios, and the token-window both over- and under-reached
+// depending on sentence structure, while bag-of-stems overlap can still
+// out-vote a single correctly-placed negation tag once enough other stems
+// match. Negation-scope detection needs more than regex/window heuristics
+// to do reliably, and is not worth the complexity or the repeated
+// regressions here. The residual risk this accepts - a generated fact that
+// is the exact negated opposite of what the document says still reads as
+// "grounded" - is caught instead by the mandatory human spot-check of
+// generated questions before any generated set is trusted (see the
+// generator-pilot review step in the RU dynamic bench plan).
 func FactCoveredInText(text, fact, lang string) bool {
-	return factGrounded(text, fact, lang)
+	return stemCoverage(text, fact, lang)
 }
 
-// factGrounded reports whether fact is covered by haystack on negation-aware
-// bag-of-stems overlap: both sides are stemmed with negatedContentStems,
-// which tags a content word as negated only when a negation marker occurs
-// within negationWindow tokens before it, so negation scope is local to the
-// specific claim a marker modifies rather than global over a sentence or a
-// whole document. This is what makes the same function safe for a short
-// model answer that hedges in one clause and states the fact plainly in
-// another ("I'm not sure about the timeout, but the max size is 10 MiB"),
-// for a multi-paragraph source document with negations unrelated to this
-// fact anywhere else, and for a single sentence that itself mixes clauses
-// of different polarity ("X, but it is not Y") - none of those make the
-// specific content words this fact is about negated, and tagging only the
-// words actually inside a negation's window is what tells them apart.
-func factGrounded(haystack, fact, lang string) bool {
-	haystackStems := negatedContentStems(haystack, lang)
+func stemCoverage(haystack, fact, lang string) bool {
+	haystackStems := factContentStems(haystack, lang)
 	if len(haystackStems) == 0 {
 		return false
 	}
@@ -343,7 +348,7 @@ func factGrounded(haystack, fact, lang string) bool {
 	for _, s := range haystackStems {
 		present[s] = struct{}{}
 	}
-	factStems := negatedContentStems(fact, lang)
+	factStems := factContentStems(fact, lang)
 	if len(factStems) == 0 {
 		return false
 	}
@@ -429,54 +434,32 @@ func factContentStems(s, lang string) []string {
 	return stems
 }
 
-// negationWindow is how many tokens after a negation marker are tagged as
-// negated by negatedContentStems - enough to span "does not require",
-// "не будет растягиваться", without reaching into an unrelated clause.
-const negationWindow = 3
-
-const negatedStemPrefix = "¬"
-
-// negatedContentStems is factContentStems plus local negation scoping: a
-// content word is tagged with negatedStemPrefix when a negation marker
-// occurs within negationWindow tokens before it, so "require" in "does not
-// require X" produces a different stem than the plain "require" in a
-// non-negated sentence, while a negation marker many tokens away (a
-// different clause, a different sentence, a different paragraph) leaves the
-// word untagged. This makes bag-of-stems overlap polarity-sensitive exactly
-// where a marker actually scopes over a word, without needing to find
-// sentence or document boundaries (which a decimal number, abbreviation, or
-// version string can put a misleading period inside of).
-func negatedContentStems(s, lang string) []string {
-	s = digitLetterBoundaryRe.ReplaceAllStringFunc(s, func(m string) string {
-		return string(m[0]) + " " + string(m[1])
-	})
+// negationParity counts negation markers in s and reports it modulo 2, so a
+// fact and an answer that disagree on parity (one negated, the other not)
+// are known to disagree in polarity even though they may share every other
+// content word. factCovered is the only caller: it compares a model
+// answer against one fact at a time, and this project's synthesized
+// answers are typically short enough (a few sentences at most) that a
+// whole-answer negation count is a reasonable, if imperfect, proxy for
+// which specific claim is negated. See FactCoveredInText's doc comment for
+// why the same approach does not hold up for a whole source document.
+func negationParity(s, lang string) int {
 	tokens := wordRe.FindAllString(strings.ToLower(s), -1)
 	neg := negationWordsFor(lang)
-	stopwords := factStopwordsFor(lang)
-	stems := make([]string, 0, len(tokens))
-	negatedUntil := -1
-	for i, t := range tokens {
-		if _, isNeg := neg[t]; isNeg {
-			negatedUntil = i + negationWindow
-			continue
+	count := 0
+	for _, t := range tokens {
+		if _, ok := neg[t]; ok {
+			count++
 		}
-		if len([]rune(t)) < 2 && !isDigits(t) {
-			continue
-		}
-		if _, stop := stopwords[t]; stop {
-			continue
-		}
-		st := stem(t, lang)
-		if i <= negatedUntil {
-			st = negatedStemPrefix + st
-		}
-		stems = append(stems, st)
 	}
-	return stems
+	return count % 2
 }
 
 func factCovered(modelAnswer, fact, lang string) bool {
-	return factGrounded(modelAnswer, fact, lang)
+	if negationParity(modelAnswer, lang) != negationParity(fact, lang) {
+		return false
+	}
+	return stemCoverage(modelAnswer, fact, lang)
 }
 
 func LoadSubmission(path string) (map[string]Answer, error) {
