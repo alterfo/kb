@@ -314,18 +314,46 @@ func GoldAnswerInText(candidate, gold, lang string) bool {
 	return answerContainsGold(candidate, gold, lang)
 }
 
-// FactCoveredInText reports whether fact is grounded in text at the same
-// bag-of-stems threshold factCovered uses, so generators can reject
-// hallucinated facts against the source document without duplicating
-// scorer logic. Unlike factCovered, it does not apply the negation-parity
-// polarity guard: that guard assumes both sides are short, focused texts
-// (a model answer, a fact), but text here is a whole source document, where
-// the total count of negation words is unrelated to whether this particular
-// fact is itself negated - applying it would reject well-grounded facts
-// whenever the document happens to contain an odd number of negations
-// anywhere in it.
+var sentenceSplitRe = regexp.MustCompile(`[.!?\n]+`)
+
+func splitSentences(text string) []string {
+	parts := sentenceSplitRe.Split(text, -1)
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if s := strings.TrimSpace(p); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// FactCoveredInText reports whether fact is grounded in text (typically a
+// whole source document) using the same per-sentence check as factCovered.
 func FactCoveredInText(text, fact, lang string) bool {
-	return stemCoverage(text, fact, lang)
+	return factGrounded(text, fact, lang)
+}
+
+// factGrounded reports whether fact is covered by some sentence of haystack,
+// both on bag-of-stems overlap and on negation polarity. Checking polarity
+// per sentence rather than across the whole of haystack is what makes this
+// safe for both callers: a short model answer may hedge in one sentence and
+// state the fact plainly in another, and a multi-paragraph source document
+// may contain any number of negations unrelated to this fact elsewhere -
+// in both cases a whole-text negation count is noise, but dropping the
+// guard entirely would let a fact and its exact negated opposite read as
+// equally "grounded", since negation markers are stopwords for stem
+// matching and so make no difference to stemCoverage on their own.
+func factGrounded(haystack, fact, lang string) bool {
+	factParity := negationParity(fact, lang)
+	for _, sentence := range splitSentences(haystack) {
+		if negationParity(sentence, lang) != factParity {
+			continue
+		}
+		if stemCoverage(sentence, fact, lang) {
+			return true
+		}
+	}
+	return false
 }
 
 const factCoverageThreshold = 0.8
@@ -444,10 +472,7 @@ func stemCoverage(haystack, fact, lang string) bool {
 }
 
 func factCovered(modelAnswer, fact, lang string) bool {
-	if negationParity(modelAnswer, lang) != negationParity(fact, lang) {
-		return false
-	}
-	return stemCoverage(modelAnswer, fact, lang)
+	return factGrounded(modelAnswer, fact, lang)
 }
 
 func LoadSubmission(path string) (map[string]Answer, error) {

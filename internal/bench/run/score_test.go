@@ -253,11 +253,38 @@ func TestAnswerContainsGoldToleratesUnrelatedNegationElsewhere(t *testing.T) {
 }
 
 func TestFactCoveredInTextIgnoresDocumentWideNegationParity(t *testing.T) {
-	doc := "Docker не требует отдельного гипервизора. Он не является виртуальной машиной. " +
+	// The document has a single (odd-count) unrelated negated sentence, so
+	// a whole-document parity check would reject every non-negated fact -
+	// this is exactly what a per-sentence check must not do.
+	doc := "Docker не требует отдельного гипервизора. " +
 		"Docker применяется для развёртывания серверных приложений."
 	fact := "Docker применяется для развёртывания серверных приложений."
 	if !FactCoveredInText(doc, fact, "ru") {
-		t.Fatal("expected a non-negated fact to be grounded even though the document contains an odd number of unrelated negations elsewhere")
+		t.Fatal("expected a non-negated fact to be grounded by its own matching sentence even though an unrelated sentence elsewhere is negated")
+	}
+}
+
+func TestFactCoveredInTextRejectsPolarityFlippedFact(t *testing.T) {
+	doc := "Docker не требует отдельного гипервизора."
+	fact := "Docker требует отдельного гипервизора."
+	if FactCoveredInText(doc, fact, "ru") {
+		t.Fatal("expected a fact to not be grounded when the matching sentence negates it")
+	}
+}
+
+func TestFactCoveredInTextAcceptsMatchingNegatedFact(t *testing.T) {
+	doc := "Docker не требует отдельного гипервизора."
+	fact := "Docker не требует отдельного гипервизора."
+	if !FactCoveredInText(doc, fact, "ru") {
+		t.Fatal("expected a negated fact to be grounded by an equally negated sentence")
+	}
+}
+
+func TestFactCoveredToleratesUnrelatedHedgeInAnotherSentence(t *testing.T) {
+	answer := "I'm not sure about the timeout. The maximum file size is 10 MiB."
+	fact := "The maximum file size is 10 MiB."
+	if !factCovered(answer, fact, "en") {
+		t.Fatal("expected a fact stated plainly in one sentence to be covered despite an unrelated hedge in another sentence of the same answer")
 	}
 }
 
