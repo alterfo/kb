@@ -315,6 +315,56 @@ func TestRetrieveLexicalOnlyUsesBM25WithoutDense(t *testing.T) {
 	}
 }
 
+func TestRetrieveLexicalOnlyForcesLocalModeOverGlobal(t *testing.T) {
+	// With a nil Graph, ModeGlobal/ModeDrift fail-open to an empty result
+	// (there is nothing to map-reduce over), so a non-empty BM25 match here
+	// is only possible if LexicalOnly overrode the requested mode to local.
+	chunks := []vector.Chunk{
+		{ID: "b", RefDocID: "doc-b", Text: "kiwi", FilePath: "notes/b.md", Embedding: []float32{0, 0}},
+	}
+	idx := bm25.New()
+	idx.Rebuild(chunks, 1)
+
+	r := New(Config{
+		Vector:      &fakeVectorStore{chunks: chunks},
+		BM25:        idx,
+		Embed:       fakeEmbedder{err: errors.New("dense leg must not run in lexical-only mode")},
+		LexicalOnly: true,
+	})
+
+	got, err := r.Retrieve(context.Background(), "kiwi", Options{K: 10, Mode: ModeGlobal})
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if len(got) == 0 || got[0].Chunk.ID != "b" {
+		t.Fatalf("expected LexicalOnly to force ModeLocal and return BM25 match b even when ModeGlobal was requested, got %+v", got)
+	}
+}
+
+func TestRetrieveLexicalOnlyForcesLocalModeOverSet(t *testing.T) {
+	chunks := []vector.Chunk{
+		{ID: "b", RefDocID: "doc-b", Text: "kiwi", FilePath: "notes/b.md", Embedding: []float32{0, 0}},
+	}
+	idx := bm25.New()
+	idx.Rebuild(chunks, 1)
+
+	r := New(Config{
+		Vector:      &fakeVectorStore{chunks: chunks},
+		BM25:        idx,
+		Embed:       fakeEmbedder{err: errors.New("dense leg must not run in lexical-only mode")},
+		Chat:        fakeChat{err: errors.New("query expansion must not run in lexical-only mode")},
+		LexicalOnly: true,
+	})
+
+	got, err := r.Retrieve(context.Background(), "kiwi", Options{K: 10, Mode: ModeSet})
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if len(got) == 0 || got[0].Chunk.ID != "b" {
+		t.Fatalf("expected LexicalOnly to force ModeLocal and return BM25 match b even when ModeSet was requested, got %+v", got)
+	}
+}
+
 func TestRetrievePerDocCoverageCap(t *testing.T) {
 	var chunks []vector.Chunk
 	for i := 0; i < 5; i++ {

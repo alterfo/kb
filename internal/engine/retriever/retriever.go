@@ -240,6 +240,15 @@ func (r *Retriever) retrieve(ctx context.Context, query string, opt Options) ([]
 		k = r.cfg.DefaultK
 	}
 	r.refreshStaleCommunities(ctx)
+	if r.cfg.LexicalOnly {
+		// The bare-BM25 ablation only makes sense against the local pipeline:
+		// ModeGlobal/ModeDrift/ModeSet all route through the dense/graph
+		// infrastructure (community summaries, query expansion, multi-round
+		// set retrieval) that LexicalOnly exists to bypass, so forcing
+		// ModeLocal here is what makes the flag actually bare BM25 for every
+		// caller, not just the ones that already pass ModeLocal explicitly.
+		opt.Mode = ModeLocal
+	}
 	if opt.Mode == ModeSet {
 		chunks, err := r.retrieveSet(ctx, query, opt, k)
 		return chunks, nil, err
