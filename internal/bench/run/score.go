@@ -453,9 +453,12 @@ func factContentStems(s, lang string) []string {
 // (its one negation, "not", scopes over "configurable"; parity 1) against
 // fact "The default timeout is not 30 seconds." (its one negation scopes
 // over "30 seconds"; also parity 1) - the two parities match even though
-// the negations are about different things, so the gate does not reject,
-// and stemCoverage then matches on the shared non-negated words, scoring a
-// contradictory answer as covering the fact.
+// the negations are about different things, so the gate does not reject.
+// "not" is itself a stopword (not a content stem), and stemCoverage has no
+// notion of which content stem a negation scopes over, so it then matches
+// the fact's "30"/"second" stems against the answer's plain, identical
+// "30"/"second" stems - the very words the fact's negation is about - and
+// scores a contradictory answer as covering the fact.
 func negationParity(s, lang string) int {
 	tokens := wordRe.FindAllString(strings.ToLower(s), -1)
 	neg := negationWordsFor(lang)
