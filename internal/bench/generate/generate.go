@@ -16,8 +16,9 @@ const defaultLanguage = "ru"
 const systemPrompt = `Ты — генератор русскоязычных фактологических вопросов для RAG-бенчмарка.
 Составь ровно один вопрос по приведённому документу. Вопрос должен быть
 single-doc: на него можно ответить, процитировав этот документ.
-gold_answer обязан быть дословным фрагментом текста документа (с точностью до
-регистра и пунктуации). answer_facts — 1-3 коротких факта, каждый из которых
+gold_answer обязан быть точной цитатой или максимально близким к тексту
+документа фрагментом (регистр, пунктуация и словоформы допустимы, но не
+перефразирование). answer_facts — 1-3 коротких факта, каждый из которых
 подтверждается текстом документа.
 Верни ТОЛЬКО JSON, без пояснений, в формате:
 {"question":"...","question_type":"single-doc","gold_answer":"...","answer_facts":["...","..."]}`
@@ -33,9 +34,13 @@ type generatedQuestion struct {
 
 // Generate produces one single-doc question per document by asking the LLM
 // for a question, gold answer and answer facts anchored to the document. A
-// generated question is dropped when its gold answer is not found verbatim in
-// the document body (anti-hallucination gate). Seed questions are used as
-// few-shot examples; the first error is returned alongside the partial result.
+// generated question is dropped when its gold answer does not match the
+// document body under the scorer's own stem-anchored phrase check (not a
+// verbatim/substring check - case, punctuation and inflection are tolerated),
+// and any answer fact that fails the scorer's facts-coverage threshold
+// against the document is dropped from the question rather than kept
+// (anti-hallucination gate). Seed questions are used as few-shot examples;
+// the first error is returned alongside the partial result.
 func Generate(ctx context.Context, chat runbench.ChatClient, model string, docs []corpus.Doc, seed []corpus.Question) ([]corpus.Question, error) {
 	examples := selectExamples(seed)
 	out := make([]corpus.Question, 0, len(docs))
