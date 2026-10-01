@@ -447,13 +447,15 @@ func factContentStems(s, lang string) []string {
 // why the same approach does not hold up for a whole source document.
 //
 // Known gap, accepted rather than chased further (see FactCoveredInText's
-// comment for why): two negations in the same answer can share parity while
-// scoping over different words, e.g. answer "The default timeout is 30
-// seconds, but it is not configurable." (one negation, parity 1) against
-// fact "The default timeout is not 30 seconds." (also parity 1) - parity
-// matches, so the gate does not reject, and stemCoverage then matches on
-// the shared non-negated words, scoring a contradictory answer as covering
-// the fact.
+// comment for why): the answer's one negation and the fact's one negation
+// can scope over entirely different words and still agree on parity, e.g.
+// answer "The default timeout is 30 seconds, but it is not configurable."
+// (its one negation, "not", scopes over "configurable"; parity 1) against
+// fact "The default timeout is not 30 seconds." (its one negation scopes
+// over "30 seconds"; also parity 1) - the two parities match even though
+// the negations are about different things, so the gate does not reject,
+// and stemCoverage then matches on the shared non-negated words, scoring a
+// contradictory answer as covering the fact.
 func negationParity(s, lang string) int {
 	tokens := wordRe.FindAllString(strings.ToLower(s), -1)
 	neg := negationWordsFor(lang)
