@@ -1,0 +1,120 @@
+Prompt heuristics experiments scratchpad
+
+Goal: quick notes & experiment ledger for prompt heuristics — build a small library of templates + failure cases to iterate with the hosted API. Mostly personal, messy, includes raw outputs, TODOs.
+
+Context / motivation:
+- Want robust few-shot templates for short instruction tasks (classification, extractive QA, rewrite).
+- Observed instability across temperature and ordering; need heuristics that generalize across models and quantization variants.
+- Start from pragmatic rules rather than huge eval harness.
+
+High-level heuristics I want to test (hypotheses):
+1) Explicit role + short constraint outperform long rationale priming for 1–3 shot tasks under latency budgets.
+2) Putting the positive example(s) first then the negative(s) reduces hallucination in binary classification.
+3) Using tag tokens (### EXAMPLE) helps when using streaming responses because model learns block boundaries.
+4) For extraction tasks, prefer “Return as JSON: {key:value}” templates to avoid verbose paraphrases.
+
+Experiment matrix (fast runs):
+- Model: small/medium/large (toy runs on gpt-small / gpt-medium / gpt-large-like) — use hosted dev creds.
+- Temp: 0.0, 0.2, 0.7
+- Few-shot count: 0, 1, 3
+- Example ordering: positive-first, negative-first, mixed
+- Priming style: role-only vs role + example explanation vs role + chain-of-thought
+- Output constraint: plain text vs JSON vs YAML-like
+
+Quick templates to copy/paste (placeholders in <>):
+Template A — role + JSON extraction (1-shot):
+"""
+You are a concise extractor. Given text, return JSON with keys: product, price, quantity.
+Example:
+Text: "Bought 3 packs of AA batteries (Model X) for $9.99 each
+"
+Output: {"product":"AA batteries (Model X)", "price":"9.99", "quantity":"3"}
+
+Now extract from the input below:
+Text: "<INPUT_TEXT>"
+"""
+
+Template B — classification with tag separators (3-shot):
+"""
+You are a brief classifier. Use labels: {POSITIVE, NEGATIVE}.
+### EXAMPLE
+Input: "Loved the service, will come back!"
+Label: POSITIVE
+### EXAMPLE
+Input: "Item arrived broken and no reply from support."
+Label: NEGATIVE
+### EXAMPLE
+Input: "Average experience, shipping slow but product ok."
+Label: NEGATIVE
+
+Now classify:
+Input: "<INPUT>"
+Label:
+"""
+
+Template C — rewrite to tone (zero-shot with instructions):
+"""
+You are a rewrite assistant. Rewrite the following customer message to be formal and concise (one sentence).
+Message: "<MSG>"
+Rewritten:
+"""
+
+Few-shot set examples used in the notebook (raw):
+- EX1 classification positive: "Service was amazing, staff helpful." -> POSITIVE
+- EX2 classification negative: "Order missing items, support unhelpful." -> NEGATIVE
+- EX3 extraction (invoice-like): "Invoice 552: 5 widgets @ $2.50 each" -> {product: widgets, price: 2.50, quantity: 5}
+
+Observed failure cases (logs, raw snippets):
+1) Extraction fails on currency symbols -> model returns "$2.50" instead of normalized number when temp>0.
+   - Example input: "Total: $12.00"
+   - Output: {price: "$12.00"} (bad) vs expected {price: "12.00"}.
+2) Classification flip when first example is negative (3-shot):
+   - Ordering negative-first -> model labels borderline positive text as NEGATIVE 45% of trials at temp=0.2.
+3) Streaming truncation glue: when examples use long explanations, streaming token boundary cutting can produce malformed JSON (missing closing brace).
+4) Chain-of-thought contamination: if we include a short explanation after examples, sometimes model replicates the internal reasoning in the final output (not desirable for downstream parsers).
+
+Mini-results notes (quick manual runs, counts are small N=20 per cell):
+- Temp=0.0 + JSON constraint -> extraction normalized numbers 89% correct
+- Temp=0.2 + role-only -> classification accuracy 82% (pos/neg); adding short example explanations drops to 75% (more variance)
+- 3-shot vs 1-shot: marginal lift (~3 points) but increased hallucination in extractive tasks when examples are too verbose.
+
+Debug examples (copied outputs):
+Input: "Bought 3x AA battery pack (Model B), $7.25 each"
+Template A (temp 0.2) -> {"product":"3x AA battery pack (Model B)", "price":"$7.25", "quantity":"3"}
+Notes: price contains $; want normalized. Hack: post-process strip non-digits. But better: prompt explicitly: "Return price as digits only (e.g. 7.25)".
+
+Ordering experiment quick log:
+- positive-first, temp=0.0, accuracy=86%
+- negative-first, temp=0.0, accuracy=78%
+- mixed, temp=0.2, accuracy=80%
+Takeaway: positive-first seems slightly more stable for balanced tasks.
+
+Ideas to try next (short list):
+- Force format tokens: wrap JSON in <OUTPUT>...</OUTPUT> tags to reduce streaming truncation parsing issues.
+- Minimal examples: keep examples to <50 tokens each for extraction tasks.
+- Prepend a one-line canonicalization instruction: "When extracting prices, strip currency symbols and return decimals only." Test whether model obeys more than post-processing.
+- Try injected parsing hint: "Return EXACT JSON, no extra keys or explanation." See effect on refusals/hallucination.
+
+Edge cases to capture in eval set (small):
+- multiple currencies in one text
+- shorthand numbers (1k, 2M) -> normalize? decide policy
+- ambiguous quantity words (a dozen, several) -> map to unknown or approximate?
+
+Open questions / unresolved:
+- Is there a general rule for example ordering across task families or is it task-specific? Need more systematic N.
+- How much does tokenization/quantization (int8 vs int4) affect these behaviors? Evan suggested running one sweep on ded-quantized nodes.
+- Are tag tokens worthwhile for large-scale streaming workloads? Small overhead but possibly reduces hallucination—cost tradeoff unknown.
+
+Quick TODOs (prioritized):
+- [ ] Automate N=50 runs for ordering x temp for one classification dataset (Priya to help) — LINK ticket REDW-4821.
+- [ ] Add canonicalization line to Template A and test N=100 on hosted dev region (low cost).
+- [ ] Prototype <OUTPUT> tag wrapper and test streaming truncation failures (Evan).
+- [ ] Capture examples where model returns extra keys (e.g., adds "currency":"USD") and decide whether to reject or accept.
+
+Notes-to-self: keep prompts short, explicit, and machine-friendly for parsing. Avoid chain-of-thought inside examples unless the task benefits (creative tasks). Log everything — small manual runs are noisy but surfaced a lot of concrete failure modes.
+
+Misc references / bookmarks:
+- internal convo: #prompt-heuristics on Slack (see pinned messages)
+- quick eval notebook: github.com/redwood-inference/quick-promptexps (branch: heuristics-scratch)
+
+End of scratchpad (still messy).

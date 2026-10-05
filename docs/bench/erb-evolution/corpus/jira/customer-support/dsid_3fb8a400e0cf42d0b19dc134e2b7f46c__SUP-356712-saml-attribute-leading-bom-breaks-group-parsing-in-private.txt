@@ -1,0 +1,64 @@
+SAML attribute contains leading UTF-8 BOM, causing first group to be dropped and admin role loss in private VPC
+
+Issue summary:
+Customer reported that after onboarding to Private VPC (prod-us-east) a subset of their admin users suddenly lost admin privileges and received 403s from the Admin Console APIs. The customers use a SAML IdP (OnPrem SAML 2.0) that sends a 'groups' SAML attribute exported as a single CSV string containing group names.
+
+Impact:
+- Multiple tenant admins unable to perform admin actions (create API keys, manage billing, role bindings)
+- Affects ~6 user accounts in Crestline Analytics (customer-declared admins)
+- Production (prod-us-east) only; no impact observed in staging.
+
+Environment:
+- Redwood Private (customer-managed control plane) deployed in VPC (us-east-1)
+- SAML SSO via customer's IdP (SAMLResponse sent to /auth/saml/acs)
+- Role mapping configured: first matching group name -> Admin role
+
+Steps to reproduce (as reported):
+1) User signs in via SAML SSO.
+2) Authn completes and SAMLResponse posted to our ACS.
+3) User attempts an admin API call (create api-key).
+4) Received 403 Forbidden from Admin API.
+
+Observed behavior:
+- Successful authentication (session created), but RBAC mapping does not include the expected 'crestline-admins' group for affected users.
+- Server-side logs show groups attribute present but first group value appears empty when parsed by our role-mapper. Example raw attribute (hex): "EF BB BF 63 72 65 73 74 6C 69 6E 65 2D 61 64 6D 69 6E 73,..." which corresponds to a leading UTF-8 BOM (0xEF,0xBB,0xBF) before 'crestline-admins'.
+
+Expected behavior:
+- All groups listed in the SAML attribute should be parsed and matched against role mapping rules; admin users should receive the Admin role.
+
+Temporary workaround recommended to customer:
+- Add a secondary mapping that matches the literal BOM-prefixed group (not ideal).
+- Alternatively, configure IdP to strip/normalize attribute values prior to assertion export.
+
+Notes:
+- Customer confirmed IdP was recently upgraded and exported group values using a library that appears to inject a leading BOM on some exports (particularly from their Windows-based AD connector).
+- This behavior only affects assertions coming from that connector; other users (federated via Okta) are unaffected.
+[2026-03-10 09:12 UTC] Maya Chen (Support): Triage - customer reports 6 admin users seeing 403s after SSO. Gathering SAMLResponse. Asked customer to upload a redacted SAMLResponse (they provided via secure upload).
+[2026-03-10 11:05 UTC] Customer (Crestline SSO Admin): Uploaded sample SAMLResponse and advised this started after they patched their AD connector on 2026-03-08.
+[2026-03-10 14:28 UTC] Arjun Patel (Auth Eng): Confirmed raw base64-decode of SAMLResponse shows groups attribute beginning with bytes EF BB BF. Hypothesis: leading UTF-8 BOM present, parser trims whitespace but not BOM. Adding instrumentation to log hex of first bytes for affected assertions.
+[2026-03-11 02:03 UTC] SRE (Priya Nair): Deployed temporary logging change to private control plane to capture raw attribute bytes for a short window. No other customer affected during window.
+[2026-03-11 08:47 UTC] Arjun Patel (Auth Eng): Reproduced locally by injecting BOM into groups attribute. Our group-splitting routine uses strings.Split on comma and then TrimSpace, which does not remove the BOM. Created patch to run NormalizeUnicode(strip BOM and control chars) on attribute values before splitting.
+[2026-03-12 10:21 UTC] Customer: Confirmed patch rollout to their private cluster restored admin role for previously affected users. No further 403s observed for those accounts.
+[2026-03-12 15:30 UTC] Maya Chen (Support): Marking as resolved-pending follow-up. Customer asks for guidance to prevent recurrence; provided runbook entry and suggested IdP config adjustments.
+Reproduction: Created test SAMLResponse with groups='\uFEFFcrestline-admins,developers' and posted to ACS. Role mapper read first group value as '\uFEFFcrestline-admins'. Our normalization pipeline used TrimSpace which does not remove BOM (U+FEFF). The BOM prevented exact equality match against 'crestline-admins' in role-mapping rules, causing the first (and sometimes only) group to not match. Root cause traced to IdP's Windows AD connector exporting CSV with UTF-8 BOM on some assertions.
+
+Findings:
+- BOM present when assertions originate from the customer's AD connector (Windows service).
+- Other federations (Okta) do not include BOM.
+- Our group parser did not sanitize Unicode control characters (BOM).
+
+Impact assessment:
+- Limited to customers whose IdP emits BOM in attributes; high impact for those relying on exact-match role mapping that considers first group or strict equality.
+Auth Eng deployed patch v1.14.3 to customer's private control plane: attribute normalization step added to SAML attribute processing (strip leading/trailing Unicode BOM and common invisible chars, then TrimSpace). Unit tests added to cover BOM, ZWNBSP, and other left-to-right marks.
+
+Rollout notes:
+- Patch applied to Crestline cluster during a maintenance window (2026-03-12 03:00 UTC).
+- SRE validated by replaying stored sample assertions and confirming role mapping resolved to 'crestline-admins'.
+- Customer validated by performing admin actions and confirming 200 responses.
+
+Follow-up actions:
+1) Document BOM handling in SAML runbook and add a diagnostic to the support toolkit to hex-dump first bytes of attributes.
+2) Outreach to partner teams to consider hardening other attribute parsers (OIDC jwt claims, SCIM hooks).
+3) Recommend customer update AD connector to latest build that fixes export behavior; provided vendor KB link.
+
+Customer confirmed acceptance of fix on 2026-03-12.

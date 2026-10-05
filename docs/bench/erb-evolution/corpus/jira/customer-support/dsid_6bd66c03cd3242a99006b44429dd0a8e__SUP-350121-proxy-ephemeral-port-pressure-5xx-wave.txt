@@ -1,0 +1,69 @@
+Burst of 5xx errors traced to API proxy ephemeral port pressure during high-concurrency tenant burst
+
+Issue summary:
+Customer (AcmeAI, dedicated) reported a sudden elevation in 5xx responses for text generation and streaming sessions starting ~2026-03-12 09:42 UTC. The errors manifested as HTTP 502/504 from the API Gateway and several upstream serving-runtime containers restarting. Impact: intermittent failed requests for several tenants behind the same ingress cluster, visible as ~18% error rate spike for 30 minutes.
+
+Impact:
+- Customer-facing: ~18% of requests returned 5xx for ~30 minutes during the burst window.
+- Product: streaming sessions were terminated mid-stream; some long-polling embedding uploads retried and amplified load.
+
+Environment:
+- Prod cluster: us-east-1, ingress pool ingress-prod-6, routing weight applied to tenant-group-42.
+- Customer tier: dedicated GPU pool (reserved capacity).
+- Service components: API Gateway (nginx+envoy hybrid), proxy pool (ephemeral worker pool), serving-runtime (gptq runtime containers), autoscaler.
+
+Steps to reproduce / observed pattern:
+1) Tenant sent a sudden parallel spike of ~1.8k concurrent streams (customer load test + production traffic).
+2) API gateway accepted connections but observed high ephemeral port exhaustion on proxy nodes.
+3) Connections queued into accept backlog; many TCP sessions saw RST or short-halfopen states.
+4) Gateway returned 502/504 to callers and upstream runtimes logged connection failures then restarted due to watch-dog restarts.
+
+Logs / Metrics (high level):
+- apigw/ingress-prod-6: accept_queue_wait_ms median jumped from 3ms -> 230ms between 09:41-09:55 UTC.
+- kernel tcp_tw_reuse/tcp_fin_timeout counters increased on proxy nodes.
+- ephemeral proxy pods (proxy-ephem-xx): ephemeral port usage peaked at 98% of ephemeral range.
+- runtime containers: upstream connection errors (EPIPE, ECONNRESET) followed by OOM-adj watchdog restarts in two pods.
+- k8s events show rapid pod churn on proxy nodes as ephemeral-port exhaustion made kube-proxy and iptables behave poorly.
+
+Initial hypothesis:
+- A sudden tenant burst consumed local ephemeral ports on proxy nodes causing new outbound NAT sockets to fail or reuse incorrect sockets, leading to upstream resets and gateway 502/504 responses.
+- Secondary amplification: client retry logic + long streaming keepalives increased open socket count and kept ports occupied longer.
+
+Investigation notes:
+- Reproduced high socket footprint in lab by simulating many concurrent short-lived streaming connections and long keepalives; confirmed ephemeral port exhaustion triggers similar behavior.
+- Reviewed proxy node sysctl settings: net.ipv4.ip_local_port_range defaulted to 32768-60999; conn reuse and TIME_WAIT settings were conservative.
+- Observed sporadic kube-proxy CPU spikes coincident with high conn churn; iptables programming latency increased.
+- Autoscaler did not add additional proxy nodes because horizontal-pod-autoscaler thresholds were on CPU, not ephemeral-socket-metrics.
+
+Workaround implemented (temporary):
+- Support/ops increased proxy deployment replica count and restarted a subset of proxy pods sequentially to return to normal ephemeral-port distribution.
+- Applied temporary ip_local_port_range widening to 10240-65535 on the most impacted proxy nodes via a DaemonSet (mitigation for existing nodes).
+- Asked customer to throttle concurrent streaming test to reduce immediate pressure.
+
+Resolution (current status):
+- Immediate customer impact mitigated — error rates dropped back to baseline by 11:05 UTC after replica increase and sysctl changes.
+- Two runtime pods were restarted and recovered; no persistent data loss.
+
+Follow-up / Remediation actions:
+1) Engineering: add ephemeral-port and TIME_WAIT metrics to ingress autoscaling signals and create alerting (SRE ticket created).
+2) Infra: propose default net.ipv4.ip_local_port_range expansion in prod images and add startup check to flag low ephemeral range.
+3) Product: document recommended client-side retry/backoff guidance for streaming APIs (avoid aggressive parallel retries).
+4) Ops: add a scheduled cron to review socket usage and a playbook for port-range widening.
+5) Post-incident: run a chaos test (simulated high-concurrency streams) to validate autoscaler triggers and kube-proxy behavior.
+
+Relevant links:
+- Slack: #support (thread ts: 2026-03-12T09:48:00Z)
+- Grafana: https://grafana.redwood.ai/d/ingress/ephemeral-ports?from=2026-03-12T09:30:00Z&to=2026-03-12T11:30:00Z
+- Runbook: https://confluence.redwood.ai/runbooks/ephemeral-port-exhaustion
+
+Next steps owner: Sofia Patel (SRE lead) — will coordinate infra and runtime fixes, target ETA for durable fixes: 2026-03-20.
+
+2026-03-12 10:01 - Support (Ava Martinez): Customer reported 18% 5xx spike; attached request IDs. Escalating to SRE. SLA clock started.
+2026-03-12 10:12 - SRE (Sofia Patel): Observed accept queue growth and high TIME_WAIT on proxy nodes. Spinning extra proxy replicas now. Requesting customer to reduce parallel streams.
+2026-03-12 10:35 - Engineering (Noah Kim): Confirmed runtime restarts correlated with upstream EPIPEs. Working hypothesis: NAT ephemeral exhaustion. Adding diagnostic flags to proxy logs.
+2026-03-12 11:10 - Ops (Maya Singh): Deployed sysctl widening to affected nodes; proxies redistributed ports. Error rate decreased to baseline. Continuing monitoring.
+2026-03-13 08:15 - Support (Ava Martinez): Customer confirmed services recovered and provided sample logs. Scheduling follow-up call to review retry behavior and guardrails.
+2026-03-14 09:00 - SRE (Sofia Patel): Created follow-up INT ticket for autoscaler signal changes and PR to adjust default net.ipv4 settings. See INT-350122.
+Mitigated: increased proxy replicas and widened ephemeral port range on affected nodes. Long-term fixes planned: autoscaler signal for socket pressure, prod image sysctl defaults, and client retry guidance.
+We identified and mitigated a burst of API 5xx errors caused by ephemeral port exhaustion on proxy nodes. We increased proxy capacity and widened port ranges; we will add socket-pressure autoscaling and update client retry guidance to prevent recurrence.
+Scaled proxy replicas and applied temporary sysctl changes to expand ephemeral port range; advised customer to reduce parallel stream concurrency until fixes are deployed.

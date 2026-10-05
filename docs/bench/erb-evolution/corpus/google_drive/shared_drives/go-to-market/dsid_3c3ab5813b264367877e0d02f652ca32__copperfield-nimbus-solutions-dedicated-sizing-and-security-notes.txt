@@ -1,0 +1,100 @@
+Copperfield Nimbus Solutions — Dedicated sizing + security notes (GTM working doc)
+
+Company: Copperfield Nimbus Solutions (copperfieldnimbus.com)
+Segment: mid-market collaboration SaaS (in-app assistant + enterprise doc search)
+Current sales posture (as of 2026-03-18): moving from Evaluation → Procurement/Legal (Dedicated). Forecast is still tentatively May but risk if procurement cycles.
+Primary contacts: Maya Chen (buyer/champion), Tom (infra lead).
+Redwood team: Diego (SE), Priya (CSM/Security).
+Hosted API trial validated UX/quality. Next phase is Dedicated primarily for (a) predictable tail latency under chat concurrency, (b) data isolation, (c) VPC connectivity. Customer is also asking for clearer unit economics for a mixed chat + embeddings workload.
+
+Updates vs earlier assumptions:
+- Their nightly embedding/index job is larger than first stated; they want a narrower window (finish before 06:00 local).
+- They walked back the strictest latency ask slightly for p50, but are more focused on consistent p95 during peak chat concurrency.
+- Security team confirmed SOC 2 + audit logs are required; data residency is now "US only" (not multi-region).
+Use cases: support-agent, doc-search, embeddings, reranking, summarization, chat.
+Traffic shape (latest projection from 2026-03-12 sizing follow-up):
+- Baseline: 60 QPS
+- Expected growth (6 months): 140 QPS
+- Peak: 260 QPS (daytime sync + product launches)
+Concurrency:
+- Planning for ~150 concurrent chat sessions at peak (KV cache active)
+Token mix (from Hosted trial + updated estimate):
+- ~55% short (<=64 tokens)
+- ~35% medium (64–512 tokens)
+- ~10% long (>512 tokens)
+Average tokens/request now modeled as:
+- avg request tokens ~200
+- avg response tokens ~160
+- combined per-request tokens ~360
+Monthly token forecast:
+- Base case: ~1.5B tokens/month
+- Burst/headroom planning: up to ~3.0B tokens/month during launch months
+Latency targets (customer-stated):
+- Chat: p50 < 180ms, p95 < 450ms under peak concurrency (measured from their app server)
+- Embeddings: throughput prioritized over single-request latency; must clear nightly batch within ~4 hours
+NOTE: This is a GTM working plan; final sizing pending last-mile model choice + safety/quality gate.
+
+Proposed tiers (3 environments):
+1) Dev/Staging
+- Goal: functional testing + smaller-scale load tests
+- Suggested: 1 small compute slice; allow queueing; minimal reserved
+
+2) Prod Baseline
+- Goal: cover ~60–140 QPS steady-state with stable p95 for chat
+- Suggested: reserve for baseline concurrency; allow burst scaling for periodic spikes
+
+3) Prod Peak
+- Goal: handle 260 QPS peaks + higher concurrent sessions during sync events
+- Suggested: additional reserved capacity OR pre-warmed burst window during known events
+
+Open model preference:
+- Customer prefers "medium/large" class models with fallback.
+- Updated preference: default medium model for most chat; fallback to smaller model for low-criticality requests and to protect p95 under burst.
+
+Autoscaling expectation:
+- They want a clear story for steady QPS + flash bursts (their sync jobs can ramp quickly). We should demo the scale-up behavior and the expected time-to-serve at peak.
+Customer requirements (confirmed on 2026-03-14 security follow-up):
+- SSO via SAML for admin portal (required)
+- SOC 2 report (required)
+- Audit logging (required) with retention: 13 months (same as earlier)
+- KMS integration (required); prefer customer-managed keys pattern
+- Data residency: US only (updated; previously discussed generically as "data residency")
+- VPC deployment + VPC peering (required)
+
+Additional asks that emerged:
+- They asked about SCIM provisioning (nice-to-have; not a hard blocker for initial launch).
+- They asked for a standard DPA + subprocessors list early in legal review.
+
+Network/VPC notes:
+- Blocker was "network peering details"; Tom confirmed they can do standard VPC peering with a fixed CIDR reservation on their side. Need to schedule a peering window and confirm any MTU constraints + routing rules.
+
+Audit log scope clarification (action item):
+- They want admin actions + model invocation metadata (request id, timestamps, org/project id), but do NOT want raw prompt/response in logs by default. (We should confirm our defaults and configuration knobs.)
+Earlier blocker: "clarify token pricing for mixed chat + embedding workload".
+Current direction discussed internally:
+- Present separate line items for chat/completions tokens vs embeddings tokens to keep the mental model simple.
+- Include committed throughput tier(s) plus burst pricing.
+- Provide a worksheet that maps their QPS/concurrency/token-mix assumptions into monthly cost ranges (base vs burst month).
+
+Customer sensitivity:
+- They are comparing vs OpenAI + Anthropic and an internal inference stack. Primary value props they cite: predictable latency + data isolation + simpler ops than in-house.
+As of 2026-03-18:
+- Finance approval: still pending (internal budget approval on their side)
+- Procurement/legal timeline risk: they requested DPA + subprocessors list before redlines
+- Technical: final confirmation of token mix under production UI launch (we only have trial data)
+- Success criteria: need explicit definition of "acceptable" p95 at peak + measurement methodology (their app server vs our gateway metrics)
+1) Diego: send updated Dedicated sizing v2 (baseline/peak) incorporating 60/140/260 QPS + 150 concurrent sessions. Due 2026-03-20.
+2) Priya: share SOC 2 package + audit logging overview + KMS integration pattern; include data residency (US-only) statement. Due 2026-03-19.
+3) Schedule VPC peering window with Tom + Redwood SRE (include CIDR/routing checklist). Target week of 2026-03-24.
+4) Pricing: deliver mixed workload worksheet with separate chat vs embeddings estimates + committed vs burst. Due 2026-03-22.
+5) Align on POC plan: autoscaling demo (steady QPS + flash burst) + fallback routing policy (medium → small) for non-critical traffic.
+2025-11-12 - Initial inbound via community trial sign-up (self-serve).
+2025-12-02 - Discovery call (Maya + Diego): collaborative knowledge + chat; KPIs discussed.
+2026-01-05 - Hosted API trial started (dev + staging integration).
+2026-01-20 - Trial snapshot: avg QPS 42, peak QPS 160 (batch sync), avg tokens/request 185.
+2026-02-07 - Dedicated intro + cost model; questions on reserved sizing + canary rollout.
+2026-02-18 - Capacity sizing workshop (Diego, Maya, Tom): concurrency + token mix assumptions.
+2026-02-26 - Security & compliance kickoff (Priya): SOC2 evidence + KMS pattern requested.
+2026-03-01 - Pricing follow-up sent (committed throughput tiers + discount math).
+2026-03-14 - Security follow-up: confirmed US-only data residency + audit log scope expectations.
+2026-03-12 to 2026-03-18 - Updated sizing inputs: baseline 60 QPS, growth 140 QPS, peak 260 QPS; concurrency 150 peak.

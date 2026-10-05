@@ -1,0 +1,202 @@
+Private (On‑Prem) Backup/Restore + Audit Log Retention Guide (Day‑2 Ops)
+
+h1. Purpose
+This page defines the supported backup/restore workflow and audit log retention/export patterns for *Redwood Private (on‑prem / restricted egress / air‑gapped)* deployments.
+
+It consolidates commonly-audited requirements raised by regulated customers (e.g., healthcare) including:
+- Encrypted backups with customer‑managed keys (CMK)
+- Clear separation of *cluster recovery (Kubernetes/etcd)* vs *application-level restore (Redwood control plane)*
+- Long-term audit log retention (7–10 years) with immutability/WORM patterns
+- Evidence artifacts for auditors (manifests, checksums/signatures, restore validation reports, exporter gap detection)
+
+h1. Scope and ownership model
+h2. What Redwood backs up (application-level)
+Redwood Private backups focus on *control-plane state and critical configuration* required for a deterministic redeploy:
+- Redwood control-plane configuration database
+- Redwood control-plane metadata/state required for tenant configuration and routing policy restoration
+- Redwood-managed Helm release versions + values (for Redwood components)
+- Redwood CRDs and Redwood-specific resources *as inputs to restore* (see pre-flight requirements)
+
+h2. What Redwood does NOT back up
+- *Kubernetes cluster recovery artifacts* (e.g., cluster-wide etcd snapshots) are owned by the customer’s Kubernetes operations practice.
+- Request payloads, prompt bodies, and inference content are not included in standard control-plane backups.
+- Raw secret material is *excluded by default* (see “Secrets handling”).
+
+h2. Boundaries: etcd restore vs Redwood restore
+Use two distinct runbooks:
+1) *Cluster recovery (customer-owned)*: recover Kubernetes control plane (including etcd) when the cluster is corrupted.
+2) *Redwood application restore (Redwood-supported)*: restore Redwood control-plane state into a *clean/rebuilt* Kubernetes cluster.
+
+Important: Restoring etcd snapshots that include stale Redwood resources can create conflicts (e.g., stale finalizers, CRD/version mismatches). For DR validation, prefer a clean cluster + Redwood restore.
+
+h1. Backup artifact format and integrity
+h2. Backup artifact components
+Backups are produced as an encrypted bundle with:
+- A *manifest* containing: backup ID, timestamp, software version(s), format version, component list, checksums, and restore prerequisites.
+- Encrypted payload(s) containing the backed-up control-plane data.
+
+h2. Integrity and tamper evidence
+- Each component is hashed; the manifest records checksums.
+- As of Private Toolkit v1.8+, manifests can be signed using *Sigstore/cosign (offline key mode)*. (Older deployments may still use GPG signatures; both are supported during migration.)
+- Optional policy: store backup artifacts in immutable/WORM storage for stronger tamper resistance.
+
+h1. Encryption model (CMK, air-gap, KMS/HSM)
+h2. Envelope encryption (DEK/KEK)
+Backups use *envelope encryption*:
+- Backup data is encrypted with a *Data Encryption Key (DEK)*.
+- The DEK is wrapped by a *Key Encryption Key (KEK)* controlled by the customer’s KMS/HSM.
+- Only wrapped DEKs are persisted; DEKs are intended to be ephemeral in memory.
+
+h2. Supported key providers (on-prem)
+The Private key provider interface supports:
+- On-prem KMS services with an HTTP API via the provider layer
+- HSM integration via *PKCS#11* (commonly used for Thales/Entrust setups) where operationally permitted
+
+Notes:
+- Exact compatibility depends on HSM policy (wrap/unwrap allowed, key types, network segmentation). Validate permitted operations early.
+- Restore requires unwrap access; if the HSM disallows unwrap in the restore environment, restore will fail by design.
+
+h2. KMS/HSM availability behavior
+Default posture is secure-by-default:
+- If KMS/HSM is unavailable at *backup time*: backup *fails* (default) to avoid producing artifacts that cannot be attested as encrypted under the customer KEK.
+- If KMS/HSM is unavailable at *restore time*: restore fails because the DEK cannot be unwrapped.
+
+A “break-glass local key” mode exists for specific non-production use cases, but it is *disabled by default* and requires an explicit configuration flag + logged approval.
+
+h2. Key rotation expectations
+Many regulated customers require annual rotation.
+- Backups created under an older KEK remain decryptable as long as the ability to decrypt old wrapped DEKs remains available (e.g., KMS key versioning).
+- If KEK versions are retired before the retention window, customers must rewrap or re-encrypt retained backups.
+
+Operational guidance:
+- Either retain KEK versions for the entire retention period, or schedule periodic rewrap to the active KEK.
+
+h1. Secrets handling (secure-by-default)
+h2. Policy
+The design intent is: *backup references, not secrets*.
+- The backup tooling excludes Kubernetes Secret values by default.
+- Backups may include references (secret names, external secret paths, KMS key IDs) needed to rehydrate secrets from the system-of-record.
+
+h2. If secrets exist only as Kubernetes Secrets
+If a customer keeps secret material only in-cluster, they must implement a separate secrets DR strategy (customer-owned). Redwood will not silently include secret plaintext in control-plane backups.
+
+h2. “Forbidden resource” validation
+As of Private Toolkit v1.8+, the backup verification step checks manifests for forbidden resource types (e.g., Kubernetes Secret payload inclusion). Misconfiguration should fail closed.
+
+h1. Storage targets and retention
+h2. Where backups can be written
+Backups can be written to:
+- NFS (common on-prem default)
+- S3-compatible object storage (recommended when immutability/object lock is required)
+
+h2. Retention enforcement
+Two layers exist:
+- *Tool-level retention* (e.g., keep N days) is available for convenience.
+- For regulated environments, prefer *storage-backend lifecycle policies* (harder to tamper with; supports dual-control workflows).
+
+h2. Immutability/WORM patterns
+Recommended patterns:
+1) Backups: checksums + signed manifest + restrictive write permissions; optionally replicate to immutable storage.
+2) Audit logs: export to object storage with immutability/object lock, or export to NFS then replicate to a compliance archive system.
+
+Ownership: Redwood produces the backup/export artifacts and provides supported runbooks; customers own the archival platform and retention configuration.
+
+h1. Restore workflow and validation (auditor-ready)
+h2. Restore pre-flight checklist
+Before restore, ensure:
+- Target cluster is healthy and time-synchronized (NTP). If drift exceeds policy threshold, restore should warn or fail.
+- Required CRDs exist at expected versions.
+- KMS/HSM connectivity and unwrap permission is validated.
+
+Default drift threshold guidance:
+- Warn at >200 ms drift
+- Fail at >1 s drift (customer may tune)
+
+h2. Restore validation report
+The restore workflow generates a report suitable for audit evidence. Typical fields include:
+- Backup ID, backup timestamp, restore timestamp
+- Backup format version, Redwood version
+- KMS provider identifier (not keys), unwrap success/failure
+- Checksums verified (yes/no) + counts
+- Components restored + ordering
+- Post-restore health checks executed and results
+
+Post-restore validations commonly include:
+- Control plane API readiness
+- Ability to list tenants and read routing policy configuration
+- Auth configuration loads successfully
+- Dependency connectivity checks
+- Optional smoke inference call (if a data plane is present and policy permits)
+
+h2. Restore drill cadence (recommended)
+For regulated environments:
+- Quarterly full technical restore drill into a clean cluster (preferred)
+- Monthly tabletop review of DR runbooks and access prerequisites
+- Staging environment monthly technical drill is common when feasible
+
+h1. Audit logs: export, schema, retention, and gap detection
+h2. Audit event scope
+Redwood Private emits audit events for control plane actions, including:
+- Configuration changes
+- Auth changes
+- Administrative actions
+- System events relevant to control-plane governance
+
+Audit logs do *not* include prompt bodies by default. For PHI-heavy environments, prompt/request logging is typically disabled by policy.
+
+h2. Export modes
+Two common patterns:
+1) *Near real-time* forwarding to SIEM for short RPO (minutes)
+2) *Batch export* to durable storage for long-term retention and immutability
+
+Supported batch export formats:
+- JSON Lines (JSONL) with stable fields (timestamp, actor, action, resource, result, correlation IDs)
+- Parquet (optional) for long-term cost/performance (where customers standardize on it)
+
+h2. Export reliability and evidence
+Exporter includes safeguards and evidence outputs:
+- Cursor/checkpointing to avoid pagination gaps
+- Metrics (Prometheus-style) including last-exported timestamp, event counts, failure counts
+- Optional “gap detection” checks to flag missing windows
+
+h2. Audit log RPO (cluster-loss window)
+If audit logs are stored locally before export, cluster loss can create a loss window.
+Best practice:
+- Stream to SIEM with an RPO measured in minutes
+- Run batch exports frequently enough to meet archival requirements
+
+h1. Evidence pack: what Redwood can provide
+Redwood-supported artifacts that customers commonly use for audits:
+- Supported runbooks for backup/restore and audit export
+- Backup job logs including backup IDs, timestamps, and outcome
+- Backup manifest per backup (format version, component list, checksums)
+- Signed manifest verification procedure (offline)
+- Restore validation report outputs
+- Exporter metrics and dashboards/alerts (or exported metrics snapshots)
+
+Customer-owned complementary evidence typically includes:
+- Tickets/change records showing scheduled execution and approval
+- Storage lifecycle/immutability configuration screenshots or policy exports
+- Access control/RBAC and HSM policy documentation (separation of duties)
+
+h1. Least privilege and separation of duties
+Recommended controls:
+- Backup writer service account: minimum required read access + write-only (append-only where possible) to the backup target.
+- Restore operator: can run restore workflows but should not directly access KEK unwrap permissions unless policy requires.
+- HSM/KMS policy enforces separation: operators can initiate workflows; key custodians authorize unwrap.
+
+h1. Air-gapped/offline bundle considerations
+- Offline bundles are delivered as signed artifacts with checksums.
+- No external network calls are required during install/upgrade in air-gapped mode.
+- Telemetry is optional and should be disabled in air-gapped deployments.
+
+h1. Operational FAQ (common customer questions)
+- *Does the backup contain PHI?* Standard control-plane backups should not contain request payloads or prompt bodies. Audit logs can contain identifiers depending on configuration; treat audit archives according to your compliance classification.
+- *Do you back up Kubernetes/etcd?* Not as part of Redwood control-plane backup. That is cluster recovery and remains customer-owned.
+- *Can we prove backups/audit logs weren’t tampered with?* Use checksums + signed manifests; prefer immutable/WORM storage for audit logs.
+- *What happens if KMS/HSM is down?* Backups fail by default; restores fail until unwrap capability is available.
+
+h1. Change log
+- 2026-03-10: Updated signatures guidance to cosign (offline) as primary; documented PKCS#11 HSM support; added JSONL+Parquet export options; clarified secure-by-default break-glass behavior.
+- 2025-06-18: Added exporter gap detection and Prometheus metrics evidence recommendations.
+- 2025-02-25: Initial publication based on regulated customer security reviews (on-prem backup/restore + audit retention requirements).

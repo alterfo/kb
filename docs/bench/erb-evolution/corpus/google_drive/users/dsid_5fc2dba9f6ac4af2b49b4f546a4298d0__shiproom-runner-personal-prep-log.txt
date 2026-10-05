@@ -1,0 +1,87 @@
+Shiproom runner: personal prep log and sticky notes
+
+Purpose: quick, scannable personal notes for running the shiproom and weekly readiness sync. Organized as prep items, live-run cues, and follow-up actions. Not a polished playbook — my sticky running list + prompts to escalate.
+
+DAY-BEFORE / 24-48H CHECKS (quick hits)
+- Validate Dedicated pool health dashboard (console > Dedicated > Pool-5). Look for 90th pct latency spike > 20% vs baseline. If spike: page SRE and tag 'pool-5'.
+- Confirm model pin assignments for weekend rollouts: model = rwx-v2-quant, pinned to image-2026-02-28. Cross-check with model-catalog ticket.
+- Ensure canary capacity reserved: 3 instances w/ low-priority burst. If not reserved, open ticket to infra (email infra-runbooks).
+- Verify last smoke-run results (smoke/last-run.json) — critical checks: health endpoints, prefix caching, stream stability. Mark any failing check with TODO.
+
+MEETING AGENDA (for my 10–15 min run)
+1) Quick status (30s each): Hosted API, Dedicated, Private — 3 bullet lines max.
+2) Go/No-Go candidate items (3) — call out owner for decision.
+3) High-risk regressions & mitigations (A/B, rollbacks, fallback).
+4) Open action items from last week (owners + ETA).
+5) Escalations and customer-impacting items.
+
+GO/NO-GO CHECKLIST (my shorthand)
+- Safety: latest canary passed golden prompt set? [yes/no] — if no -> NO-GO and block rollout. Owner: Priya.
+- Latency: 95th <= SLO (hosted) and Dedicated 90th within committed window? [ok/warn/fail] Owner: Jordan.
+- Throughput: capacity test at target qps for model variant (rwx-v2-quant) >= 90% predicted. Owner: Marco (perf eng).
+- Telemetry: traces + logs flowing to observability (no gaps > 5 min). Owner: Observability on-call.
+- Rollback plan: image rollback verified in staging (time-to-recover < 10m). Owner: me (Aisha) — pre-check: rehearse command set.
+
+LIVE-RUN CUES (during shiproom)
+- If latency alert fires: call out metric, ask SRE to confirm impact (hosted vs dedicated). If impact is hosted only -> consider global throttles, otherwise trigger capacity burst.
+- If canary fails: pause rollout, gather failing prompts, escalate to Applied ML for quality triage. Capture failing prompt examples in the meeting notes.
+- If control plane flaps: deploy cross-region fallback policy, set communication to CS + site-status.
+
+SMOKE-TEST QUICK-LOOK (ordered)
+1) /health (all regions) — expect 200 and healthy=true.
+2) golden prompt generation (3 variants) — check for coherent output and stable token length.
+3) streaming socket smoke (5 simulated clients) — no connection resets.
+4) KV cache hit-rate sanity check (> 30% for typical workloads).
+5) auth flow: token validation for dev key and prod key.
+
+RISKS I CARE ABOUT (notes to self)
+- Quantized model edge cases: hallucinations on long-context prompts unseen in evals. Watch for uptick in hallucination rate on live eval monitors.
+- Autoscale cold starts: small percentage of cold starts can push P95 over threshold. Keep warmup policy on for first 2h post-deploy.
+- Third-party infra patch windows (cloud provider) could impact Dedicated zones — pre-check weekly maintenance calendar.
+
+OPEN ACTIONS (make sure to call out in meeting)
+- A1: Priya — re-run golden prompt suite with latest model (due 2026-03-03). Status: running.
+- A2: Jordan — validate Dedicated pool latency anomaly root cause, post short RCA (due 2026-03-05). Status: investigating.
+- A3: Marco — confirm scaling headroom numbers for expected QPS spike; provide conservative headroom estimate (due 2026-03-04).
+- A4: Aisha (me) — rehearse rollback commands in staging and record exact steps in private playbook (due 2026-03-02).
+- A5: Eng-sre on-call — add trace tag for canary requests to make debugging faster (due 2026-03-03).
+
+NOTES-TO-SELF / RUN-TIME SNIPPETS
+- Keep the Launch Channel pinned and set ephemeral notifications: only @here for major go/no-go decisions.
+- One-sentence status template for quick updates: "Area — short-state (ok/warn/fail) — top-1 mitigation if warn/fail". Use this when I call status.
+- If we need to delay: propose a 1-hour cool-down + redo canary after fixes.
+
+ESCALATION CONTACTS (quick)
+- SRE on-call (pager): pager.sre@redwood.internal — send with subject: "shiproom: [area] [short tag]"
+- Applied ML: priya.nair@redwood.com (for model-quality escalations)
+- Infra runbook slack: #infra-runbooks (use slash /runbook deploy-rollback)
+
+POST-MEETING FOLLOW-UP FORMAT (what I send to channel)
+- TL;DR (1 line)
+- Decisions (go/no-go + what changed)
+- Owners + actions (one-line per action with ETA)
+- Customer-facing items (any comms to CS + suggested text)
+
+EXAMPLE QUICK COMMS (copyable)
+- "TL;DR: Go for staged rollout (canary ok). Action: Priya to finish regression suite; Jordan to monitor Dedicated P95. Aisha to coordinate rollback rehearsal."
+- "Customer note (for CS): We observed intermittent latency in Dedicated pool during preflight; mitigation is increased warmup and a temporary capacity bump. ETA for final fix: 48h."
+
+MY PERSONAL CHECKLIST BEFORE HAND-OFF
+- Confirm notes & action items added to central release tracker (JIRA-RELEASE-2026).
+- Make sure ownership is explicit (no ambiguous "eng team" lines).
+- Leave a 15-min buffer after the meeting for async follow-ups and handover to ops.
+
+FRAGMENTS / THINGS I WANT TO INVESTIGATE (later)
+- Can we automate the canary prompt selection so it's representative of top-100 queries? (pitch to applied-ml)
+- Metric to add: per-model hallucination delta vs baseline (daily) — needs logging hook.
+- Explore a one-click rollback UI in console for small teams (longer-term product ask).
+
+END-OF-DAY LOG (fill after shiproom)
+- Outcome: [GO / NO-GO] — notes: _____
+- Actions I triggered: list with timestamps
+- Follow-ups I delegated: list with owner + ETA
+
+(Misc scratch lines)
+- remember: breathe. keep the meeting short. if debate > 3min, move to async deep-dive.
+
+-- Aisha

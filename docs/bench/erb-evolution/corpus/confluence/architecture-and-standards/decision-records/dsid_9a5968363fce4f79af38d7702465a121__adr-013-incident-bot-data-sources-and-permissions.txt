@@ -1,0 +1,221 @@
+ADR-013: Incident Bot v2 diagnostics data sources, permissions, and audit requirements
+
+## Status
+Published.
+
+## Date
+2025-02-14 (last updated 2025-04-08)
+
+## Owners
+- Primary: Security Eng / Authn & Authz (Kaitlyn Nguyen)
+- Co-owners: SRE Incident Automation (Miles Thornton), Platform Control Plane (Ethan Park)
+
+## Problem statement
+Incident Bot v2 will automatically attach deploy context, tenant-safe config diffs, and saturation/telemetry signals to incident threads (#incidents and #eng-oncall). To do this safely and reliably, we need to decide:
+1) Which internal systems are the sources of truth for each data type.
+2) How the bot authenticates and is authorized to access these sources (least privilege, tenant isolation).
+3) What audit events must be emitted for compliance and incident review.
+4) What alternatives we are explicitly not choosing (and why).
+
+This ADR governs production access for Incident Bot v2 diagnostics only. It does not change who can declare incidents, page, or manage incident metadata.
+
+## Decision summary
+Incident Bot v2 will retrieve diagnostics data only through well-defined service APIs (no direct DB queries) using a dedicated service identity with narrowly-scoped permissions. Privileged reads (tenant-aware config diffs and tenant-scoped telemetry) must emit structured audit events to the central audit log pipeline.
+
+Data sources are:
+- Deploy context: Deploy Metadata Export API (Release Engineering) + Service Registry lookup
+- Config diffs: Config Service Diff API (Platform Control Plane) with server-side redaction
+- Telemetry/saturation signals: Telemetry Query Service (Telemetry Platform) with query budgets + tenant-safe primitives
+- Error budget burn / SLO links: SLO Toolkit Link Generator (SRE)
+
+Access is:
+- Default: least-privilege bot scopes, tenant-safe fields only, redacted diffs, bounded telemetry queries
+- Elevated (break-glass): time-bound on-call escalation for Sev0/Sev1 incidents to access expanded config diff context (still redacted for secrets/PII) with additional audit requirements
+
+## Context and requirements
+### Functional requirements
+- The bot must attach a consistent “first 5 minutes” context payload for common incident classes:
+  - Deploy regressions (recent deploys, canary status, commit SHA, related PRs)
+  - Misconfiguration (feature flags, routing policy, quotas/rate limits, model pins) via diffs
+  - Saturation (GPU utilization, KV cache pressure, queue depth, scheduler/backpressure) + dashboard links
+
+### Security/compliance requirements
+- Strict tenant isolation: bot must not be able to enumerate other tenants or leak customer-specific details into Slack.
+- Slack is considered an internal tool but not a system of record for sensitive configuration. Therefore:
+  - Config diffs must be redacted server-side.
+  - Bot output must be “customer/tenant-safe by default”.
+- All privileged access must be auditable:
+  - Who/what accessed which tenant/service, from which Slack thread/incident context, at what time.
+  - The reason and severity level when break-glass is used.
+
+### Reliability requirements
+- Bot must remain usable during partial outages and elevated error rates:
+  - timeouts/retries/backoff
+  - caching and request coalescing
+  - graceful degradation: link to dashboards instead of live queries when upstream is unhealthy
+- Telemetry query cardinality and cost must be bounded.
+
+## Chosen data sources
+### Source-of-truth mapping
+| Data needed | Source | Access method | Notes |
+|---|---|---|---|
+| Recent deploys (service, image SHA, rollout phase, canary state) | Deploy Metadata Export (Release Eng) | Internal HTTP API: `deploy-metadata-export` | Primary source for “what changed”. No tenant data.
+| Service ownership + canonical service identifiers | Service Registry | Internal HTTP API: `service-registry` | Avoids joining deploy events by ad hoc tags.
+| Tenant-safe config diffs (flags, routing policy, quotas, model pins) | Config Service | Internal HTTP API: `config-service/diff` | Server-side redaction + allowlist.
+| GPU saturation + queue depth + KV cache pressure + scheduler backpressure | Telemetry Query Service | Internal HTTP API: `telemetry-query-service` | Enforces query templates, budgets, and label constraints.
+| SLO/error budget burn links | SLO Toolkit | Internal HTTP API: `slo-toolkit/link` | Produces parameterized URLs; no direct TSDB queries.
+
+### Rationale for each source
+1) **Deploy Metadata Export** was chosen over scraping CI/CD logs or GitHub because it directly encodes rollout phase/canary status and is already normalized for service/region.
+2) **Config Service Diff API** was chosen over reading from the config store directly because redaction and authorization must be enforced centrally and consistently.
+3) **Telemetry Query Service** was chosen over allowing the bot to query Prometheus/Clickhouse/Datadog directly because we need query budget enforcement, template constraints, caching, and a stable interface across deployment modes.
+4) **SLO Toolkit** was chosen over embedding complex dashboard URL logic in the bot because it centralizes link formats and ensures consistent region/route/time-window parameters.
+
+## Permission model
+### Identity
+Incident Bot v2 runs as a non-human service identity:
+- Name: `svc-incident-bot`
+- Environment: prod/staging identities are separate
+- Auth mechanism: mTLS + short-lived service tokens (issued via internal identity provider)
+- Slack: bot uses Slack app credentials for message rendering, but all internal data fetches must use the service identity above.
+
+### Authorization: scopes and policies
+Access is granted using service-to-service scopes. The bot will not have broad read access; it will have only the minimal diagnostics scopes.
+
+#### Baseline scopes (always enabled)
+- `deploy.read:metadata` (read-only deploy context)
+- `service-registry.read` (service lookup)
+- `config.read:diff_redacted` (tenant-safe diffs only; enforced allowlist)
+- `telemetry.read:diagnostics_templates` (only pre-approved query templates; bounded)
+- `slo.read:link_generator` (URL generation only)
+
+#### Restricted scopes (break-glass)
+- `config.read:diff_expanded_redacted` (expanded diff context; still secrets/PII redacted)
+- `telemetry.read:tenant_scoped` (tenant-scoped telemetry templates with stricter budgets)
+
+Break-glass is allowed only for:
+- Incident severity: Sev0 or Sev1
+- Time window: max 60 minutes per activation
+- Approved actors: on-call SRE and delegated incident commander roles
+- Mandatory justification: incident ID + short free-text reason
+
+### Where authorization is enforced
+- **Config Service** enforces tenant boundaries and redaction. Bot is never allowed to request raw config values for sensitive keys.
+- **Telemetry Query Service** enforces template selection, label constraints (no unbounded labels), and query budgets.
+- **Deploy Metadata Export** is read-only and contains no tenant-specific customer data; still requires service authentication.
+
+### Tenant isolation rules
+- The bot may request tenant context only when it can bind the request to a specific incident thread payload (service + region + tenant ID as provided by incident command metadata or explicit user input).
+- The bot may not:
+  - list tenants
+  - search tenants by name/email/domain
+  - query across all tenants for “top offenders”
+
+### Redaction rules (config diffs)
+Config diffs returned to the bot must be safe for Slack by default.
+
+Server-side redaction requirements:
+- Always redact:
+  - secrets/keys/tokens/certs
+  - any value matching known secret patterns (high-entropy strings, JWT-like forms)
+  - customer identifiers beyond Redwood tenant ID (e.g., email domains, org names) unless explicitly allowlisted
+- Allowlist categories (examples):
+  - feature flag boolean state and rollout percentage
+  - routing policy target model/version pins (as internal model IDs)
+  - quota/rate-limit numeric thresholds (no customer PII)
+
+Diff output constraints:
+- Truncate large diffs (default: first 50 changed fields) and provide “expand” action which still returns redacted results.
+
+## Audit logging requirements
+### Audit event triggers
+An audit event must be emitted when Incident Bot v2 performs any of the following:
+- Reads a tenant-scoped config diff (baseline or break-glass)
+- Uses break-glass to access expanded config diff context
+- Executes tenant-scoped telemetry templates (break-glass)
+
+Deploy metadata reads and SLO link generation do not require audit events by default because they are not tenant-sensitive; however, service-level access logs must still exist for operational debugging.
+
+### Required audit event fields
+Each audit event must include (minimum):
+- `event_name` (e.g., `incident_bot.config_diff.read`)
+- `timestamp`
+- `actor_type` = `service`
+- `actor_id` = `svc-incident-bot`
+- `requesting_user` (if initiated by an interactive Slack action): Redwood user ID and Slack user ID
+- `incident_id` and `slack_thread_ts` (or message permalink)
+- `severity` (Sev0–Sev3) when available
+- `tenant_id` (Redwood tenant ID)
+- `service` / `route` / `region` (as applicable)
+- `scope_used` (baseline vs break-glass scope)
+- `result` (success/denied/error/timeout)
+- `redaction_applied` (true/false) and `redaction_profile_version`
+
+### Retention and review
+- Retention: align with Security audit log retention policy (see “Incident Bot access audit”).
+- Review:
+  - Security Engineering performs monthly sampling for break-glass usage.
+  - SRE leadership reviews any spike in denied requests or unusual tenant access patterns.
+
+## Considered alternatives (and why we rejected them)
+### A) Direct database reads from config store or deploy tables
+Rejected.
+- Violates least-privilege and makes redaction/authorization harder to centralize.
+- Creates tight coupling between bot and storage schemas.
+- Increases blast radius if bot is compromised.
+
+### B) Allow the bot to query the primary metrics backend directly
+Rejected.
+- High risk of expensive queries and cardinality blowups during incidents.
+- Hard to constrain queries without a dedicated query gateway.
+- Query templates and caching are necessary to keep bot reliable under load.
+
+### C) Have responders run manual slash commands with personal credentials
+Rejected as the primary path (still allowed as fallback).
+- Inconsistent output and high cognitive load.
+- Adds friction during the first 5 minutes.
+- Personal credential usage complicates auditing and increases the chance of accidental leakage into Slack.
+
+### D) Render diagnostics only in Console (not in Slack)
+Rejected.
+- Slack is the operational control plane during incidents. Requiring context switching delays triage.
+- Console deep links are still required, but Slack needs the summarized “card” view.
+
+## Consequences
+### Positive
+- Strong security posture with tenant-safe defaults and centrally enforced redaction.
+- Clear operational boundaries and query cost controls via Telemetry Query Service.
+- Auditability for sensitive reads supports compliance and post-incident investigations.
+- Data source interfaces are stable and versionable (APIs, not storage).
+
+### Negative / tradeoffs
+- Additional engineering work to maintain query templates, budgets, and redaction profiles.
+- Some investigations may require break-glass flows, which adds process overhead.
+- If a source API is down, bot cards may degrade to links/cached results.
+
+## Implementation notes
+- Bot requests must include an idempotency key derived from (incident_id, thread_ts, card_type, time_window) to support retries.
+- Telemetry Query Service should support:
+  - per-template maximum time range (default 30 min)
+  - per-request cost budget
+  - response caching (e.g., 60–120 seconds) and request coalescing
+- Config Service Diff API should support:
+  - diff against last known good config version
+  - partial propagation awareness (return propagation status where available)
+  - redaction profile versioning and test coverage to prevent regressions
+
+## Open questions
+- Do we need audit events for non-tenant telemetry reads if the request includes customer-impact hints (e.g., “top tenant by error rate”)? Current decision disallows those queries; revisit if requirements change.
+- Should break-glass activation require explicit incident commander acknowledgement in Slack (two-person rule) for Sev0? Proposed for future iteration if misuse becomes a concern.
+
+## Appendix: event names (recommended)
+- `incident_bot.config_diff.read`
+- `incident_bot.config_diff.read_break_glass`
+- `incident_bot.telemetry.query_tenant_scoped`
+- `incident_bot.break_glass.activate`
+- `incident_bot.break_glass.expire`
+
+## Appendix: glossary
+- **Tenant-safe**: Data that does not contain secrets, PII, or customer-identifying information beyond Redwood tenant ID, and is safe to display in internal Slack channels.
+- **Break-glass**: Time-limited elevated access used during high-severity incidents, with mandatory audit and justification.
+- **Query template**: Pre-approved telemetry query shape with bounded labels and cost controls.

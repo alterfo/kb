@@ -1,0 +1,63 @@
+OpenAI Responses v9 streaming: tool-signal + backpressure framing (post-merge notes)
+
+Context
+- This doc captures updated notes after the merge of PR #62401 (OpenAI-compat: resilient chunking + tool-signal proxy for Responses v9) and what we learned in the first week of rollout.
+- Audience: DevEx + Hosted API + Serving Runtime engineers supporting the OpenAI-compatible Responses bridge.
+
+What shipped (still accurate)
+- Backpressure-aware streaming chunk framing and reassembly to avoid partial JSON / partial toolcall corruption when clients are slow or reconnect.
+- A lightweight tool-signal envelope that makes tool/function call boundaries deterministic across retries/reconnects.
+- Passthrough of determinism hints (seed + deterministic) and routing of a limited set of user metadata (trace/user tag) into response attributes and audit logs.
+
+Key updates since the PR description (newer / corrected)
+1) Reassembly window sizing changed
+- Original implementation notes referenced a fixed ~1KB reassembly window.
+- In production we saw avoidable fragmentation for larger tool arguments (esp. JSON schema + long strings). Follow-up tuning (PR #62544) sets the default reassembly window to 2KB with a capped growth policy (2KB -> 8KB) when the framer detects repeated boundary splits.
+- Rationale: keeps memory bounded under high fanout while reducing tool-arg split frequency.
+
+2) Tool invocation id generation finalized (security + determinism)
+- We kept crypto/rand for the tool invocation id (as requested in review) for collision resistance in multi-tenant environments.
+- Important nuance: for replay/idempotency we do NOT re-randomize ids on reconnect. The id is generated once at tool-call start and then replayed deterministically from the stream state when resuming.
+- We removed an earlier idea to use a deterministic hash of content because it risked leaking information across logs and increased accidental coupling to tool argument serialization.
+
+3) Tool-signal enablement behavior changed (compat simplification)
+- The PR text mentioned an explicit enable_tool_signal flag with default true for hosted.
+- Based on customer confusion in early support tickets, we changed semantics:
+  - Tool-signal is automatically enabled when tool calls are present (i.e., when the model emits tool-call events or the request includes tools).
+  - There is no per-request enable_tool_signal flag exposed on the public OpenAI-compatible surface.
+  - Private deployments can disable via server config: openai_compat.tool_signal_enabled=false.
+- Result: fewer “why did my tool-call boundaries change when I forgot the flag” issues; keeps compatibility closer to OpenAI streaming expectations.
+
+4) Seed / determinism naming alignment
+- Internally we still accept rng_seed and deterministic on the v9 request model.
+- On the OpenAI-compatible request surface we now accept both seed and rng_seed as synonyms (seed wins if both are provided).
+- On the response side we do not echo the seed value back (to match common OpenAI patterns). We only preserve deterministic behavior server-side and include a stable system_fingerprint-like field when available.
+
+5) Audit metadata allowlist tightened (privacy)
+- The PR description said allowlist was [trace_id, user_tag].
+- As of 2026-03-01 we also allow request_id (generated server-side) to help correlate reconnects without copying arbitrary user metadata.
+- Final allowlist for audit logs and response attributes:
+  - trace_id (if provided)
+  - user_tag (if provided)
+  - request_id (always generated)
+- Everything else is redacted/dropped (including nested metadata blobs).
+
+Rollout notes (what we observed)
+- Windows CI flake: fixed by moving the reconnect scenario to perf-canary harness and loosening the reconnect deadline slightly (net effect: fewer false failures, no product change).
+- Client reconnection behavior: the biggest practical win is preventing partial JSON parse failures when a reconnect happens mid-tool-args.
+- Latency: median unchanged; p99 for very slow clients improved because we avoid repeated parse/retry loops. Slight CPU increase in the bridge (~1–2%) due to additional framing bookkeeping.
+
+Known limitations / open questions
+- If a client ignores replay markers and concatenates duplicate frames, they can still produce invalid JSON. We’re compatible with well-behaved clients; we should document the replay marker semantics more clearly.
+- We still have a hard cap on buffered reassembly per stream; extremely large tool arguments can hit the cap and produce a controlled error. Need to decide whether we want partial tool-arg streaming support (probably not for v9 compat).
+
+Operator checklist (current)
+- Verify openai_compat.tool_signal_enabled=true in hosted envs.
+- Verify audit logs only contain trace_id, user_tag, request_id.
+- Ensure perf-canary scenario “responses_v9_stream_reconnect” is green before release cut.
+
+Quick reference: linked work
+- PR #62401: baseline implementation (framer + tool-signal + seed passthrough + metadata routing)
+- PR #62544: reassembly window tuning, docs corrections for tool-signal enablement
+- Linear ENG-5272: streaming reliability for responses bridge
+- Linear ENG-5319: toolcall idempotency

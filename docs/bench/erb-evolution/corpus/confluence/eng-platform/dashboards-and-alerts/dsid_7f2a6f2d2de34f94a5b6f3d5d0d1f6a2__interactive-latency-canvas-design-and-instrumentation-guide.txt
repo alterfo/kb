@@ -1,0 +1,246 @@
+Interactive Latency Canvas — Design & Instrumentation Guide (Model/Route timelines + Streaming vs Blocking)
+
+## Overview
+The Interactive Latency Canvas is a single exploratory dashboard that allows SREs, Runtime, and product owners to compare latency distributions across **models** and **routes**, with an explicit decomposition between **streaming** and **blocking** (non-streaming) response modes.
+
+This page is the implementation guide for:
+- Required **metrics + trace attributes**
+- Cardinality controls (what we will/won’t tag)
+- Dashboard panel requirements
+- Alerting recipes and validation steps
+
+## Goals
+1. Surface p50/p95/p99 latency by **model_version** and **route_name**, with a toggle for **io_mode = streaming|blocking**.
+2. Enable cohort-based comparisons:
+   - prompt length bucket (token-based)
+   - request shape bucket (short/medium/long *completion length*)
+   - KV-cache hit/miss
+   - client_region
+3. Provide explanatory overlays:
+   - KV-cache hit rate
+   - batch size distribution
+   - stream “first token” latency
+   - kernel variant selection frequency
+4. Link directly to pre-sampled traces (high p99, KV-miss, fallback) for root-cause drilldown.
+5. Provide alerting templates for **streaming regressions** (p95/p99) and **first-token latency** regressions.
+
+## Non-goals (explicitly out of scope)
+- Per-customer/org breakdown in the default dashboard (Dedicated customers may require private metrics routing).
+- Unbounded per-request dimensions (prompt hash, request id, user id, etc.).
+
+---
+
+## Instrumentation Requirements
+### Required dimensions (tags)
+All latency and first-token timing metrics MUST include the following tags:
+- `model_version` (string, e.g., `llama3.1-70b-instruct@2026-03-07`)
+- `route_name` (string, e.g., `chat.completions`)
+- `io_mode` (`streaming` | `blocking`)
+- `prompt_len_bucket` (token-based buckets; see below)
+- `kv_cache_hit` (`true` | `false` | `unknown`)
+
+Recommended additional tags where available:
+- `client_region` (coarse: `na`, `eu`, `apac`, `sa`, `unknown`)
+- `request_shape` (coarse: `short`, `medium`, `long`, `unknown`)
+
+### Prompt length buckets (UPDATED)
+To reduce cardinality and align with token-based capacity planning, prompt length buckets are defined in **tokens** (not characters):
+- `short`: `<128`
+- `medium`: `128–1024`
+- `long`: `>1024`
+
+Rationale: earlier char-based buckets produced inconsistent cohorting across tokenizers and languages.
+
+### Metrics (canonical names)
+The following metric names are the standard expected by the dashboard queries. If a service uses alternate names, add a translation layer in the metrics agent.
+
+**Latency histograms**
+- `inference.request_latency_ms` (histogram)
+  - Definition: end-to-end request latency from request acceptance to final response completion.
+  - Tags: required tags above.
+
+**Streaming first-token timing (UPDATED field name)**
+- `inference.first_token_latency_ms` (histogram)
+  - Definition: for streaming only, time from request acceptance to first token emitted.
+  - Tags: required tags above.
+
+**Chunk inter-arrival (optional, streaming only)**
+- `inference.stream_chunk_gap_ms` (histogram)
+  - Definition: time between consecutive chunks (or token batches) emitted.
+  - Tags: `model_version`, `route_name`, `io_mode=streaming`, `prompt_len_bucket`.
+
+**KV cache**
+- `inference.kv_cache_hit_total` (counter)
+- `inference.kv_cache_req_total` (counter)
+
+**Batching**
+- `inference.batch_size` (histogram)
+  - Tag: `kernel_variant` is allowed on this metric only if the allowed set is enumerated and stable.
+
+### Tracing attributes
+Traces should contain the following attributes to support drilldown from the dashboard:
+- `model_version`
+- `route_name`
+- `io_mode` (`streaming` | `blocking`)
+- `batch_id` (string or int; may be absent if not batched)
+- `kernel_variant` (string; constrained set)
+- `kv_cache_hit` (`true`|`false`|`unknown`)
+- `first_token_ts` (timestamp; streaming only) **(UPDATED: replaces `response_first_chunk_ts`)**
+- `internal_fallback` (`true`|`false`)
+- `error_code` (string; e.g., `timeout`, `oom`, `upstream_429`, `unknown`)
+
+**Note:** For legacy compatibility, services may emit both `response_first_chunk_ts` and `first_token_ts` during migration. The dashboard assumes `first_token_ts` when present.
+
+### Sampling policy (UPDATED)
+During rollout, use a stable baseline plus triggered escalation:
+- Baseline: **1%** trace sampling
+- Triggered: **100% sampling** for 15 minutes when any of the following conditions are met per (model_version, route_name, io_mode):
+  - p99 `inference.request_latency_ms` exceeds 2× the 7-day median, OR
+  - p95 `inference.first_token_latency_ms` exceeds 1.5× the 7-day median (streaming only), OR
+  - `error_code` rate exceeds 2%.
+
+SRE guidance: avoid a fixed 2% baseline unless incident-driven; use triggered sampling to manage cost.
+
+---
+
+## Cardinality Controls (must-follow)
+1. Do NOT tag metrics with:
+   - raw prompt length (numeric)
+   - request id / trace id
+   - customer org id (default pipeline)
+   - model prompt template id
+2. `route_name` must be a low-cardinality identifier (canonical route), not full URL paths.
+3. `kernel_variant` must not be attached to the main request latency histogram unless the number of variants is tightly bounded and reviewed.
+4. Enrichment must happen in the **metrics agent before aggregation**, and dashboards must query using the standardized buckets.
+
+Target guardrail: total series growth attributable to this work should be **<15%** in the primary metrics backend for Serving + Gateway.
+
+---
+
+## Dashboard Specification (Interactive Latency Canvas)
+### 1) Top-line selector
+Controls:
+- model_version
+- route_name
+- time window
+- io_mode toggle: streaming / blocking / both
+- compare axis (A vs B) for cohorts or model versions
+
+### 2) Latency skyline panel
+- Chart: p50/p95/p99 over time
+- Ability to overlay streaming vs blocking (stacked shading or side-by-side)
+- Click-to-drill: selecting a time region filters downstream panels
+
+### 3) Cohort panel
+Single-click cohorts with sparklines:
+- prompt_len_bucket
+- kv_cache_hit
+- request_shape
+- client_region
+
+### 4) Batch/Kernel overlay
+- Batch size histogram overlaid with p95/p99 spikes
+- Kernel variant frequency (top N) shown as a time series or stacked area
+
+### 5) Streaming inspector
+Streaming-only panels:
+- `first_token_latency_ms` p50/p95/p99
+- `stream_chunk_gap_ms` distribution (optional where available)
+
+### 6) Trace links table
+A table of sampled traces including “reason tags”:
+- high p99
+- kv miss
+- fallback
+- elevated first-token latency
+
+### 7) SLO heatmap
+Per model/route p95 breach frequency:
+- windowed by 1h / 6h / 24h
+- includes links to recent incident tickets and runbooks
+
+---
+
+## Alerting Recipes
+### Streaming p95 regression (recommended)
+Signal:
+- Metric: `inference.request_latency_ms` p95 where `io_mode=streaming`
+- Condition: p95 > **1.25×** 7-day median for **10 minutes**
+- Group by: `model_version`, `route_name`
+
+Routing:
+- Page if `customer_impact=high` model/route list; otherwise create ticket.
+
+Runbook link:
+- confluence://eng-sre/Runbook+Streaming+Latency+Regression
+
+### First-token latency regression (streaming)
+- Metric: `inference.first_token_latency_ms` p95
+- Condition: p95 > **1.5×** 7-day median for **10 minutes**
+- Add diagnostic links to:
+  - KV hit-rate
+  - batch size histogram
+  - kernel variant frequency
+
+### Blocking mode tail regression
+- Metric: `inference.request_latency_ms` p99 where `io_mode=blocking`
+- Condition: p99 > **1.3×** 7-day median for **15 minutes**
+
+---
+
+## Validation Checklist (Definition of Done)
+1. Dashboard deployed in **staging** with live data for at least **48 hours**.
+2. Metrics present and queryable:
+   - `inference.request_latency_ms` with tags: model_version, route_name, io_mode, prompt_len_bucket, kv_cache_hit
+   - `inference.first_token_latency_ms` for streaming paths
+3. Traces:
+   - trace attributes include `kernel_variant` and `first_token_ts` (streaming)
+   - dashboard trace link opens to a trace showing the required attributes
+4. Cardinality and performance:
+   - series growth <15% in the primary backend (or approved exception)
+   - p50/p95/p99 queries return in **<3 seconds** for a 1-hour window in prod
+5. Cohort filters correctly subset series and recompute percentiles.
+6. At least one alerting rule is created for streaming p95 regression with paging policy + runbook.
+7. QA checklist completed, including:
+   - compare streaming vs blocking for the same model/route
+   - validate first-token latency distributions match trace timing within ±5%
+
+---
+
+## Rollout Plan
+1. Land instrumentation PRs (metrics agent + trace attributes) behind a feature flag.
+2. Staging smoke tests + cardinality audit.
+3. Enable in prod read-only dashboard for 1 week (no alerts), validate performance.
+4. Enable alerts for the high-impact model/route allowlist.
+5. Two-week follow-up review:
+   - false positive rate
+   - sampling costs
+   - any required bucket tuning
+
+---
+
+## Appendix: Example metric emission (pseudo-code)
+```
+// request completion
+emit_histogram("inference.request_latency_ms", duration_ms, {
+  model_version,
+  route_name,
+  io_mode, // streaming|blocking
+  prompt_len_bucket, // short|medium|long
+  kv_cache_hit // true|false|unknown
+})
+
+// streaming only: first token
+emit_histogram("inference.first_token_latency_ms", first_token_ms, {
+  model_version,
+  route_name,
+  io_mode: "streaming",
+  prompt_len_bucket,
+  kv_cache_hit
+})
+```
+
+## Open Questions / Follow-ups
+- Add “model compare mode” (two model versions on the same route) as a separate dashboard enhancement.
+- Dedicated/private metrics routing for per-customer breakdowns.
+- Evaluate pre-computing p95/p99 for the top (model_version, route_name) pairs if query latency regresses.

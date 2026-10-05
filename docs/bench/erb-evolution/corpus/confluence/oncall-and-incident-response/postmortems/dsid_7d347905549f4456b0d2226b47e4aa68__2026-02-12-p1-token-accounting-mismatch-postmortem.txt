@@ -1,0 +1,31 @@
+P1 Incident Postmortem: Token accounting mismatch in usage exports
+
+## Summary
+On 2026-02-12, multiple customers reported that daily usage exports overstated output tokens for some chat requests. The hosted API itself was unaffected; the issue was limited to the usage aggregation pipeline and export files.
+
+## Severity
+P1
+
+## Customer impact
+- 17 customer workspaces had incorrect export rows for ~6 hours.
+- Billing invoices were not impacted because invoice generation uses a separate validated counter.
+
+## Timeline (UTC)
+- 16:03: First customer ticket opened.
+- 16:21: Support escalates; data pipeline team engaged.
+- 18:05: Mitigation: pause export generation; backfill after fix.
+- 22:10: Exports resumed with corrected logic.
+
+## Root cause
+A deduplication bug in the usage exporter treated retried streaming chunks as distinct completions when a request id changed across retry boundaries.
+
+## Detection
+Detected via customer tickets; monitoring did not include a reconciliation check between invoice counter and export counter.
+
+## Follow-up action items (count these)
+1) Add reconciliation job comparing invoice counter vs export counter per workspace per day; page on drift > 0.5%. Owning team: Eng SRE.
+2) Fix usage exporter dedup logic to use stable trace id across retries. Owning team: Eng Platform.
+3) Add contract test in the usage pipeline for streaming retry semantics. Owning team: Eng Platform.
+
+## Notes
+This postmortem is marked restricted because it references customer workspace ids in the internal incident timeline.

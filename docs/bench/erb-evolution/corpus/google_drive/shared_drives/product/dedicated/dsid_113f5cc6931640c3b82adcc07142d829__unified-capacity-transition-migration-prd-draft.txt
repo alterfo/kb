@@ -1,0 +1,213 @@
+Unified Capacity Transition (Migration PRD) — SLO-aligned Consumption + Dedicated Migration (Drive draft)
+
+Context / why this doc exists (Drive draft):
+- The Confluence PRD (2027-06-18) is the "formal" version, but we’ve had multiple updates from SRE + Finance since then.
+- This Drive doc is meant to capture deltas, open questions, and the updated requirements we’ll implement for pilot.
+- Goal: keep scope identical (Unified Capacity Transition), but update key numbers + API naming we agreed on in the 2027-07-29 working session.
+
+Executive summary:
+
+This document defines the product requirements, design constraints, rollout roadmap, pricing impacts, and release notes for the "Unified Capacity Transition" initiative. The initiative enables customers to move from legacy per-token consumption and ad-hoc reserved capacity models to an SLO-aligned consumption paradigm that unifies Dedicated reservations, hosted usage, and private deployments under a single migration playbook.
+
+Delta vs Confluence PRD (what changed since 2027-06-20):
+- Latency targets updated (SRE): p50 target loosened slightly for short sequences; p95 chat target tightened for the paid SLO bundles.
+- Billing dual-metering window reduced from 60 days to 45 days (Finance + Billing Eng) to reduce reconciliation tail.
+- Financial holdback reduced from 10% to 5% of first-month revenue (Finance), with a hard cap for large enterprise accounts.
+- API endpoints renamed to fit the new "capacity migration" namespace; legacy endpoints will be supported temporarily via alias.
+- Rollback target adjusted from 30 min to 45 min for high-QPS accounts; keep 30 min as best-effort for small accounts.
+
+Goals:
+- Provide a predictable migration path for customers on Dedicated capacity and legacy token billing to SLO-aligned bundles.
+- Maintain or improve customer latency SLOs during and after migration:
+  - Short sequences (non-chat): p50 <= 50ms target (previously 45ms), p95 tracked (no guarantee on Starter)
+  - Chat workloads: p95 <= 220ms for Standard+ bundles (previously 250ms) in supported regions
+- Prevent revenue regressions and make pricing transparent to customers.
+- Reduce operational overhead for account teams via automated migration tooling, billing reconciliations, and clear rollback policies.
+
+Non-goals:
+- This PRD does not change model internals, kernel selection, or per-model performance optimizations.
+- It does not replace existing enterprise contract negotiation workflows; those remain supported.
+
+Stakeholders and ownership:
+- Product (owner): Maya Thompson — overall initiative and PRD.
+- Eng Platform: Ravi Singh — migration tooling and rollout automation.
+- Eng SRE: Lina Gomez — SLO validation, monitoring, and incident readiness.
+- Finance: Alisha Verma — pricing modelling and revenue reconciliation.
+- Sales/CS: Account teams (named reps) — customer communications and approvals.
+- Legal (FYI): Jordan Lee — T&Cs update + SLO credit language.
+
+Success metrics (90-day post-rollout):
+- 85% of migrated customers meet their pre-migration latency SLOs within +/-10% of baseline.
+- Migration churn rate <= 2% attributable to performance regressions.
+- Average time-to-migrate (from opt-in) <= 14 days for customers with < 200M tokens/month.
+- Net new ARR uplift from SLO-aligned bundles >= 8% for migrated cohort within 3 months (lowered from 10% after Finance review of pilot incentives).
+
+Functional requirements:
+1) Migration offer types (API + Console)
+- Offer A: "SLO Starter Bundle" — best-effort latency (no percentile guarantee); discounted bundle for low-volume customers.
+- Offer B: "SLO Standard Bundle" — p95 latency SLO guarantee with transparent overage pricing.
+- Offer C: "Dedicated-equivalent Bundle" — reserved capacity equivalence with burst allowance and SLA.
+
+Notes:
+- We are keeping the three offers for now. Sales asked for fewer SKUs; we’ll revisit after pilot cohort.
+
+2) Migration UI and API endpoints
+- Console: Guided migration wizard (preview, cost estimate, staging run, apply, rollback).
+- API (updated naming):
+  - POST /v1/capacity/migrations/estimate
+  - POST /v1/capacity/migrations/start
+  - GET /v1/capacity/migrations/{migration_id}
+  - POST /v1/capacity/migrations/{migration_id}/rollback
+- Legacy aliases (temporary, behind feature flag, planned removal post-GA):
+  - POST /v1/migration/estimate
+  - POST /v1/migration/start
+  - GET /v1/migration/status
+  - POST /v1/migration/rollback
+- API auth: requires account admin role and signed acceptance of new T&Cs.
+
+3) Billing and reconciliation rules
+- Billing engine must support dual-metering window for up to 45 days (previously 60): customers are charged on both meters for reconciliation, with credits applied automatically.
+- Financial holdback: 5% of first-month revenue held in escrow to cover performance crediting if SLOs are missed.
+  - Finance addendum (pilot only): cap holdback at USD 250k per account to avoid odd enterprise reporting.
+
+4) Observability and quality guardrails
+- Per-account SLO dashboards (latency, error-rate, token consumption, tail-latency breakdown).
+- Auto-escalation: if p95 latency degrades > 20% relative to baseline for 6 consecutive hours, flip to mitigation mode (see Runbook).
+- Added guardrail (SRE request): regional saturation signal must be considered; avoid migrating multiple heavy accounts into same region window.
+
+Non-functional requirements:
+- Backwards-compatible APIs: endpoints must not break existing key flows.
+- Rollback time target:
+  - Best-effort rollback under 30 minutes for customers with < 1M QPS-equivalent requests.
+  - Target rollback under 45 minutes for high-QPS customers (>= 1M QPS-eq) due to cache warmup + routing propagation.
+- Storage: migration metadata retention for 365 days.
+- Data residency: migration operations must honor customer's region and VPC constraints.
+
+Design overview:
+- High-level approach: create a "migration orchestration" service that coordinates cost estimates, staged test runs against a canary route, and final cutover. The orchestration service communicates with: billing, routing, runtime control plane, monitoring, and the console.
+
+- Components:
+  - Migration Orchestrator (service): tracks state machine (estimate -> staging -> validate -> cutover -> reconcile -> archive).
+  - Estimate Engine: runs simulation using historical token traces + model profiles to produce cost and SLO risk assessments.
+  - Staging Proxy: routes a configurable percentage of production traffic to the new bundle variant for validation.
+  - Billing Reconciler: coordinates dual-metering and credits.
+  - SLO Validator: compares live metrics to baseline and flags pass/fail.
+
+API contract examples (updated endpoint paths):
+- Estimate request (JSON)
+POST /v1/capacity/migrations/estimate
+{
+  "account_id": "acct_123",
+  "lookback_days": 30,
+  "models": ["redwood/gemini-13b", "open/guanaco-7b"],
+  "target_bundle": "slo-standard"
+}
+
+- Example estimate response (abridged)
+{
+  "monthly_cost": "USD 12,400",
+  "predicted_p95_delta": "+12%",
+  "recommended_configuration": "burst_capacity=2000rps; quantization_profile=q3"
+}
+
+(Drive note: response example is intentionally flattened here because schema is still changing; Engineering will finalize fields in CAP-1842.)
+
+Migration phases and timeline (high level):
+- Phase 0 (Prep, 0-2 weeks): product sign-off, legal T&Cs update, pricing modelling finalized, pilot cohort selected.
+- Phase 1 (Pilot, 2-8 weeks): 5–10 reference customers, staging runs, end-to-end billing validation.
+- Phase 2 (Scale rollout, 8-20 weeks): self-serve console enablement, sales enablement docs, automated reconciliations.
+- Phase 3 (General availability, 20+ weeks): GA launch, public docs, migration incentives sunset.
+
+Timeline adjustment (pilot start):
+- Confluence doc had pilot recruitment start target 2027-07-05.
+- Updated: pilot kickoff target 2027-07-19 (two-week slip due to Billing Reconciler dependency + Legal redlines).
+
+Rollout steps (detailed numbered procedure):
+1. Prepare account profile and collect 30-day telemetry snapshot.
+2. Run Estimate Engine to generate cost + SLO risk.
+3. Present migration plan to customer via Console and Sales.
+4. If customer accepts, create staging proxy and route 1–5% traffic for 48 hours.
+5. Run automated SLO validation. If pass, increment to 25% for 72 hours.
+6. Final cutover window is scheduled; during cutover route 100% traffic and enable Billing Reconciler.
+7. Monitor for 72 hours; if any auto-escalation triggers, run rollback (documented in Runbook).
+8. After 45-day dual-billing window, finalize reconciliation and archive migration metadata.
+
+Runbook: auto-escalation and rollback (engineer-facing):
+- Trigger conditions:
+  - p95 latency increase > 20% vs baseline for 6h.
+  - Error rate increase > 1% absolute for 1h.
+  - Token consumption variance > 30% and billing delta > 15% projected.
+- Immediate actions:
+  1) On-call SRE receives page with affected account_id and baseline.
+  2) Migration Orchestrator toggles staging proxy to previous route.
+  3) Billing Reconciler marks account for manual review and applies interim credits.
+  4) Post-incident triage within 48 hours and customer-facing status update.
+
+Pricing and packaging implications:
+- Principle: preserve transparency and provide a clear economic mapping between token usage and bundle capacity.
+- Example pricing tiers (illustrative; not final, Finance still iterating):
+| Bundle | Monthly commit | Included tokens/mo | Burst | SLA | Overages |
+|--------|----------------|--------------------|-------|-----|----------|
+| Starter | $1,200 | 50M | 500 rps | best-effort | $0.00007/token |
+| Standard | $10,000 | 500M | 5k rps | p95 latency SLO | $0.00006/token |
+| Dedicated-equivalent | $45,000 | 3B | 20k rps | SLA-backed | negotiated |
+
+- Migration credits and incentives:
+  - Pilot incentive updated: 25% credit on the first month for pilots (previously 30%), plus an optional one-time professional services credit for the top 2 accounts if needed.
+  - Volume commitment discounts continue to apply post-migration.
+
+Roadmap and milestones (quarterly themes):
+- Q2 2027: Pilot cohort execution, Estimate Engine MVP, console wizard alpha.
+- Q3 2027: Billing Reconciler beta, expanded pilot, early self-serve flows.
+- Q4 2027: Scale rollout, analytics dashboards GA, CS/sales playbooks.
+
+Risks and mitigations:
+- Risk: Customers experience tail-latency regressions after bundling.
+  - Mitigation: Staging proxy with progressive traffic ramp + canary performance tuning.
+- Risk: Billing reconciliation disputes inflate finance workload.
+  - Mitigation: Automate credits, provide clear reconciliation reports, finance SLA with account teams.
+- Risk: Migration tooling introduces new surface area for incidents.
+  - Mitigation: Circuit-breaker patterns, per-account toggles, and 45-day metadata retention hot-access for audit (full 365-day archive retained).
+
+Developer notes and implementation constraints:
+- Orchestrator state machine must be idempotent; design to tolerate at-least-once events.
+- Ensure all calls to runtime control plane include reason and correlation_id for audit.
+- Migration UI must surface estimated risk categories (Low/Medium/High) and the primary driver (latency, token variance, model mismatch).
+- TODO (Eng): confirm whether migration_id is globally unique UUID vs per-account sequence.
+
+Planned release notes (draft):
+- Added migration wizard to Console to transition customers to SLO-aligned bundles.
+- New API endpoints:
+  - /v1/capacity/migrations/estimate
+  - /v1/capacity/migrations/start
+  - /v1/capacity/migrations/{migration_id}
+  - /v1/capacity/migrations/{migration_id}/rollback
+- Billing: dual-metering window support (up to 45 days) and automatic crediting for migration reconciliations.
+
+Appendices:
+A. Example migration checklist (for CS and Sales)
+1) Confirm customer's legal acceptance and billing contact.
+2) Run Estimate and review predicted p95 delta.
+3) Schedule staging window and collect required runbooks.
+4) Assign SRE on-call for the cutover window.
+5) Validate reconciliation report post-45 days.
+
+B. Example CLI snippet to start a migration (internal tooling)
+redwood migrate start --account acct_123 --bundle slo-standard --staging-percent 5 --contact "cs-rep@example.com"
+
+C. Ownership and contacts
+- Product owner: Maya Thompson (maya@redwood.ai)
+- Engineering lead: Ravi Singh (ravi@redwood.ai)
+- SRE lead: Lina Gomez (lina@redwood.ai)
+- Billing contact: Alisha Verma (alisha@redwood.ai)
+
+Open questions / TODOs (working list):
+- Do we require explicit customer acknowledgement for the 45-day dual-metering window in the UI, or is it covered in T&Cs?
+- How do we message the temporary legacy endpoint aliases to customers with existing automation?
+- For Dedicated-equivalent: do we allow partial-region commits or must it be region-fixed for the term?
+- Confirm if the p95 chat SLO (<= 220ms) applies universally or only to Tier-1 regions; if region-scoped, update bundle language.
+
+Document history:
+- 2027-07-02: Drive draft created from Confluence PRD for tracking deltas.
+- 2027-07-29: Updated billing window (45 days), escrow holdback (5%), API path rename, pilot slip.
+- 2027-08-04: Incorporated SRE latency target update and added legacy endpoint alias plan.

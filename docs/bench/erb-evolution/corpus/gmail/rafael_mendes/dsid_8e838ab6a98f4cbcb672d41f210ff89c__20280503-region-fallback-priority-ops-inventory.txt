@@ -1,0 +1,125 @@
+Regional fallback priorities & logs — post-call inventory
+
+From: Rafael Mendes <rafael.mendes@redwoodinference.com>
+To: Elena Ruiz <elena.ruiz@medthink.health>
+Cc: Monica Patel <monica.patel@redwoodinference.com>, Stephanie Nguyen <stephanie.nguyen@redwoodinference.com>
+Date: Fri, 3 May 2028 15:22:00 -0700
+Subject: Regional fallback priorities & logs — post-call inventory
+
+Thanks for the call earlier, Elena — good alignment on the high-level constraints. Per our discussion, I wanted to capture a short inventory of the items we need to confirm so we can scope a targeted technical deep-dive next week. I attached a simple diagram and an ops inventory CSV template to speed things up.
+
+Action items / clarifying questions for MedThink (please reply inline if easier):
+1) Residency / pinning: which datasets must remain in-region (EU-only / US-only)? You mentioned patient records must stay in the EU for EU patients; confirm whether backups/snapshots are allowed outside the EU if they are encrypted and access-controlled.
+2) Failover order and allowed cross-region replication: if a primary EU region is degraded, do you require warm-standby in the same region only, or is cross-region failover to US/APAC acceptable for short windows? Any maximum allowed RPO/RTO?
+3) Logs & telemetry: do MedThink logs contain PII/PHI (patient identifiers, SSNs, full names)? If yes, do you expect redaction at ingest, tokenization, or that logs be retained on-region only? What is your default retention window (you mentioned 90 days as a baseline during the call) and do you need longer-term archival (e.g., 1–7 years) for audit?
+4) Backups & snapshots: frequency expectations for DB/model snapshotting, and whether incremental backups may be stored cross-region. Are immutable snapshots required?
+5) Key management and attestations: will you require customer-managed keys (KMS/HSM) for on-rest encryption? Any need for HSM-backed key rotation logs delivered monthly?
+6) Audit evidence: please indicate the list of artifacts you need from Redwood to satisfy procurement/security (SOC 2, access logs, key rotation logs, model inference logs, redaction proofs).
+
+Proposed next steps (from our side):
+- We can run a focused tech session (45–60m) with our infra engineer and a solution architect to walk through pinning flows, failover scenarios, and sample log redaction patterns.
+- If you can populate the attached ops inventory CSV and return it, we’ll produce a draft MAM (mutual action map) with dates/cutovers.
+- We’ll also prepare a short export of how logs look today (sanitized sample) and a preliminary cost delta for region-locked storage vs cross-region backups.
+
+Attachments: REDWOOD_PINNING_DIAGRAM.pdf (diagram), medthink-ops-inventory-template.csv (CSV).
+
+Thanks again — I’ll coordinate scheduling once we see preferred attendees and availability.
+
+Best,
+Rafael Mendes
+Senior AE, Redwood Inference
+r.mendes@redwoodinference.com
++1 415-555-0184
+
+
+From: Elena Ruiz <elena.ruiz@medthink.health>
+To: Rafael Mendes <rafael.mendes@redwoodinference.com>
+Cc: Tom Baxter <tbaxter@medthink.health>
+Date: Sat, 4 May 2028 09:05:00 -0400
+Subject: Re: Regional fallback priorities & logs — post-call inventory
+
+Hi Rafael — thanks for the clear list. Below are our answers to help you scope the deep-dive; I pasted the items you asked for and added quick notes.
+
+1) Residency / pinning:
+- Patient clinical records (PHI) must remain in-region (EU) for EU patients.
+- Operational metadata (service-level telemetry that does not include patient-identifiers) can be replicated to US for analytics if pseudonymized and access controlled.
+- Backups of PHI: acceptable to store in US if encrypted with customer-managed keys and access is restricted to named personnel only — otherwise must stay in EU.
+
+2) Failover order and cross-region replication:
+- Preferred failover hierarchy: EU primary -> EU warm standby -> US emergency failover.
+- Cross-region failover to US is permitted only for declared emergency windows (max 4 hours), must be pre-approved in runbook.
+- Target RPO 15 minutes for active datasets; RTO target 30 minutes for critical APIs.
+
+3) Logs & telemetry:
+- Logs do contain limited PII (hashed patient IDs and occasional email addresses).
+- We expect redaction at ingest for any free-text fields that might include PHI; hashed IDs are acceptable if the hash keys are kept on-region.
+- Retention: default operational logs 90 days; audit logs 3 years. Long-term archival to our secure archive is possible after 90 days (encrypted, on-region if PHI).
+
+4) Backups & snapshots:
+- Daily incremental snapshots; weekly full snapshots.
+- Immutable weekly snapshots for 90 days for critical datasets. Cross-region incremental copies only for analytics (non-PHI) or encrypted/full-access restricted backups with CMK.
+
+5) Key management and attestations:
+- Prefer CMK (KMS) for PHI datasets. We will require proof of key rotation logs and monthly HSM audit extracts if HSM used.
+
+6) Audit evidence:
+- SOC 2 Type II report, access log exports (filtered to our account), key rotation logs, and one sample sanitized query/log bundle showing redaction.
+
+Attachments: PHI_handling_requirements.pdf (internal control summary).
+
+Availability: Tom and I are available Tue/Wed next week 10:00–12:00 ET for the technical deep-dive. If you can send an invite with a short agenda, we’ll confirm.
+
+Thanks,
+Elena
+Director of Security & Compliance
+MedThink Health
+elena.ruiz@medthink.health
+
+
+From: Rafael Mendes <rafael.mendes@redwoodinference.com>
+To: Elena Ruiz <elena.ruiz@medthink.health>
+Cc: Monica Patel <monica.patel@redwoodinference.com>, Stephanie Nguyen <stephanie.nguyen@redwoodinference.com>
+Date: Mon, 5 May 2028 09:10:00 -0700
+Subject: Re: Regional fallback priorities & logs — post-call inventory
+
+Great — that is very clear, thanks Elena. Quick confirmation of next steps from us and ownership: 
+
+- Rafael: schedule the 60m tech deep-dive for Tue 10:30 ET (I’ll send the invite now) — agenda: pinning topology, failover runbook, log redaction patterns, and CMK flow.
+- Monica (Solutions): prepare two sanitized log samples (one operational, one audit) and a small runbook snippet showing redaction at ingest. Deliverable: shared Drive folder by Tue EOD.
+- Stephanie (Infra): draft a cost delta for region-locked snapshots vs cross-region incremental backups and include estimated storage + egress costs (deliver Thu COB).
+
+Elena — we’ll include a short section in the MAM covering the emergency failover approvals you mentioned (max 4 hours cross-region window). Also we’ll prepare a short template for the key rotation proof to match your monthly request.
+
+Attachments to be circulated after the meeting: example redaction config, sample sanitized logs, runbook snippet. We’ll also attach SOC 2 Type II in the Drive folder (redacted where necessary).
+
+If that all sounds good I’ll mark the deal record in HubSpot with the scheduled deep-dive and next-step tasks.
+
+Best,
+Rafael
+Senior AE, Redwood Inference
+
+On Fri, May 3, 2028 at 3:22 PM Rafael Mendes <rafael.mendes@redwoodinference.com> wrote:
+> Thanks for the call earlier, Elena — good alignment on the high-level constraints. Per our discussion, I wanted to capture a short inventory of the items we need to confirm so we can scope a targeted technical deep-dive next week. I attached a simple diagram and an ops inventory CSV template to speed things up.
+> 
+> Action items / clarifying questions for MedThink (please reply inline if easier):
+> 1) Residency / pinning: which datasets must remain in-region (EU-only / US-only)? You mentioned patient records must stay in the EU for EU patients; confirm whether backups/snapshots are allowed outside the EU if they are encrypted and access-controlled.
+> 2) Failover order and allowed cross-region replication: if a primary EU region is degraded, do you require warm-standby in the same region only, or is cross-region failover to US/APAC acceptable for short windows? Any maximum allowed RPO/RTO?
+> 3) Logs & telemetry: do MedThink logs contain PII/PHI (patient identifiers, SSNs, full names)? If yes, do you expect redaction at ingest, tokenization, or that logs be retained on-region only? What is your default retention window (you mentioned 90 days as a baseline during the call) and do you need longer-term archival (e.g., 1–7 years) for audit?
+> 4) Backups & snapshots: frequency expectations for DB/model snapshotting, and whether incremental backups may be stored cross-region. Are immutable snapshots required?
+> 5) Key management and attestations: will you require customer-managed keys (KMS/HSM) for on-rest encryption? Any need for HSM-backed key rotation logs delivered monthly?
+> 6) Audit evidence: please indicate the list of artifacts you need from Redwood to satisfy procurement/security (SOC 2, access logs, key rotation logs, model inference logs, redaction proofs).
+> 
+> Proposed next steps (from our side):
+> - We can run a focused tech session (45–60m) with our infra engineer and a solution architect to walk through pinning flows, failover scenarios, and sample log redaction patterns.
+> - If you can populate the attached ops inventory CSV and return it, we’ll produce a draft MAM (mutual action map) with dates/cutovers.
+> - We’ll also prepare a short export of how logs look today (sanitized sample) and a preliminary cost delta for region-locked storage vs cross-region backups.
+> 
+> Attachments: REDWOOD_PINNING_DIAGRAM.pdf (diagram), medthink-ops-inventory-template.csv (CSV).
+> 
+> Thanks again — I’ll coordinate scheduling once we see preferred attendees and availability.
+> 
+> Best,
+> Rafael Mendes
+> Senior AE, Redwood Inference
+> r.mendes@redwoodinference.com
+> +1 415-555-0184

@@ -1,0 +1,236 @@
+Runtime 1.22 Release Notes — KV Cache Compaction + Tier-Aware Eviction
+
+## Summary
+Runtime 1.22 introduces **KV cache compaction** and **tier-aware KV eviction** to reduce GPU memory fragmentation and mitigate burst-driven tail latency (p95/p99) for sustained decode workloads with mixed sequence lengths.
+
+This release adds:
+- A **fragmentation-aware allocator health model** (new fragmentation metrics and allocator state tracking).
+- **Budgeted compaction** (time/bytes) integrated with the scheduler to avoid decode stalls.
+- A **tier-aware eviction policy** (LRU-by-sequence with safety constraints) to prevent opportunistic/chaotic evictions during bursts.
+- **Tracing spans and exemplars** to correlate compaction/eviction events with tail latency.
+- A **kill-switch** and rollout knobs to allow oncall to disable compaction/eviction quickly.
+
+Primary expected impact:
+- Lower tail latency variance during bursts and churn.
+- Reduced incidence of “allocator thrash” and fragmentation-driven OOM/forced shedding.
+- Minimal steady-state throughput impact when budgets are respected.
+
+---
+
+## Who is impacted
+**Internal:** Runtime, SRE, Release Engineering, Support, Solutions/CS, Product (Hosted + Dedicated).
+
+**External:** Customers on Hosted and Dedicated tiers (and Private if enabled by the account/cluster owner). There are no API surface changes; behavior changes are limited to runtime memory management under load.
+
+---
+
+## What changed (high-level)
+### 1) Compaction (new)
+The runtime can now **relocate KV pages** to increase contiguity in the KV arena when fragmentation exceeds a trigger threshold. Compaction is incremental and budgeted to limit latency impact.
+
+Key properties:
+- **Budgeted per scheduler phase** to avoid decode stalls (see “Default settings by tier”).
+- Uses safe stopping conditions; compaction yields when latency-sensitive work is queued.
+- Relocation is tracked with counters + traces; correctness is validated under cancellation/churn scenarios.
+
+### 2) Tier-aware eviction (new)
+When allocator pressure is high and compaction alone cannot restore headroom quickly, the runtime may evict KV entries based on:
+- **Tier priority** (lower priority tiers evicted first)
+- **Recency** (LRU-by-sequence)
+- **Safety constraints** (pinned sessions are not evicted; active decode is protected)
+
+Eviction is intended as a guardrail against burst-driven instability, not as a steady-state mechanism.
+
+### 3) Observability (expanded)
+Runtime 1.22 exports standardized fragmentation/compaction/eviction metrics and adds tracing spans for correlation.
+
+---
+
+## Default settings by tier (Runtime 1.22)
+Defaults are set conservatively for Hosted to prioritize tail latency stability, and are more permissive for Dedicated where customers trade cost/throughput vs. latency.
+
+> Note: All settings remain configurable by deployment profile. Private deployments default to off unless explicitly enabled.
+
+### Tier defaults table
+| Tier | Compaction | Eviction | Notes |
+| --- | --- | --- | --- |
+| Hosted (Shared) | ON | ON (tier-aware) | Strict budgets; aggressive guardrails + automated rollback criteria in rollout system. |
+| Dedicated | ON | ON (tier-aware) | Slightly higher compaction budgets; eviction thresholds tuned per pool. |
+| Private (VPC / On-prem) | OFF (default) | OFF (default) | Must be enabled per cluster after validating observability + headroom; recommended for bursty multi-tenant private clusters. |
+
+### Runtime flags (names + intended meaning)
+The following flags are referenced in docs/runbooks; exact propagation is via runtime config profiles.
+
+- `kv.compaction.enabled` (bool)
+- `kv.compaction.trigger_fragmentation_ratio` (float 0..1)
+- `kv.compaction.budget_ms_per_step` (int)
+- `kv.compaction.budget_bytes_per_step` (int)
+- `kv.compaction.max_steps_per_tick` (int)
+- `kv.eviction.enabled` (bool)
+- `kv.eviction.policy` (string; default: `tier_aware_lru`)
+- `kv.eviction.min_free_bytes_target` (int)
+- `kv.eviction.protect_pinned_sessions` (bool; default: true)
+- `kv.kill_switch` (bool; emergency disable compaction+eviction)
+
+### Recommended defaults (current Runtime 1.22 release train)
+Hosted (Shared):
+- `kv.compaction.enabled = true`
+- `kv.compaction.trigger_fragmentation_ratio = 0.30`
+- `kv.compaction.budget_ms_per_step = 2`
+- `kv.compaction.budget_bytes_per_step = 268435456` (256 MiB)
+- `kv.compaction.max_steps_per_tick = 1`
+- `kv.eviction.enabled = true`
+- `kv.eviction.policy = tier_aware_lru`
+- `kv.eviction.min_free_bytes_target = 1073741824` (1 GiB)
+- `kv.kill_switch = false`
+
+Dedicated:
+- `kv.compaction.enabled = true`
+- `kv.compaction.trigger_fragmentation_ratio = 0.35`
+- `kv.compaction.budget_ms_per_step = 3`
+- `kv.compaction.budget_bytes_per_step = 402653184` (384 MiB)
+- `kv.compaction.max_steps_per_tick = 1`
+- `kv.eviction.enabled = true`
+- `kv.eviction.policy = tier_aware_lru`
+- `kv.eviction.min_free_bytes_target = 536870912` (512 MiB)
+- `kv.kill_switch = false`
+
+Private (VPC / On-prem):
+- `kv.compaction.enabled = false` (default)
+- `kv.eviction.enabled = false` (default)
+- If enabling: start with Hosted-like budgets and confirm dashboards/alerts are wired (see Monitoring).
+
+Why these defaults:
+- Lower trigger ratios + strict budgets reduce the chance of compaction clustering into noticeable latency spikes.
+- Dedicated pools typically have more stable load and can tolerate slightly higher compaction work per tick.
+
+---
+
+## Monitoring guidance (SRE + customer-facing teams)
+### Dashboards to watch
+Use the standard KV compaction dashboard panels (see metrics standard page) and overlay with latency percentiles.
+
+Minimum panels during rollout/canary:
+- Fragmentation ratio over time (per model, per pool)
+- Compaction bytes moved / sec
+- Compaction step time (ms) and budget utilization
+- Eviction count / sec (broken down by tier + reason)
+- KV free bytes / headroom
+- Request latency p50/p95/p99 (decode-heavy routes)
+- OOM / forced shedding signals (if applicable)
+
+### Key metrics (names as exported in Runtime 1.22)
+Fragmentation + allocator health:
+- `runtime_kv_fragmentation_ratio` (gauge)
+- `runtime_kv_free_bytes` (gauge)
+- `runtime_kv_arena_bytes` (gauge)
+
+Compaction:
+- `runtime_kv_compaction_bytes_moved_total` (counter)
+- `runtime_kv_compaction_steps_total` (counter)
+- `runtime_kv_compaction_step_time_ms` (histogram)
+- `runtime_kv_compaction_budget_exhausted_total` (counter)
+
+Eviction:
+- `runtime_kv_evictions_total{tier,reason}` (counter)
+- `runtime_kv_eviction_bytes_total{tier,reason}` (counter)
+
+Correlation aids:
+- Tracing spans: `kv.compaction.step`, `kv.eviction.select`, `kv.eviction.execute`
+- Exemplars include: model, pool, tier, relocation bytes, and allocator watermark at time of action.
+
+### What “good” looks like
+- Fragmentation ratio stays below trigger most of the time; compaction is intermittent, not continuous.
+- Compaction step time remains near budget (e.g., ~1–3 ms) with low variance.
+- Evictions are rare and concentrated during bursts; eviction rate returns to near-zero post-burst.
+- p99 latency does not show synchronized spikes that align with compaction bytes moved.
+
+### Rollout guardrails (operational)
+SRE guardrails for Hosted canaries:
+- Auto-rollback if p99 latency regression exceeds SLO guardrail for a sustained window *and* correlates with compaction/eviction activity.
+- Page on elevated eviction rate accompanied by rising fragmentation ratio and falling free bytes.
+
+For Dedicated pools:
+- Use pool-specific baselines; confirm no sustained throughput degradation and no increase in cancellation-related errors.
+
+---
+
+## Rollout plan (Runtime 1.22)
+Phased rollout (typical):
+1. **Internal canary** (single region/pool; runtime-owned workloads)
+2. **Hosted subset** (small % of Shared pools; latency-sensitive routes prioritized)
+3. **Dedicated pools** (opt-in by pool; validate with customer success when needed)
+4. **Broader enablement** (expand by region/model profile)
+
+All phases require:
+- Metrics present and dashboards wired.
+- Confirm kill-switch propagation tested in the environment.
+
+---
+
+## Operational controls (kill-switch + troubleshooting)
+### Kill-switch
+If you suspect compaction/eviction is contributing to latency spikes or allocator instability:
+1. Flip `kv.kill_switch = true` for the impacted pool/cluster.
+2. Confirm within ~1–2 config propagation intervals that:
+   - `runtime_kv_compaction_steps_total` stops increasing
+   - `runtime_kv_evictions_total` stops increasing
+3. If the pool remains unstable, follow standard overload/backpressure procedures (route shifting, capacity adjustments).
+
+### Common symptoms and first checks
+- Symptom: p99 spikes during bursts
+  - Check: compaction bytes moved/sec and compaction step time histogram during the spike.
+  - Mitigation: reduce `kv.compaction.budget_ms_per_step` and/or increase `kv.compaction.trigger_fragmentation_ratio` slightly; if severe, kill-switch.
+
+- Symptom: elevated eviction rate
+  - Check: `runtime_kv_free_bytes` trend and fragmentation ratio; confirm tier breakdown.
+  - Mitigation: raise `kv.eviction.min_free_bytes_target` (evict earlier to avoid emergency shedding) or adjust tier weights; validate pinned session behavior.
+
+- Symptom: OOM / forced shedding
+  - Check: allocator headroom, fragmentation ratio, and whether compaction is making progress.
+  - Mitigation: temporarily enable eviction (if off), or adjust thresholds; consider capacity.
+
+---
+
+## Customer-facing notes (Support / CS)
+Suggested messaging (when asked):
+- “Runtime 1.22 adds KV cache compaction and safer eviction behavior to reduce fragmentation-related tail latency spikes during bursty workloads.”
+- “There are no API changes; improvements are in the serving runtime memory manager.”
+- “For Dedicated/Private environments, tuning is available if workloads have extreme churn or unusually long-lived sessions.”
+
+What to request from customers reporting tail latency spikes:
+- Time window + region/pool
+- Model + route details (chat vs generate)
+- Evidence of burst pattern (RPS, concurrency) and sequence length distribution if available
+- Traces (request IDs) so we can correlate with compaction/eviction spans
+
+---
+
+## Known risks / limitations (Runtime 1.22)
+- If budgets are set too high, compaction can become visible as latency spikes. Defaults are conservative for Hosted.
+- Eviction is intentionally conservative around pinned sessions; in some workloads, this may limit eviction effectiveness under extreme pressure.
+- Very high churn + frequent cancellations can stress relocation bookkeeping; the cancellation edge case fix is included in 1.22, but continue to monitor cancellation-related error rates.
+
+For details and mitigations, see the KV Cache Compaction Known Risks page.
+
+---
+
+## Owners / contacts
+- Tech lead (KV): Omar El-Sayed
+- Scheduler integration: Sofia Ivanova
+- SRE guardrails: Sean Gallagher
+- Observability standards: Allison Grant
+- Release train: Connor O’Brien
+
+---
+
+## Changelog pointers (implementation landing points)
+This release note corresponds to the Runtime 1.22 PR series covering:
+- Fragmentation metrics + counters
+- Core allocator compaction support
+- Scheduler budgeting integration
+- Tier-aware eviction policy
+- Tracing spans/exemplars
+- Kill-switch + config plumbing
+
+See linked PRs in the Linear epic ENG-4821 for full details.

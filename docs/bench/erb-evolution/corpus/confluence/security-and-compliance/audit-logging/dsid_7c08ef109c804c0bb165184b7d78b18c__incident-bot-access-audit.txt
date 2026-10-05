@@ -1,0 +1,251 @@
+Incident Bot v2 — Access Audit Logging (Config Diff + Privileged Telemetry)
+
+h1. Purpose
+This page defines the *audit logging requirements, event taxonomy, retention, and compliance review procedures* for Incident Bot v2 access to:
+- Tenant-aware configuration diffs (feature flags, routing policy, quotas, model pins) via the config service diff endpoint.
+- Privileged telemetry query primitives used to render saturation signals and diagnostic links.
+
+This is a *restricted* document because it describes internal security controls, audit event fields, and review cadence.
+
+h2. Scope
+*In scope*
+- Incident Bot v2 (Slack app + backend) access to privileged endpoints.
+- Read access to tenant-aware config diff API (redacted output) and privileged telemetry query service.
+- Break-glass elevation flows for Sev0/Sev1 incidents.
+- Audit pipeline reliability requirements and escalation.
+
+*Out of scope*
+- General audit logging for non-incident tooling.
+- Full incident management process (see on-call playbook).
+
+h2. Systems / data flows (high level)
+1) A responder invokes Incident Bot v2 in Slack (#incidents, #eng-oncall).
+2) Bot backend calls one or more internal services:
+   - *config-service* (tenant-aware diff endpoint)
+   - *telemetry-query-service* (bounded, tenant-safe query primitives)
+   - *deploy-metadata-service* (not privileged; included here only for correlation)
+3) Each privileged call emits an *immutable audit event* to the central audit pipeline.
+4) Audit events are streamed to the SIEM and stored in an immutable archive.
+
+h2. Guiding principles
+- *Least privilege:* bot uses a dedicated service identity with scoped permissions.
+- *Auditability:* every privileged read includes actor + purpose + tenant context + incident context.
+- *Data minimization:* audit payloads must not include secrets, raw configs, or query results.
+- *Deterministic correlation:* events must include identifiers to correlate across Slack thread, incident ID, and backend request.
+- *Operational usability:* security and SRE must be able to answer “who accessed what, when, why” within minutes.
+
+h1. Roles and identities
+h2. Service identities
+- *incident-bot-prod* (service identity)
+- *incident-bot-staging* (service identity)
+
+h2. Actors (human)
+When the bot performs an action triggered by an interactive Slack action (e.g., “Expand diff”, “Show tenant-level saturation”), the audit event must record:
+- Slack user ID (stable) and, where available, Redwood employee identity (SSO subject)
+- Whether the user is the currently paged on-call (best-effort)
+
+h2. Break-glass
+Break-glass access is allowed only for Sev0/Sev1 and requires additional audit events (see Event taxonomy).
+
+h1. Event taxonomy
+All events are emitted in the *Audit Event v3* format (central audit schema). Event *names* below are canonical.
+
+h2. Required events
+|| Event name || Trigger || Notes ||
+| incident_bot.config_diff.read | Bot requests a config diff for a tenant/workspace/environment. | Emitted even when diff is empty (to show access). |
+| incident_bot.config_diff.denied | Bot request is denied by authz policy. | Must include policy decision reason code. |
+| incident_bot.telemetry.query | Bot issues a privileged telemetry query (GPU/queue/KV cache/etc.) for incident context. | Must include query class + boundedness metadata (not raw query). |
+| incident_bot.telemetry.denied | Telemetry query denied by policy. | Include reason code + required scope. |
+| incident_bot.break_glass.activate | Break-glass flow is initiated and granted. | Must include approver mechanism (policy rule) and expiration. |
+| incident_bot.break_glass.deactivate | Break-glass expires or is revoked. | Include reason (expired/manual revoke). |
+
+h2. Optional / recommended events
+|| Event name || Trigger || Notes ||
+| incident_bot.slack_action.invoke | A user clicks a bot action that can trigger privileged calls. | Provides correlation even if downstream fails. |
+| incident_bot.privileged_call.failed | Downstream privileged call failed due to timeout/5xx. | Useful for detecting audit gaps vs upstream failures. |
+
+h1. Required audit fields
+All audit events MUST include the following fields (names shown as logical fields; actual field mapping is handled by the audit SDK).
+
+h2. Core fields (required)
+- *event_name* (see taxonomy)
+- *event_time* (RFC3339)
+- *environment* (prod/staging/dev)
+- *service* (e.g., incident-bot, config-service, telemetry-query-service)
+- *actor_type* (service | user)
+- *actor_id*
+  - For service actor: service identity name
+  - For user actor: SSO subject (if available) and Slack user ID
+- *request_id* (unique per backend request)
+- *correlation_id* (stable across fan-out calls within a single bot invocation)
+- *purpose* (incident_response | debugging | support_escalation)
+- *permission_scope* used (e.g., config:diff.read_redacted; telemetry:query.tenant_safe)
+- *authz_decision* (allow | deny)
+
+h2. Tenant + incident context (required when applicable)
+- *tenant_ref* (internal tenant/workspace identifier; do not log customer name)
+- *tenant_ref_type* (tenant_id | workspace_id | org_id)
+- *tenant_region* (if provided/known)
+- *incident_ref* (Sev incident ID if available; otherwise Slack thread timestamp)
+- *slack_channel_id* and *slack_thread_ts* (where action was invoked)
+
+h2. Privacy & data handling constraints (hard requirements)
+- DO NOT include:
+  - Raw config values
+  - Diff content
+  - Secrets, tokens, API keys
+  - Raw telemetry query strings
+  - Query results
+- OK to include:
+  - Counts (e.g., “diff_keys_changed=12”)
+  - Classifications (e.g., “query_class=gpu_utilization”, “time_range=15m”)
+  - Hashes of stable identifiers when necessary for minimization
+
+h1. Event payload guidance (by source)
+h2. Config diff access (config-service)
+When emitting incident_bot.config_diff.read:
+- Include *diff_type* (feature_flags | routing_policy | quota_rate_limit | model_pins | other)
+- Include *diff_window* (e.g., last 2h, since deploy X)
+- Include *redaction_mode* (always “customer_safe_redacted” for bot output)
+- Include *diff_summary_counts* (number of keys added/removed/changed) as a single string field
+
+*Important:* redaction is enforced in the config-service response. Audit logs must still record the access event even if the response is fully redacted.
+
+h2. Telemetry query access (telemetry-query-service)
+When emitting incident_bot.telemetry.query:
+- Include *query_class* (gpu_utilization | queue_depth | kv_cache_pressure | scheduler_backpressure | error_budget_burn | other)
+- Include *aggregation_level* (service/route/region) and whether tenant-specific filters were applied
+- Include *time_range* (e.g., 5m/15m/1h)
+- Include *query_budget* metadata (e.g., “max_series=200; max_points=600; timeout_ms=2500”)
+
+h1. Example events (sanitized)
+These examples are representative. Exact field names may differ based on the audit SDK mapping.
+
+h2. Example: config diff read (allowed)
+{code}
+event_name: incident_bot.config_diff.read
+environment: prod
+service: incident-bot
+actor_type: user
+actor_id: sso:00u2abc...; slack:U04ABC123
+purpose: incident_response
+permission_scope: config:diff.read_redacted
+authz_decision: allow
+tenant_ref_type: tenant_id
+tenant_ref: tnt_91f3c2
+incident_ref: INC-2025-0417
+slack_channel_id: C012INCIDENTS
+slack_thread_ts: 1739475002.012300
+request_id: req_9d2...
+correlation_id: cor_77a...
+diff_type: routing_policy
+diff_window: last_2h
+redaction_mode: customer_safe_redacted
+diff_summary_counts: changed=3; added=1; removed=0
+{code}
+
+h2. Example: telemetry query (denied)
+{code}
+event_name: incident_bot.telemetry.denied
+environment: prod
+service: telemetry-query-service
+actor_type: service
+actor_id: incident-bot-prod
+purpose: incident_response
+permission_scope: telemetry:query.privileged
+authz_decision: deny
+policy_reason: missing_scope:telemetry:query.privileged
+tenant_ref_type: tenant_id
+tenant_ref: tnt_91f3c2
+incident_ref: 1739475002.012300
+request_id: req_1aa...
+correlation_id: cor_77a...
+query_class: kv_cache_pressure
+time_range: 15m
+{code}
+
+h1. Retention and storage
+h2. Primary retention policy
+- *SIEM (searchable):* 400 days retention for all incident-bot privileged access events.
+- *Immutable archive:* 7 years retention in WORM/immutable storage (for compliance evidence and customer contractual obligations).
+
+h2. Storage locations and residency
+- Audit events are stored in region-aligned buckets/indices.
+- EU-scoped tenant events must remain within EU data residency boundaries for the archive (SIEM replication policy must preserve residency constraints).
+
+h2. Access controls for audit logs
+- Default access: Security Engineering and Compliance (named groups).
+- SRE read-only access: limited to incident-related lookups (time-bounded, incident_ref required).
+- All access to the SIEM indices containing these events is itself audited (SIEM native audit).
+
+h1. Review procedure (compliance + operational)
+h2. Ongoing monitoring
+Security Engineering monitors:
+- Audit pipeline health (ingestion lag, drop rate, schema validation failures)
+- Unexpected spikes in privileged access
+- Break-glass activations outside Sev0/Sev1
+
+h2. Monthly control check (owner: Security Engineering)
+Performed by: *Kevin Osei* (primary) or delegate.
+Steps:
+1) Pull last 30 days of incident_bot.config_diff.read and incident_bot.telemetry.query.
+2) Verify:
+   - Events include incident_ref + tenant_ref when applicable
+   - actor_id is present for interactive actions
+   - deny events are present for expected negative tests
+3) Sample 10 incidents (or 10% of incidents, whichever is larger):
+   - Confirm bot actions in Slack correlate to audit events (by slack_thread_ts/correlation_id)
+4) File findings in the Security Controls tracker and assign remediation owners.
+
+h2. Quarterly access review (owner: Security + Compliance)
+Performed by: *Marcus Lin* and Compliance partner.
+Steps:
+1) Review group membership for:
+   - Audit log read access
+   - Break-glass privilege approval roles
+2) Validate least-privilege alignment with current on-call rotations.
+3) Confirm break-glass activation counts and verify associated incidents were Sev0/Sev1.
+4) Record evidence snapshot (export of membership + sample events) in the compliance evidence repository.
+
+h2. Annual audit evidence package (SOC 2 / customer audits)
+The annual package must include:
+- Current event taxonomy and required fields (this page)
+- Retention configuration evidence (SIEM + archive)
+- Proof of monthly and quarterly reviews (tickets + exports)
+- Break-glass policy + sample activations with incident_refs
+
+h1. Break-glass requirements (Sev0/Sev1 only)
+- Break-glass is time-boxed (default 60 minutes; max 4 hours).
+- Activation requires:
+  - Incident severity (Sev0/Sev1)
+  - Incident_ref
+  - Requester identity (user)
+- Events required:
+  - incident_bot.break_glass.activate
+  - incident_bot.break_glass.deactivate
+- All privileged calls made under break-glass must include *break_glass=true* and *break_glass_session_id*.
+
+h1. Failure modes and required behavior
+h2. If audit pipeline is degraded
+- Privileged endpoints must *fail closed* if audit emission cannot be confirmed within the configured window, *except* for explicitly approved emergency policy (Security + SRE).
+- When fail-closed triggers, the bot should degrade gracefully in Slack:
+  - Post a message indicating diagnostics are limited
+  - Provide deep links to Console dashboards
+  - Provide manual fallback commands (non-privileged)
+- Emit incident_bot.privileged_call.failed with reason “audit_unavailable” where possible.
+
+h2. If Slack identity mapping is unavailable
+- Continue service-level audit logging.
+- Populate actor_id with Slack user ID only, and mark identity_resolution=partial.
+
+h1. Operational contacts
+- Primary owner (audit logging / SIEM): *Kevin Osei*
+- Security Engineering lead: *Marcus Lin*
+- Authn/Authz and tenant isolation: *Kaitlyn Nguyen*
+- SRE liaison: *Rafael Mendes*
+- Telemetry platform lead: *Logan Wright*
+
+h1. Change log
+- 2025-02-14: Initial version for Incident Bot v2 beta.
+- 2025-03-10: Added query_budget requirements and clarified “no raw query strings” rule.
+- 2025-05-06: Updated retention (400 days SIEM searchable + 7 year immutable archive) and added fail-closed guidance for audit pipeline outages.

@@ -1,0 +1,144 @@
+Edge Shadow Telemetry Contract for Private and Dedicated Evaluations
+
+Summary:
+This document defines the telemetry contract and operational workflow required to run edge and private shadow evaluations against customer-managed (Private) and Dedicated pools. The contract balances fidelity for quality checks (coherence, hallucination, embedding drift) with privacy, cost, and storage constraints specific to private deployments. It is intended for applied ML engineers, SREs running shadow orchestration, and oncall/regression teams performing triage and rollbacks.
+
+Goals and scope:
+- Provide a minimal, well-documented telemetry payload that all shadow evaluators must emit when running in Private and Dedicated environments.
+- Specify sampling, anonymization, retention, and encryption requirements to meet customer privacy/KMS constraints.
+- Define quality and regression gate metrics, thresholds, and alerting integration for early detection during shadow rollouts and quant/optimize migrations.
+- Describe triage playbook for any failing slices discovered by the shadow probes, including ownership and rollback criteria.
+
+Why this contract exists:
+Private and Dedicated deployments run under different constraints than Redwood-hosted evals: limited egress, stricter PII rules, and heterogeneous hardware/quantization variants. Without a standard contract, shadow telemetry is inconsistent and expensive to analyze. This contract ensures we get the telemetry needed to detect regressions while respecting privacy and cost.
+
+Telemetry payload spec (minimal required fields):
+Each shadow probe record must contain the following top-level fields (string or numeric types only):
+- probe_id: unique id for the probe run (uuid)
+- tenant_id: hashed tenant id (sha256 hex) or obfuscated alias; raw customer IDs MUST NOT be sent outside the private boundary unless agreed (see privacy section)
+- deployed_model: model name + version (e.g., redwood-7b-v2-quant8)
+- deployment_variant: one of [hosted, dedicated, private]
+- quant_profile: label of quant profile used (e.g., q8_fast_fp16_fallback)
+- hardware_tag: e.g., a100-40gb, t4-16gb, edge-x86-32g
+- prompt_family: short token describing probe set (e.g., billing_faq_anchors_v3)
+- seed_context_hash: sha1 of the prompt/context after canonicalization (for deduping; non-reversible)
+- latency_ms: observed end-to-end request latency in ms (int)
+- tokens_input: token count of input (int)
+- tokens_generated: token count generated (int)
+- top_level_metrics: comma-separated string of key metrics, e.g., coherence:0.82,hallucination:0.03,embed_cos_sim:0.67
+- error_code: empty string or standardized code (see appendix error-code-table)
+- timestamp_utc: ISO8601 timestamp
+
+Optional fields (when privacy & egress allow):
+- raw_response_snippet: up to 512 characters after PII redaction
+- annotator_score: numeric human score if annotator was used (0..1)
+- kv_cache_hit: boolean (true/false)
+
+Sampling and rate limits:
+- Default sampling rate for private shadow probes: 2% of production traffic or 1000 probes/day per tenant (whichever is smaller) unless explicitly configured for a campaign.
+- For Dedicated pools without egress, sampling may be increased during controlled experiments with customer approval; update deployment manifest.
+- System must support stratified sampling by prompt_family to ensure rare slices are captured (min 5 probes per slice per day if available).
+
+Privacy, encryption, and retention:
+- All telemetry leaving customer-managed network must be encrypted with the customer KMS key (AES-256-GCM envelope encryption).
+- tenant_id must be hashed; any reversible identifier requires documented consent and a signed customer exception.
+- raw_response_snippet must undergo automated PII redaction pipeline before export. Use our redaction library version >= v2.1.
+- Default retention: 30 days for detailed probe payloads, 365 days for aggregated metrics (daily rollups). For customers with longer retention requirements we must create a retention SLA and enable on-prem analytics hooks.
+
+Metric definitions and SLOs (shadow-eval quality gates):
+- Coherence (slice median): unit 0..1; alert threshold < 0.70; action: create incident, notify model-owner. Notes: Cohesion of multi-turn replies (see coherence rubric).
+- Hallucination rate (slice): unit fraction; alert threshold > 0.05; action: open P1 triage if sustained for 6 hours. Notes: Exclude benign OOD prompts after review.
+- Embedding cosine shift: unit delta; alert threshold > 0.12; action: schedule regression-bisect, tag model-version. Notes: Compare against anchor baseline.
+- Latency p95: unit ms; alert threshold > 2x baseline or > 1200ms; action: throttle rollout, rollback if tail persists. Notes: Baseline computed per hardware_tag.
+
+Alerting and integration:
+- Expose shadow-eval metrics to the Ops dashboard with tenant-scoped anonymized view. Use metric names: shadow.coherence.*, shadow.hallucination.*, shadow.latency.*.
+- Create automatic incidents when thresholds are breached for >= 30 minutes across >=3 prompt_families.
+- Add annotation to incidents indicating whether the failing probes used quantized model variants.
+
+Workflow: Shadow rollouts and gating (sequence):
+1. Prepare: define probe campaign with prompt_families, sampling rate, quant_profile, and expected traffic window. Owner: Applied ML engineer.
+2. Dry run: execute offline shadow run on a representative dataset; compute baseline metrics and generate an acceptance ticket.
+3. Shadow deploy: route sampled traffic to shadow instance (no user-visible change). Emit telemetry per contract.
+4. Monitor: dashboard shows live slice metrics. Automated gates evaluate every 5 minutes.
+5. Escalate: if a gate crosses alert threshold, follow triage playbook (see next section).
+6. Decision: canary -> promote, continue shadowing, or rollback per prescribed criteria.
+
+Regression triage playbook (short-form):
+- Initial assessment (15 minutes):
+  1. Confirm the alert: verify metric, affected prompt_families, and hardware_tag.
+  2. Check deployment context: quant_profile, kv_cache_hit, batch size, runtime kernel revision.
+  3. Correlate with infra alerts (GPU errors, memory pressure).
+- Isolation (30 minutes):
+  4. Reproduce with a deterministic probe replay locally (use replay-tool with probe_id).
+  5. Run welcome/regression bisect if applicable (see bisect playbook link).
+- Remediation (TBD cadence):
+  6. For quant-induced regressions: switch to fallback profile (q_fallback) and validate.
+  7. For model-quality regressions: escalate to model-owner and create a rollback if degradation persists > 2 hours.
+  8. Document root cause and add a probe to the longtail suite if it's a novel failure mode.
+
+Ownership and responsibilities:
+- Applied ML: define probe_families, baseline acceptance criteria, and annotation rubrics.
+- Eng-SRE: ensure telemetry pipelines, encryption, retention and dashboards are functioning; own incident runbook execution if infrastructure is implicated.
+- Runtime/Serving team: expose runtime tags (kernel revision, batch size) in telemetry and provide kernel rollback knobs.
+- Data-privacy/legal: approve any tenant identifier exceptions and retention extensions.
+
+Appendix A - Example telemetry payload (redacted, human-readable):
+- probe_id = 11111111-2222-3333-4444-555555555555
+- tenant_id = 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+- deployed_model = redwood-7b-v2-quant8
+- deployment_variant = private
+- quant_profile = q8_fast_fp16_fallback
+- hardware_tag = a10g-24gb
+- prompt_family = billing_faq_anchors_v3
+- seed_context_hash = a0c6f0e8c7b1e3
+- latency_ms = 420
+- tokens_input = 42
+- tokens_generated = 128
+- top_level_metrics = coherence:0.85,hallucination:0.00,embed_cos_sim:0.71
+- error_code = (empty)
+- timestamp_utc = 2026-02-07T18:22:31Z
+
+Appendix B - On-prem agent config (human-readable excerpt):
+agent name: shadow-forwarder
+batch_size: 500
+encrypt_with_kms: true
+kms_key_alias: alias/customer-tenant-123
+max_outbound_ops_per_min: 60
+retention_days: 30
+allowed_fields: probe_id, deployed_model, quant_profile, hardware_tag, prompt_family, seed_context_hash, latency_ms, tokens_input, tokens_generated, top_level_metrics, error_code, timestamp_utc
+
+Common commands and quick references:
+- Run a localized shadow replay: replay-tool --from probe_log --filter prompt_family=billing_faq_anchors_v3 --replay-count 200
+- Fetch recent failing probes: rw-metrics query --metric shadow.hallucination.rate --since 2h --filter quant_profile=q8_fast_fp16_fallback --output csv
+- Trigger temporary OpenEgress approval for extended sampling: infra-ticket create --type egress-exception --reason "Quant stress test" --owner eng-applied-ml
+
+Governance and exceptions:
+- Any deviation from the minimal payload requires a documented exception signed by Data-Privacy and the customer (if tenant-owned).
+- Extended retention beyond 90 days requires Security signoff and must include a justification for forensic needs.
+
+Onboarding checklist to adopt the contract:
+1. Add the telemetry contract to the deployment manifest (deployment-config).
+2. Verify the agent config matches allowed_fields and encryption settings.
+3. Execute a dry run with anonymized sample and verify metrics match local baseline within tolerance.
+4. Schedule a 2-week shadow window and monitor.
+5. If stable, include probes in daily longtail sweep and add new failing examples to probe-farm.
+
+Related references and docs:
+- shadow-to-prod-eval-continuity-guidelines (crosswalk)
+- quant-impact-synthesis-for-prompt-families (on quant analysis and profiles)
+- regression-bisect-and-blame-assistant (triage automation)
+
+Document change log:
+- 2026-01-12 (Maya Chen): initial draft and contract specification.
+- 2026-02-10 (Diego Alvarez): added sampling strategy and retention clarifications.
+- 2026-02-15 (Priya Raman): updated metric thresholds and triage timings after pilot run.
+
+Appendix C - Error-code table (short):
+- E000: OK
+- E100: Model timeout
+- E200: Runtime OOM
+- E300: Quantization fallback triggered
+- E400: PII-redaction-failed
+
+If you have questions or would like a walkthrough, contact the Applied ML team at applied-ml@redwood.example.com or create an adoption ticket in the Eng Platform board.

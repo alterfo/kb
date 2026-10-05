@@ -1,0 +1,180 @@
+Controlled Failover Test Results (Game Day) — 2026-01-15
+
+## Summary
+On 2026-01-15 we executed Game Day #1 for the Regional Failover Automation Upgrade. The exercise intentionally impaired **us-east** for a limited set of production traffic and validated our ability to (1) detect regional impairment using the new signal hierarchy, (2) safely shift traffic to **eu-west** using the failover controller with production guardrails, and (3) recover without oscillation.
+
+**Overall outcome:** Partial success. We met the primary objectives around safe traffic movement and recovery, but identified meaningful gaps in (a) signal corroboration timing, (b) dashboard annotations, and (c) client/streaming behavior during redirects.
+
+## Scope and setup
+### Workloads included
+- **Hosted API**: limited blast radius using allowlisted tenants + specific routes/models.
+- **Dedicated**: one internal test pool + one consenting pilot customer pool in “observe-only” mode (no automatic drain).
+
+### Regions
+- Primary region: **us-east**
+- Failover region: **eu-west**
+
+### Mode
+- Failover controller enabled with:
+  - **Dry-run ON for first 20 minutes** (recommendations only)
+  - **Approval hook required** for production execution
+  - Anti-flap timers per ADR-043
+
+### Key owners on the bridge
+- Incident commander / execution lead: **Rafael Mendes**
+- Failover architecture: **Miles Thornton**
+- Routing/policy: **Mina Haddad**, **Ravi Menon**, **Jordan Lee**
+- Observability: **Allison Grant**, **Sergio Costa**
+- Network reachability: **Victor Alvarez**
+- Support liaison: **Owen Phillips**
+
+## Success criteria (from test plan)
+| Criterion | Target | Result |
+|---|---:|---|
+| Detection to recommended action | ≤ 90s | **Met (62s p50; 88s p95)** |
+| Approval to traffic shift start | ≤ 2 min | **Met (1m 34s)** |
+| Traffic shift completion (allowlisted traffic) | ≤ 10 min | **Met (6m 12s)** |
+| Customer-visible errors during exercise | No sustained increase; transient ok | **Partially met** (transient 5xx/timeouts observed) |
+| No oscillation / uncontrolled rollback | None | **Partially met** (one automated rollback due to hold-down interplay) |
+| Post-failover steady-state in target region | Stable p95 within +30% | **Not met for one route** (tail latency spike) |
+
+## Timeline (UTC)
+> Notes: Times are from incident bridge log + controller audit events. Dashboards lacked some annotations (see Issues) so some points are reconstructed from logs.
+
+- **16:00** — Bridge opened. Preconditions reviewed (capacity headroom, paging routes, feature flags).
+- **16:07** — Controller dry-run enabled for allowlisted traffic policies.
+- **16:12** — Synthetic impairment introduced in **us-east** (network reachability degradation for a subset of edges + increased gateway error injection for test routes).
+- **16:13:02** — Region health aggregator begins marking **us-east** as *degraded* (reachability signal first).
+- **16:13:26** — Policy engine evaluates trigger hierarchy and produces **FailoverRecommendation: us-east → eu-west** for allowlisted routes.
+- **16:14** — On-call confirms corroboration signals (5xx burn + probe reachability).
+- **16:14:42** — Approval granted; controller execution toggled from dry-run to execute for allowlisted policies.
+- **16:15:10** — First routing policy flips applied (Hosted API allowlist).
+- **16:17** — Traffic starts shifting measurably (RPS down in us-east; up in eu-west).
+- **16:21:22** — Traffic shift effectively complete for the allowlist (~95% moved).
+- **16:24** — Noted tail latency increase in eu-west for one route/model combination.
+- **16:27** — Automated rollback triggered for one policy due to hold-down timer + “recovery” signal mismatch (see Issues #2). Partial rollback only.
+- **16:33** — Impairment removed in us-east.
+- **16:38** — Controller recommends return-to-primary for allowlisted policies; held due to dampening window.
+- **16:45** — Approved return-to-primary begins.
+- **16:52** — Return-to-primary complete.
+- **17:05** — Bridge closed; immediate hotwash begins.
+
+## Metrics snapshot
+### Failover timing
+| Metric | Value |
+|---|---:|
+| Time to first authoritative signal (reachability) | 24s |
+| Time to recommendation (policy decision) | 62s (p50), 88s (p95) |
+| Approval to first policy flip | 28s |
+| First flip to 95% traffic moved (allowlist) | 6m 12s |
+| Total “impairment start” to 95% moved | 8m 20s |
+
+### Customer impact (allowlisted traffic only)
+- **HTTP 5xx rate**: peaked at **1.9%** for ~3 minutes; baseline ~0.15%.
+- **Timeouts** (gateway): peaked at **0.8%** for ~4 minutes; baseline ~0.05%.
+- **p95 latency**:
+  - us-east: increased during impairment (expected)
+  - eu-west: for most routes within **+18%** of baseline after shift
+  - one route/model exceeded **+55% p95** for ~12 minutes (see Issues #1)
+
+### SLO / error budget
+- Multi-region availability SLO burn attributable to the exercise was within planned allowance for the allowlist, but we recorded:
+  - **Fast burn alert fired** once and auto-resolved after tuning window; categorized as **expected** but created paging noise (see Follow-ups).
+
+### Dedicated pool observations
+- No automated drain executed.
+- Drain readiness checks indicated eu-west headroom sufficient for the test pool, but the “safe-to-failover” gating computation was slow to update (capacity signal lag; see Issues #3).
+
+## What worked
+1. **Signal hierarchy behaved as designed**: reachability was authoritative and drove quick recommendation, with 5xx burn corroboration arriving shortly after.
+2. **Dry-run output was usable** for operator confirmation (recommended action + evidence signals).
+3. **Approval hook prevented accidental broad flip**; execution remained constrained to allowlisted policies.
+4. **Controller did not stampede**: rate limits and anti-flap guardrails prevented repeated flips despite noisy intermediate signals.
+
+## Issues found
+### 1) Tail latency spike in eu-west after traffic shift (one route/model)
+- **Symptoms**: p95 latency +55% for ~12 minutes; localized to a single route + model family.
+- **Likely cause**: capacity headroom computed at region level looked healthy, but queue depth for a specific GPU pool tier was saturated; routing did not account for per-pool constraints.
+- **Impact**: partial failure of “post-failover steady-state” success criteria.
+
+### 2) Unexpected partial rollback triggered by hold-down interplay
+- **Symptoms**: one policy rolled back to us-east while impairment was still partially active, due to “recovery” classification flipping earlier than expected.
+- **Likely cause**: reachability probes recovered for a subset of edges while 5xx burn was still elevated; rollback logic treated recovery as sufficient for that specific policy because corroboration requirements were met inconsistently.
+- **Impact**: operator confusion; increased churn in dashboards.
+
+### 3) Capacity signal lag for Dedicated gating
+- **Symptoms**: “safe-to-failover” gating for Dedicated updated slower than expected (minutes), reducing confidence in automation readiness.
+- **Likely cause**: aggregation interval + caching TTL in the capacity pipeline; missing jitter alignment with region health reads.
+
+### 4) Streaming disconnects during redirect
+- **Symptoms**: streaming clients experienced disconnects and did not always reconnect cleanly when redirected across regions.
+- **Impact**: most visible customer-facing issue; increases perceived downtime even when non-streaming succeeds.
+
+### 5) Dashboards lacked automation-driven annotations and consistent timestamps
+- **Symptoms**: hard to correlate flips, recommendations, and rollbacks with metrics without digging into logs.
+- **Impact**: slowed triage during the exercise; raises risk during real incidents.
+
+## Follow-up actions
+### Engineering tickets (priority ordered)
+1. **Fix streaming reconnect on region redirect**
+   - Owner: **Peter Holtz** / Runtime + Gateway
+   - Tracking: **ENG-2422**; related: **SUP-25322**
+   - Target: ship to production behind flag by **2026-02-07**
+
+2. **Adjust rollback corroboration rules + dampening**
+   - Owner: **Jordan Lee** (Policy engine), review with **Miles Thornton**
+   - Tracking: **ENG-2416** follow-up + ADR-043 tuning note
+   - Target: propose config change + tests by **2026-02-05**
+
+3. **Add per-pool capacity constraints into routing / failover gating**
+   - Owner: **Vanessa Ortiz** + **Ravi Menon**
+   - Tracking: **ENG-2414** extension
+   - Target: design + metric plan by **2026-02-12**
+
+4. **Add automation annotations to dashboards + incident timeline**
+   - Owner: **Allison Grant** / **Sergio Costa**
+   - Tracking: **ENG-2418** + internal support **INT-1149**
+   - Target: dashboards updated before next game day (**2026-02-15**)
+
+5. **Tune burn-rate alerts to reduce paging noise during controlled tests**
+   - Owner: **Tomáš Novák**
+   - Tracking: follow-up on **ENG-2418** rules; coordinate with SRE paging policy
+   - Target: adjusted thresholds + “planned test suppression” runbook section by **2026-02-09**
+
+6. **Capacity signal freshness improvements (TTL/jitter alignment)**
+   - Owner: **Allison Grant** + **Vanessa Ortiz**
+   - Tracking: new subtask under **ENG-2414**
+   - Target: implement and validate in staging by **2026-02-14**
+
+### Process / runbook updates
+- Update Hosted API regional failover runbook to include:
+  - “Known issue” guidance for streaming redirects
+  - How to interpret dry-run confidence and corroboration signals
+  - Explicit decision points for partial rollback scenarios
+  - Owner: **Kira Thompson**; tracking: **ENG-2423**
+
+### Support and customer comms
+- Support macro for “transient 5xx during planned routing test” reviewed and published.
+  - Ticket reference: **SUP-25310**
+  - Owner: **Owen Phillips**
+
+## Artifacts
+- Controller audit events (selected): linked in incident thread and stored in log index `failover-audit-prod-*` for 2026-01-15.
+- Dashboard set used:
+  - Failover signals overview
+  - Route-level error/latency panels for allowlisted traffic
+  - Region health (reachability + 5xx burn + latency burn)
+
+## Recommendations for Game Day #2
+- Tighten blast radius further: single route + single model family for first 15 minutes, then expand.
+- Require “per-pool headroom green” before shifting any Dedicated traffic.
+- Pre-announce internal-only status page entry to exercise comms workflow without confusing customers.
+- Ensure dashboard annotations are present and verified in a pre-flight checklist.
+
+## Appendix: test configuration (high level)
+- Allowlist: limited set of tenants tagged `tier=internal` and `tier=pilot`.
+- Controller: execute mode requires manual approval; max flips per hour enforced.
+- DNS/Anycast: no global DNS TTL changes executed during this test (routing policy only).
+
+---
+Document owner: Miles Thornton (Failover Architecture). For corrections to timeline/metrics, reply in the linked incident thread or file a doc change request in ENG-2426.

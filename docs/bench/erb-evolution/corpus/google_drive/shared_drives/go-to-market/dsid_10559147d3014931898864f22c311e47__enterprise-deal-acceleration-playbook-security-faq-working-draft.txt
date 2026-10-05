@@ -1,0 +1,176 @@
+Enterprise deal acceleration playbook + security FAQ (working draft)
+
+Purpose (keep this aligned w/ Confluence version, but this Drive doc is the working copy):
+This document is a single-source playbook for GTM + sales engineering when engaging enterprise prospects for Redwood Inference. It combines positioning and messaging for buyer personas, competitive battlecards, a repeatable POC and deal-acceleration checklist, pricing guidance and negotiation guardrails, a compact pitch-deck outline, and a prospect-facing security FAQ.
+
+NOTE: This is a working draft to incorporate field feedback from Feb/Mar 2026. Confluence page is now behind + still references some older thresholds and security phrasing.
+
+Executive summary:
+- Redwood Inference sells a production-first inference platform (Hosted API, Dedicated reserved capacity, and Private deployment) that optimizes latency, cost, and reliability for LLM-powered features.
+- This playbook focuses on enterprise deals (>= $50k ARR) that require SLA, audit evidence, and predictable capacity.
+- Primary win themes: predictable economics, deployment flexibility (hosted -> dedicated -> private), and production observability (token-level cost tracing, rollouts, regressions).
+
+Elevator pitches (30s):
+- For Engineering Leaders: "Ship LLM features reliably — Redwood gives predictable latency and token economics across hosted, dedicated, and private deployments, plus observability to catch regressions before customers do."
+- For Platform/Infra: "Standardize inference across teams with a single runtime and rollout tooling — same API, consistent metrics, and fine-grained cost controls for tenant isolation."
+- For Security/Compliance: "Private deployment options, KMS integrations, and audit-grade logs let you run sensitive workloads in a customer VPC or on-prem while preserving developer ergonomics."
+
+Positioning by persona (key messages + proof points):
+- Engineering / ML Engineers:
+  - Message: predictable throughput and latency with model lifecycle controls.
+  - Proof points (update): per-route latency SLOs are now communicated as workload-dependent targets; for curated models on Dedicated we typically see p95 90–150ms in customer benchmarks (avoid hard promise unless in contract).
+  - Runtime claims: continuous batching + KV cache can reduce token cost by ~10–40% depending on workload.
+- Platform / Infra:
+  - Message: unified runtime across environments reduces operational variance.
+  - Proof points: identical API surface, automated fallbacks to compatible model variants, autoscaling policies tied to commit tiers.
+- Product / PMs:
+  - Message: deliver differentiated LLM features faster and retain cost control.
+  - Proof points: two-week POC -> production patterns + built-in quality monitoring / eval integrations.
+- Security / Legal:
+  - Message: private deployment option, SOC 2 controls, encryption in transit and at rest, KMS/HSM support, and full audit logging.
+  - Proof points: SOC2 report excerpts under NDA, example audit-log retention policies, customer reference path.
+
+Competitive battlecards (short form):
+- General cloud AI endpoints (major cloud provider managed endpoints):
+  - Differentiator: Redwood focuses on inference economics + unified runtime for private/hybrid deployment; stronger tools for rollouts and regression detection.
+  - Pressure points: cloud endpoints may win on raw model variety and account consolidation; emphasize Redwood's predictable throughput and cost controls.
+- LLM API providers (hosted-first vendors):
+  - Differentiator: Redwood offers Dedicated pools and Private deployment for customers who need isolation or committed throughput.
+  - Pressure points: hosted-only providers can be simpler for small teams; push on enterprise risk, auditability, and capacity guarantees.
+- Inference infra vendors / self-hosted runtimes:
+  - Differentiator: Redwood bundles runtime optimizations + orchestration + support + observability; less engineering lift than building in-house.
+  - Pressure points: very large infra orgs may want full control — for those, highlight Redwood Private packaged options and on-prem support agreements.
+
+Suggested rebuttals / objection scripts:
+- "We can build this ourselves":
+  - Response: Building a runtime with production-grade autoscaling, KV cache, quantization profiles and rollouts is typically 9–18 months of focused effort. Redwood reduces time-to-production risk and provides measurable cost + latency telemetry out-of-the-box.
+- "We are worried about data residency":
+  - Response (update language): Hosted offerings are region-selectable; Dedicated and Private give stronger placement controls. For regulated customers we support customer VPC deployments; on-prem package available for specific requirements.
+- "How do you handle model regressions?":
+  - Response: Redwood Optimize ties quality monitoring to prompt/eval sets and raises regression alerts tied to rollouts. We support canary + auto-fallback policies.
+
+Deal acceleration playbook (updated cadence — field feedback says 16 weeks is too long as a default):
+- Default enterprise cadence (target): 10–12 weeks from first call to signature for deals that are not blocked on procurement.
+- Still keep a longer path for heavily regulated customers.
+
+1) Discovery (week 0–1):
+   - Owner: AE + SE.
+   - Actions: capture business KPI (latency targets, cost targets, SLA needs), compliance constraints, expected QPS + peak bursts, preferred deployment mode.
+   - Deliverable: discovery memo (1 page) + preliminary sizing estimate.
+
+2) Proposal & POC scoping (week 1–2):
+   - Owner: AE + Solutions Architect.
+   - Actions: define POC success criteria (latency, throughput, integration points), sample dataset rules, data handling plan (PII scramble or synthetic).
+   - Deliverable: POC plan and timeline (target max 3–4 weeks).
+
+3) POC execution (week 2–5/6):
+   - Owner: SE + Customer Eng.
+   - Actions: run POC in Hosted or Dedicated sandbox, run load profile, collect latency/cost traces, validate SDK integration.
+   - Success criteria (example): sustained p95 latency < target; per-token cost within 10% of estimate; no unresolvable quality regressions for key prompts.
+
+4) Security review + procurement (week 4–9):
+   - Owner: AE + Legal + Security Eng.
+   - Actions: lock down commercial terms, review DPA + SOC2 evidence, answer security questionnaire, finalize procurement timelines and SOW.
+   - NOTE: try to start security review in parallel with POC (do NOT wait for POC end).
+
+5) Pilot -> ramp (week 8–12):
+   - Owner: Customer Success + SE.
+   - Actions: production cutover plan, rollback policies, SLA handover, train internal ops.
+
+POC checklist (must-have items):
+- Sample traffic generator + expected QPS profile.
+- Representative prompt set + evaluation harness.
+- Performance trace access (token-level cost + latency heatmaps).
+- Security review package (DPA, SOC2 summary/attestation letter, network diagrams).
+- Contact list for escalation + support SLA.
+
+Pricing guidance and negotiation guardrails (framework, not fixed price list):
+- Pricing pillars:
+  - Hosted (usage-based): per-token generation/embedding rates with tiered volume discounts.
+  - Dedicated (reserved capacity): monthly committed GPU pools with guaranteed throughput and burst capacity add-ons.
+  - Private (VPC / on-prem): platform fee + deployment/setup + optional support contract.
+
+- Commercial play examples (illustrative ranges; confirm w/ Sales Ops + Finance):
+  - Small enterprise POC (3–6 months): Hosted credits + implementation services ($25k–$75k total TCV).
+  - Mid-enterprise (Dedicated small commit): $20k–$60k/month committed for predictable throughput.
+  - Large enterprise / Private: onboarding + platform fee $200k+ and support retainer.
+
+- Discount guardrails (UPDATED from Confluence):
+  - Volume discounts: predefined breaks at 250k, 2M, and 10M monthly tokens for hosted volume (old doc says 100k/1M/5M — that’s outdated).
+  - Committed-term discounts: 10–30% off list for 12–36 month reserved Dedicated contracts.
+  - Giveaways: implementation credits or extended trial (time boxed), not unlimited usage.
+  - Escalation path for exceptions (UPDATED): require approvals from Sales Ops + VP Sales for any discount > 30% OR any early termination concession.
+  - Notes to self: verify if Partner-led deals follow same threshold or require channel approval.
+
+Pitch deck outline (10–15 slides recommended):
+1) Title & hook: quick problem statement + proof point (latency/cost).
+2) Customer pain: common infra/ops problems with existing inference (cost surprises, rolling upgrades, regressions).
+3) Redwood solution: product overview (hosted/dedicated/private, runtime + console).
+4) How it works: runtime + routing + caching + rollout diagram (text diagram ok).
+5) Performance & economics: sample benchmarks, cost delta examples for common workloads.
+6) Security & compliance: deployment modes, KMS, audit logs, SOC2.
+7) Case study highlight: concise success metrics.
+8) POC plan & timeline: what we deliver in ~4 weeks.
+9) Pricing snapshot & next steps.
+10) Appendix: deeper tech proofs, integration checklist.
+
+One-page case study (sales-ready — customer-facing w/ permission):
+- Customer: FinTech SaaS (anonymized: "LeadingPaymentsCo")
+- Problem: inconsistent latency during peak billing window + cost overruns when using naive autoscaling.
+- Solution: Deployed Redwood Dedicated pool + KV caching + prefix caching for session prompts; integrated with existing SSO + KMS.
+- Outcome: p95 latency reduced from 430ms to 95ms during peak; per-token cost reduced by 28% due to caching + batching; 99.95% availability during billing cycles.
+- Contact / reference: Customer success path available upon approval.
+
+Security FAQ for prospects (short-form answers for AEs/SEs) — edits in this draft:
+- Q: Where is my data stored and how do you support region controls?
+  - A (updated detail): Hosted deployments are region-selectable and can be constrained to supported regions (currently US + EU + APAC; confirm exact region list in the deployment guide before stating specific cities). Dedicated and Private provide stronger placement control because capacity is reserved or customer-managed.
+
+- Q: Do you provide a private control plane or on-prem deployment?
+  - A: Yes — Redwood Private provides a customer-managed deployment (customer VPC or on-prem package). Air-gapped installation is available for regulated workloads on a case-by-case basis.
+  - NOTE: some teams are starting to say “Customer-Managed” instead of “Private” in customer conversations; align naming w/ PMM.
+
+- Q: How is data encrypted?
+  - A (updated): Data in transit uses TLS 1.2+ (TLS 1.3 supported where available). Data at rest is encrypted using AES-256. For Private deployments we integrate with customer KMS/HSM.
+
+- Q: What audit evidence do you provide?
+  - A (updated): SOC 2 Type II report available under NDA, system architecture diagrams, and audit-log exports (SIEM-compatible JSON). We can also provide an annual pen-test executive summary under NDA.
+
+- Q: What is your audit log retention?
+  - A (new + needs Security sign-off): Default retention is 18 months for platform audit logs in Hosted/Dedicated unless otherwise contracted; Private retention is customer-configured. (TODO: confirm w/ Security; Confluence still implies 12 months.)
+
+- Q: How do you handle PII / redaction?
+  - A: PII policies are handled via ingestion rules (redact or hash before storage). For POCs we recommend synthetic or redacted datasets; for production we integrate with customer data-masking pipelines.
+
+- Q: What SLAs and support tiers are available?
+  - A: Hosted: standard support with published uptime targets. Dedicated: SLA-backed uptime + throughput commitments; response + escalation per enterprise support tier. Private: configurable support with on-call options.
+
+- Q: Do you perform penetration testing?
+  - A: Yes — regular internal and annual third-party penetration tests. Summaries available under NDA.
+
+- Q: Do you have ISO 27001?
+  - A (update): Not certified yet; program is in progress. Do not commit to certification dates externally. Provide SOC2 Type II as primary evidence.
+
+- Q: Who owns the model outputs and telemetry?
+  - A: Customer retains ownership of their data + outputs. Telemetry required for billing and performance tuning is accessible via console + APIs; customers can request deletion per data retention policies.
+
+Operational playbook snippets (ops & enablement):
+- SE enablement kit: 1) one-week internal ramp with product engineer, 2) scripted POC runbook with load generator, 3) templated discovery memo, 4) security package bundle (DPA, SOC2, network diagram).
+- Escalation matrix: include primary SE, solutions architect, customer success manager, and head of enterprise success. Attach PS engagement SLA for technical escalations.
+
+Open questions / TODOs (keep in Drive, don’t publish to customer):
+- Confirm: token volume discount breakpoints (Sales Ops says 250k/2M/10M; need final from Finance).
+- Confirm: audit log retention default (Security).
+- Confirm: whether we can state TLS 1.3 as default vs “supported.”
+- Naming: “Private” vs “Customer-Managed” (PMM decision).
+
+Ownership & next steps:
+- Owner: Maya Patel (GTM enablement).
+- Reviewers needed before moving changes back to Confluence: Security, Legal, Sales Ops.
+- Action items:
+  1) SEs: validate the POC checklist during next 3 deals + add notes.
+  2) AEs: adopt discount escalation at >30% and route early termination asks to Sales Ops.
+  3) PM/Product: update performance benchmark table quarterly.
+
+Change notes:
+- 2026-03-10: Updated discount escalation threshold (>30%), updated hosted volume discount breakpoints, added audit log retention note (pending confirmation), added ISO27001-in-progress FAQ.
+- 2026-02-20: Copied structure from Confluence page for field-editing; started cadence update to 10–12 weeks and parallel security review.

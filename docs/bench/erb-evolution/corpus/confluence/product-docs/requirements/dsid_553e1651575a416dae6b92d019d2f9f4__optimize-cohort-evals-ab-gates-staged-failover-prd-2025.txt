@@ -1,0 +1,171 @@
+PRD (2025): Cohort-driven evaluation harness, graduated A/B gates, and staged failover for Optimize
+
+## Summary
+This PRD defines a production-ready evaluation harness for Optimize that:
+1) uses cohort-driven and sentinel prompt sampling,
+2) gates A/B rollouts with statistical + business thresholds, and
+3) implements a staged rollback/failover policy that escalates from automated throttles to cohort-level reverts to full rollback.
+
+The goal is to reduce undetected regressions while keeping rollout velocity high for model and configuration updates.
+
+## Background / Problem
+We have recurring incidents where model/config rollouts pass coarse checks but produce regressions in specific customer cohorts or long-tail prompts. Current canaries are per-model and global; they miss cohort-specific quality regressions and provide coarse binary pass/fail decisions.
+
+Optimize needs a more granular, actionable evaluation contract that ties observable signals to deterministic remediation steps and human-in-the-loop (HIL) triage when necessary.
+
+## Goals
+- Detect cohort-specific degradation with >90% recall for regressions causing >5% change in a business-impact metric.
+- Prevent silent regressions via sentinel prompt detection and progressive gating across traffic slices.
+- Reduce mean time to mitigation (MTTM) to under 20 minutes for high-severity regressions via deterministic rollback actions.
+- Enable safe rapid rollouts with objective pass criteria at each stage.
+
+## Non-goals
+- Improve underlying model training processes (this is a serving/eval policy change).
+- Replace manual post-deploy human QA for complex policy/regulatory cases.
+- Provide full auto-rollback for noisy low-signal metrics without human review.
+
+## Scope and Definitions
+### Cohorts (v1 taxonomy)
+Cohorts are deterministically assigned at request time using request metadata + customer/account attributes. The v1 taxonomy is:
+- Persona: developer, analyst, support-agent
+- Region: NA, EU, APAC
+- Flow: latency-sensitive, long-context, tool-calling, regulatory
+- Customer tier: top-enterprise, enterprise, growth, self-serve
+
+### Blocked cohorts (require HIL approval to ramp beyond 5%)
+Finalized list for v1:
+- EU-regulated flows (all tiers)
+- Top-10 enterprise customers (account list maintained by Customer Success; synced daily)
+
+## Requirements
+1) Sentinel prompt library
+- Maintain a versioned library of sentinel prompts organized by cohort (persona/region/flow/tier).
+- Include safety sentinels, reliability sentinels (tool-calling), and business-value sentinels (retention-sensitive / conversion proxies).
+
+2) Cohort labeling and bucketing
+- Deterministic bucketing at request time with a stable cohort key.
+- Cohort labels must be available in evaluation events and rollout decisions.
+
+3) Evaluation pipeline
+- Compute per-cohort metrics in near-real-time with a maximum 3 minute lag (updated from 5 minutes based on SRE sizing and on-call usability).
+- Support both online sampling (production traffic) and controlled replay (sentinel runs).
+
+4) Graduated A/B gates in Console
+- Gate rule configuration includes: minimum sample size, minimum detectable effect (MDE), alpha/beta, max allowed regression, and sustained-duration requirements.
+- Default statistical method updated: sequential testing is the default for low-to-mid traffic cohorts; fixed-horizon remains available.
+
+5) Staged rollback / failover engine
+- Actions include: throttling new variant traffic, cohort-level divert to previous stable variant, full rollback.
+- Each action is tied to explicit triggers and produces an auditable event in the release timeline.
+
+6) Human-in-the-loop (HIL)
+- HIL holds are required for blocked cohorts past 5% ramp.
+- HIL is required for ambiguous composite detector states.
+- Reviewer SLO: 30 minutes for P1 releases.
+
+7) Surfacing and alerts
+- Expose evaluation results and runbook links in Console release UI.
+- Alert integration for Slack + PagerDuty with cohort breakdown and recommended action.
+
+## Acceptance Criteria
+- Sentinel library: >= 650 prompts covering at least 10 predefined cohorts, versioned and attributable (updated from 500/8 based on Evals team coverage plan).
+- Per-cohort metrics computed and stored with <= 3 minute latency.
+- Gate config defaults:
+  - alpha = 0.05
+  - beta = 0.2
+  - sequential mode enabled by default for cohorts with < 50k daily requests
+- Minimum sample size calculator present in UI and enforced for gate validity.
+- Automated rollback triggers implemented (updated thresholds after SRE + Evals calibration in staging):
+  - (a) Immediate throttle if any safety sentinel shows > 0.3% absolute regression sustained for 5 minutes.
+  - (b) Automatic cohort-level divert to previous stable variant if composite quality score drops > 3% sustained for 10 minutes in that cohort.
+  - (c) Full rollback if business KPI regression > 4% sustained for 10 minutes (updated from 5% for 5 minutes to reduce false negatives while avoiding brief KPI noise).
+- Console includes a playbook link for each trigger with owner, checklist, and comms templates.
+- End-to-end test harness can simulate cohorts and verify gating/rollback behavior in staging.
+
+## Rollout Strategy
+Phases and traffic slices (updated ramp plan to reduce step-size risk for large enterprise cohorts):
+- Phase 0: Staging validation with synthetic traffic (2 weeks)
+- Phase 1: Internal canary (0.5%) for 48 hours
+- Phase 2: Beta customers (2%) for 72 hours
+- Phase 3: Gradual ramp (10% for 24 hours, 25% for 24 hours, then 100% if gates pass)
+
+Rules:
+- Each phase requires passing cohort-specific gates.
+- If any cohort fails a gate, apply automated action per remediation playbook and pause the release pending investigation.
+- Blocked cohorts cannot ramp beyond 5% without explicit HIL approval in Console.
+
+## Statistical Approach
+### Defaults
+- Binary signals (e.g., sentinel hit rate): two-sided proportion test.
+- Continuous scores (e.g., composite quality): Welch’s t-test.
+- Default alpha = 0.05, beta = 0.2.
+
+### Sequential testing (default for low-to-mid traffic cohorts)
+For cohorts with limited traffic, use sequential analysis with alpha spending (Pocock-style boundary) to allow earlier decisions while controlling Type I error.
+
+### Sample size and MDE
+Console enforces a minimum sample size requirement. The UI provides an MDE and n estimator and records the assumed baseline used for the calculation.
+
+## Remediation Playbook
+- Level 1 (Transient noise)
+  - Auto-throttle new release traffic by 30% immediately.
+  - If signals persist for 10 minutes, increase throttle to 50%.
+  - Notify on-call; continue observation for 15 minutes.
+- Level 2 (Cohort regression)
+  - Divert failed cohort traffic to previous stable variant.
+  - Create a P1 investigation ticket and open a dedicated War Room channel.
+  - Require an explicit “resume” action with notes in Console.
+- Level 3 (Business KPI impact)
+  - Immediate full rollback of the release.
+  - Notify via status page + account reps; schedule postmortem within 48 hours.
+- Human-in-the-loop
+  - For ambiguous composite detector states or blocked cohort ramps, move the release to HOLD.
+  - Reviewers have a 30 minute SLO to approve/deny for P1 releases.
+
+## Monitoring Signals
+- Sentinel hit rate per cohort.
+- Composite quality score per cohort (weighted accuracy proxy + hallucination penalty + latency penalty).
+- Business KPIs: conversion rate, retention signal (as provided by customer integrations).
+- Infrastructure: token cost variance, GPU latency P95, request error rate.
+- Anomaly detectors: distribution drift (embedding distance) and abrupt change in output length.
+
+## Console / UI Changes
+- Release details page
+  - Add a “Cohorts” tab: per-cohort metrics, sentinel breakdown, sample viewer.
+  - Add a “Gates” panel: pass/fail status, confidence intervals, and sustained-duration progress.
+- Gate configuration
+  - Configure alpha/beta, fixed vs sequential mode, MDE, sustained-duration requirements, and mapped remediation actions.
+- Notifications
+  - Slack + PagerDuty wiring integrated into the release flow with cohort-aware routing.
+
+## Data & Infra
+- Storage for per-request metadata and evaluation events; retention updated to 180 days (from 90) to support quarter-over-quarter regressions and enterprise audit requests.
+- Streaming pipeline to route sampled requests to evaluation workers (implementation depends on platform standard; initial deployment uses Kafka as in SRE sizing).
+- Evaluation workers to run controlled prompts and compute metrics; require autoscaling profile and quotas.
+- Dashboard endpoints and Console API to surface near-real-time cohort results.
+
+## Timeline (updated)
+- 2025-11-05: PRD created
+- 2025-11-12: Design review & cohort taxonomy finalized
+- 2025-11-20: API contract for gates approved
+- 2025-11-28: Staging harness deployed
+- 2025-12-06: Internal canary start
+- 2025-12-12: Beta customers start (updated from earlier plan to allow extra staging burn-in)
+- 2025-12-18: Target GA (updated from 2025-12-15 based on ramp plan and blocked cohort review bandwidth)
+
+## Stakeholders
+- Aisha Patel — PM (owner)
+- Marco Li — Engineering (release engineering)
+- Rina Gomez — Head of Evals
+- Victor Chen — Console UX
+- Sanjay Rao — SRE
+- Priya Desai — Customer Success
+
+## Open Questions
+- What is the acceptable latency tradeoff for running sentinel prompts synchronously vs async for latency-sensitive flows?
+- After-hours escalation owner for Level 2 cohort regressions (proposal: SRE primary with Evals secondary).
+- Should Console surface raw model outputs for sampled requests, or only aggregated signals (compliance implications; default proposal: aggregated-only, with restricted break-glass access for on-call)?
+
+## Change Log
+- 2025-11-20: Initial PRD moved to in-review in Linear pending sign-off on alpha/beta defaults and blocked cohorts.
+- 2025-12-03: Updated (a) evaluation lag target to <= 3 minutes, (b) sentinel library target to 650 prompts / 10 cohorts, (c) ramp steps to 0.5% -> 2% -> 10% -> 25% -> 100%, (d) rollback thresholds for safety and KPI signals, and (e) retention to 180 days.

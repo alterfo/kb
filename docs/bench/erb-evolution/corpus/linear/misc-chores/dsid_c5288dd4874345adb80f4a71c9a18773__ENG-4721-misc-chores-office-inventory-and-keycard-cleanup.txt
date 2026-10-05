@@ -1,0 +1,29 @@
+misc-chores-office-inventory-and-keycard-cleanup
+
+Background: Office moved desks last quarter; several untagged peripherals, old keycards, and leftover badge holders in storage. This ticket collects misc chores to reconcile inventory and tidy shared spaces.
+
+Goals:
+- Produce a concise inventory of unassigned equipment (monitors, keyboards, spare GPUs boxes, dongles)
+- Audit and deactivate lost/old keycards in the access system and return/reenroll active ones
+- Clean and label community storage shelves and mark disposal candidates
+
+Acceptance criteria:
+- CSV inventory uploaded to Drive with columns: item_id, type, location, status, owner_hint
+- Keycards deactivated or reassigned; list of card IDs with status documented
+- Disposal list handed to Facilities with approval note
+
+Notes / messy log:
+- Found box labeled "quantization-experiments-2019" that might contain ancient NVMe; hold for review before E-waste.
+- Some badge IDs appear in the access logs for 2024 despite being in the lost-and-found — need cross-check (security notified).
+- Short timeline requested by Facilities: prefer completion before holiday break.
+
+Planned steps:
+1) Quick sweep team (1-2 engs + facilities) to inventory storage (2 days)
+2) Collate CSV, tag physically (labels on boxes) (1 day)
+3) Keycard audit with security (Omar to coordinate) (2 days)
+4) Disposal / reallocation decisions and update asset tracker (1 day)
+
+This ticket is intentionally lightweight and is a catch-all for small physical tasks that don't merit a formal facilities request. If any item is sensitive (hard drives, HSM parts, private compute media) escalate to security and open a separate INT ticket.
+2025-11-10 - Maya Chen: Created initial ticket after impromptu storage sweep. I'll coordinate volunteers.
+2025-11-11 - Omar Singh: Reached out to Security about keycard audit; they suggested exporting access logs for the last 18 months.
+2025-11-12 - Facilities Bot: Tentative sweep scheduled 2025-11-18 10:00 in 3A storage room. RSVP required.

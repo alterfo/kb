@@ -1,0 +1,42 @@
+Postmortem: EU-West capacity shortage and region fallback (2025-03-03)
+
+h2. Summary
+On 2025-03-03, a GPU capacity shortfall in eu-west-1 impacted a subset of Hosted and Dedicated traffic pinned to that region. Mitigation required activating *automatic region fallback* (eu-west-1 -> us-east-1) for eligible routes until additional capacity was brought online.
+
+h2. Impact
+* Elevated p95 latency and increased 429/503 responses for region-pinned routes in eu-west-1.
+* Customers: 7 Hosted orgs and 1 Dedicated tenant with optional cross-region allowance enabled.
+* Duration: ~41 minutes of degraded performance; ~18 minutes of hard errors for the most constrained pool.
+
+h2. Timeline (UTC)
+* 09:42: Capacity alert: available_gpu_count < 5 in eu-west-1 pool rw-a100-eu-01.
+* 09:48: Saturation exceeded 95% and queue wait climbed > 400ms.
+* 09:51: Mitigation: enabled *region fallback* for "chat-default" and "embeddings-default" where customer policy allows cross-region.
+* 09:54: Router began directing overflow to us-east-1 for eligible traffic.
+* 10:03: Error rate dropped; latency partially recovered.
+* 10:23: Added 8 GPUs to eu-west-1 pool; disabled region fallback after stabilization.
+
+h2. Mitigation details
+We toggled a router policy flag:
+* Primary region: eu-west-1
+* Fallback region: us-east-1
+* Triggers: saturation > 90% OR 503 rate > 0.5%
+* Eligibility: routes not marked "data_residency_strict"
+
+h2. Root cause
+A delayed GPU delivery + slow provisioning left the eu-west-1 pool below the forecasted headroom for a scheduled customer load test.
+
+h2. What went well
+* Region fallback prevented a full outage for eligible traffic.
+* On-call followed the capacity runbook and coordinated with Infra quickly.
+
+h2. What went poorly
+* We lacked a clear customer-facing flag indicating whether cross-region fallback was enabled for a tenant.
+
+h2. Action items
+1) Add tenant-level UI indicator and API field for cross-region fallback eligibility. Owner: Eng Platform.
+2) Improve capacity forecasting for scheduled load tests and Dedicated bursts. Owner: Eng SRE.
+3) Add automated comms template for region fallback events. Owner: Incident Response.
+
+h2. References
+* Incident ID: INC-2025-0303

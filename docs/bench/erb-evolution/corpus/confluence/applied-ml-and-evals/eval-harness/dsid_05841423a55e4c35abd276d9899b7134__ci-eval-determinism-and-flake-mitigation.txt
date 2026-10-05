@@ -1,0 +1,146 @@
+CI Eval Determinism and Flake Mitigation
+
+## Summary
+Our evaluation harness previously produced intermittent metric drops (e.g., ~0.04 BLEU on a single run) for the quantized-v2 onboarding suite that disappeared on rerun. This page documents the current (2026) standard for reducing nondeterminism, preventing CI flakes, and making regressions actionable.
+
+The root causes we have observed include:
+- Stochastic decoding (temperature/top_p sampling) without per-example RNG control.
+- RNG state not consistently propagated to all relevant libraries/ops.
+- GPU-level nondeterminism (kernel selection, atomic ordering), especially in quantized/int8 paths.
+- Cross-hardware differences (e.g., A100 int8 kernels vs legacy fallback paths).
+
+## What changed since the initial investigation
+The original debugging thread identified sampling parameters and missing explicit generators as primary contributors. The current harness incorporates the same core ideas, with the following updates:
+- We now treat deterministic decoding as the default for per-commit CI gates for onboarding suites.
+- The determinism flag is implemented as `--deterministic` / `deterministic: true` in eval config, and it hard-enforces decoding parameters (see below).
+- The runner always constructs and passes an explicit `torch.Generator` for generation, derived from a root seed plus a stable per-example index.
+- CI gating moved from single-run metrics to median-of-repeats, and flakiness is measured explicitly.
+
+## Definitions
+### Deterministic (harness-level)
+A run is considered deterministic (for CI purposes) if repeated executions on the same hardware + container image + model revision produce identical decoded token sequences for the same prompts.
+
+Notes:
+- Hardware drift (A100 vs K80) is not expected to be bitwise identical.
+- Some quantized kernels may still be nondeterministic even when framework-level deterministic flags are enabled.
+
+### Flake
+A flake is a CI failure caused by nondeterministic variation rather than a real change in model/code.
+
+## Recommended CI strategy (current)
+### 1) Per-commit (PR) gate: deterministic quick eval
+Purpose: prevent random sampling jitter from blocking merges.
+- Environment: standardized runner image + target GPU class when available (A10 preferred for cost; A100 acceptable).
+- Mode: `deterministic: true`
+- Repeats: `--repeat 3`
+- Decision rule: gate on the median metric across repeats; also fail if output hashes differ across repeats (for suites that require bitwise stability).
+
+### 2) Nightly: multi-seed + tolerance-based comparison
+Purpose: catch real regressions and quantify expected variance.
+- Environment: target infra (A100 for quantized-v2)
+- Mode: `deterministic: false` (sampling allowed when the eval is designed to measure sampled behavior)
+- Seeds: 3 seeds (default: 13, 37, 101)
+- Decision rule: compare against the golden baseline using metric tolerance thresholds; alert on sustained shifts (median across seeds).
+
+### 3) On failure: auto-trigger repro debug job
+Purpose: make investigations fast and data-rich.
+- Auto-collect artifacts listed in the Logging and Artifacts section.
+- Include a run summary that states whether variance is:
+  - decode-level (different token sequences)
+  - metric-only (same outputs but metric computation drift)
+  - environment-level (hardware/container mismatch)
+
+## Deterministic decoding mode (required behavior)
+When `deterministic: true`, the harness MUST enforce:
+- `do_sample = false`
+- `temperature = 0.0`
+- `top_k = 1`
+- `top_p = 1.0`
+- `num_beams = 1` (unless the suite explicitly tests beam search)
+- Explicit generator passed into generation APIs
+- Stable batching order (no data-loader shuffling; stable sort by example_id)
+
+Rationale:
+- Simply setting a global seed is insufficient when generation draws randomness in parallel or across different batch shapes.
+
+## RNG handling (current standard)
+### Root seed and per-example seeds
+- The runner accepts a `--seed` root seed.
+- For each example, derive a stable per-example seed:
+  - `example_seed = root_seed + example_index`
+- Construct a generator on the active device and pass it explicitly to generation.
+
+Operational guidance:
+- Ensure `example_index` is stable across runs (do not use worker-local indices unless they are globally consistent).
+- If sharding is used, include `shard_id` in the seed derivation only if shard assignments are stable across runs.
+
+### Framework flags
+We enable deterministic flags when `deterministic: true`:
+- `torch.use_deterministic_algorithms(True)`
+- `torch.backends.cudnn.deterministic = True`
+- `torch.backends.cudnn.benchmark = False`
+
+Caveat:
+- Quantized/int8 kernels may not fully respect these flags. Treat the flags as best-effort rather than a guarantee.
+
+## Hardware notes (quantized-v2)
+- A100 int8 paths can differ from legacy GPU fallbacks.
+- CI determinism requirements are scoped to a single target hardware class per suite.
+- The quantized-v2 onboarding suite is pinned to A100 for nightly baselines.
+
+## Metric gating rules
+### Per-commit deterministic gate
+- Compute metric per repeat.
+- Report: median, min, max, and standard deviation.
+- Fail conditions:
+  - Any repeat differs in output token hash (for deterministic suites).
+  - Std dev exceeds threshold (default threshold: 0.005 BLEU-equivalent; suite owners may override).
+
+### Nightly tolerance-based gate
+- Compare nightly medians to golden medians.
+- Default tolerances (may be tuned per suite):
+  - BLEU: 0.03 absolute
+  - chrF: 0.02 absolute
+  - Task accuracy: 0.5 percentage points absolute
+
+## Logging and artifacts (required)
+Each eval run must emit the following into the run artifact directory:
+- `run_metadata.json`: model revision, container digest, GPU type, torch version, eval suite name, config snapshot
+- RNG details:
+  - root seed
+  - per-example seed derivation scheme
+  - `torch.get_rng_state()` (hex or base64)
+  - `torch.cuda.get_rng_state_all()` (per device; hex or base64)
+- Generation parameters:
+  - do_sample, temperature, top_p, top_k, num_beams, max_new_tokens
+- Outputs:
+  - `outputs_run_{i}.jsonl` for each repeat
+  - include decoded text and decoded token ids
+- Summary:
+  - `metrics_run_{i}.json`
+  - `summary.json` with median/std and output hash comparisons
+
+## Runner CLI (current)
+Required runner options for reproducibility testing:
+- `--repeat N` : runs the same suite N times with the same config and seed
+- `--deterministic {true|false}` : enforces deterministic mode when true
+- `--seed SEED` : sets the root seed
+
+Example:
+- `evals/onboarding --suite quantized-v2 --repeat 3 --deterministic true --seed 42`
+
+## Troubleshooting playbook
+If you see nondeterminism with `deterministic: true`:
+1) Confirm the run is on the expected hardware class and container digest.
+2) Confirm output hashes differ (decode nondeterminism) vs metrics differ (metric computation drift).
+3) If decode nondeterminism:
+   - verify generator is passed explicitly
+   - verify stable ordering of examples and stable batch shape
+   - check for any remaining sampling knobs being set by a suite override
+4) If still nondeterministic on A100 quantized kernels:
+   - capture artifacts and escalate to eng-serving-runtime for kernel-level investigation
+   - consider switching the suite’s CI gate to tolerance-based comparison if bitwise repeatability is unattainable
+
+## Ownership and change control
+- Owner: Applied ML & Evals
+- Any change to determinism semantics (`--deterministic` behavior, seed derivation, gating thresholds) requires review from Applied ML & Evals + Serving Runtime.

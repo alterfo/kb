@@ -1,0 +1,206 @@
+incidents
+
+Incident Bot: :rotating_light: Paging alert: perf-canary regression storm detected (dedupe disabled due to unique labels)
+
+- Signal: `perf_canary_p95_latency_ms` + `perf_canary_tokens_per_sec`
+- Affected: 27 alert instances across models/regions/SKU in last 5m
+- Example: `model=llama-3-70b-instruct` `region=us-east` `sku=h100-80g` p95 +18% vs baseline (n=62)
+- Runbook: https://confluence.redwood.ai/display/SRE/Runbook%3A+Perf+Regression+Canary+Alert
+- Dashboard: https://grafana.redwood.ai/d/perf-canary/perf-canary?var-region=us-east
+
+Thread created for incident coordination. Please acknowledge.
+
+Rafael Mendes: ack. seeing my pager light up like a christmas tree. is this real or canary gone wild?
+
+Sean Gallagher: ack. looking at incidents channel, multiple pages within 2 mins. treating as alerting failure until proven otherwise.
+
+Noah Patel: ack. I’m on. pulling canary logs + baseline store status.
+
+Grafana: Alert state change: 11 firing -> 19 firing (rule: perf-canary-p95-regression-page)
+
+Allison Grant: ack. can someone confirm whether this is *paging* rules only or also warnings? (did we just flip paging in more dims?)
+
+Rafael Mendes: looks like paging rules. warnings also firing but those go to #eng-runtime normally.
+
+Sofia Ivanova: ack. checking scheduler metrics on one of the “regressed” models. initial glance: queueing time flat-ish, but query shows lots of new label combos.
+
+Logan Wright: ack. I’m suspicious of cardinality change. we had a schema review earlier this week.
+
+Nadia Rahman: ack. baseline job ran ~30m ago (I see artifact upload). might’ve rolled baseline version?
+
+Omar El-Sayed: ack. checking runtime tag emission; we added kernel tags recently. could be exploding labelset.
+
+Vanessa Ortiz: I can check if any fleet change happened last hour (sku reshuffle / driver). but the simultaneity across regions smells config/telemetry.
+
+Rafael Mendes: immediate goal: stop paging noise. can we disable paging rules or canary eval while we triage?
+
+Sean Gallagher: +1. per runbook we can:
+1) set incident-bot dedupe key override
+2) disable paging rules in observability-pack
+3) lower canary QPS to near-zero if needed
+
+Noah Patel: I can flip canary `capacity_budget_pct` down to 0.05% via control plane if needed, but pages are already happening due to alerts on existing metrics.
+
+Allison Grant: let’s first mute paging rule globally for 60m. Rafael can you do silence?
+
+Rafael Mendes: doing silence now in Alertmanager for `perf-canary-*page*` rules. ETA 2 min.
+
+Grafana: Alert silenced by Rafael Mendes (duration: 1h, matcher: alertname=~"perf-canary-.*page.*")
+
+Rafael Mendes: silence in place. still need root cause + prevent recurrence.
+
+Noah Patel: pulled one alert payload from incident-bot. it includes `runtime_build_id` and `kernel_id` labels now.
+
+```
+labels:
+  model: llama-3-70b-instruct
+  model_version: 3.1.2
+  region: us-east
+  tier: hosted
+  sku: h100-80g
+  runtime_build_id: runtime-2026.02.02-rc3
+  kernel_id: flashattn_v3_sm90_seq128k_batchdyn
+  kernel_family: flashattn_v3
+  prompt_bucket: p90
+  canary_profile: default
+```
+
+That’s… a lot.
+
+Logan Wright: yeah that’s the issue. if alert grouping includes kernel_id + prompt_bucket, you’ll get 100s of unique series, each with small n, baseline mismatch, and dedupe breaks.
+
+Sofia Ivanova: also prompt_bucket being a label is super risky. any drift in distribution -> new time series -> baseline “missing” -> evaluator might be falling back to something dumb.
+
+Nadia Rahman: confirming: baseline store key is `model + model_version + sku (+region optional)`.
+If canary emits metrics with extra labels but baseline lookup doesn’t strip them, you get “baseline not found” -> and evaluator could treat baseline=0 or default baseline.
+
+Noah Patel: digging in canary evaluator code: baseline fetch uses the full labelset for keying unless `baseline_key_labels` config is set. I think it’s currently unset in prod. :facepalm:
+
+Allison Grant: ok so this is config regression. why did it surface now?
+
+Omar El-Sayed: runtime PR added `kernel_id` tag to telemetry last week; canary started emitting it yesterday in us-east; then today we enabled paging rules with “top models” and it blew up.
+
+Caleb Johnson: also: ingestion delay in telemetry right now (prom remote-write lag ~3-4m). that can affect “min samples” logic if it’s based on wall clock.
+
+Vanessa Ortiz: fleet: no major change. driver update is scheduled tomorrow. nothing that would instantly hit all regions.
+
+Rafael Mendes: action items right now:
+1) fix the alert grouping / label set
+2) fix canary baseline lookup to ignore high-card labels
+3) re-enable paging when stable
+
+Noah Patel: I can hotfix canary config to set `baseline_key_labels=[model,model_version,region,sku,tier]` and also set metrics emission allowlist.
+But that’s a deploy.
+
+Connor O'Brien: if you want, I can coordinate with releases to fast-track canary config change (control plane) vs full deploy.
+What is adjustable without redeploy?
+
+Noah Patel: baseline_key_labels is config in control plane (no code change). metric labels are code-side; but we can disable extra labels by setting `emit_kernel_labels=false` in canary config (also control plane).
+
+Logan Wright: for long-term: telemetry should still carry kernel_id, but alerts shouldn’t group on it. dashboards can show it as a breakdown via exemplars or logs.
+
+Allison Grant: yes. policy: paging alerts must not include high-cardinality labels in the alert identity. at most model/version/region/tier.
+
+Sean Gallagher: +1. and `prompt_bucket` should never be in paging series. it’s a dimension for analysis, not alerting.
+
+Noah Patel: making config changes now:
+- `emit_kernel_labels=false`
+- `emit_prompt_bucket_label=false`
+- `baseline_key_labels=model,model_version,region,sku,tier`
+- increase `min_samples_paging` from 50 -> 200 (temporary)
+
+Will apply to us-east first.
+
+Connor O'Brien: ok. once applied, we should watch warning rules (not silenced) to see if they settle.
+
+Grafana: Alert state change: 19 firing -> 6 firing (rule: perf-canary-p95-regression-warn)
+
+Sofia Ivanova: I’m seeing the number of series drop in Grafana. good sign. queueing/decode lat look normal-ish now.
+
+Nadia Rahman: baseline fetch logs from canary before:
+`baseline_lookup_miss rate=0.78`
+Now after config change:
+`baseline_lookup_miss rate=0.03`
+
+That was the storm.
+
+Rafael Mendes: can we keep paging silenced until end of day and then re-enable after we confirm stability for a couple hours?
+
+Sean Gallagher: yes. also: we need a writeup. this is essentially an incident caused by alerting/config, not perf regression.
+
+Allison Grant: agreed. Sev? I’d call it Sev3 internal (oncall disruption) with follow-ups.
+
+Rafael Mendes: logging as internal incident, Sev3. primary impact: oncall noise + risk of missing real pages.
+
+Logan Wright: we should also add a guardrail: metrics-cardinality audit in CI for canary changes.
+
+Caleb Johnson: and add an alert on cardinality itself. like “number of active series for perf_canary_* > threshold”.
+
+Omar El-Sayed: +1. plus explicit “do not include in baseline key” list for labels: `kernel_id`, `prompt_bucket`, `request_id` (lol), etc.
+
+Noah Patel: I’ll open a follow-up ticket to make baseline lookup *always* use explicit key labels with safe defaults. right now it’s too footgun-y.
+
+Vanessa Ortiz: any chance this impacted customer traffic? canary overhead maybe spiked due to fanout?
+
+Noah Patel: canary QPS stayed under cap; overhead ~0.3% per region. no evidence of inference impact. this was alerting noise, not load.
+
+Sean Gallagher: ok. next steps in-thread:
+- keep paging silenced 1h
+- confirm series count stable
+- write postmortem + update alert policy doc
+
+Allison Grant: I’ll update the alerting policy doc: “paging series identity must be <= (model, model_version, region, tier)” and require min n.
+
+Rafael Mendes: I’ll add a note to oncall training + runbook: if you see many pages with unique label combos, check label explosion + silence paging rule.
+
+Noah Patel: update: rolled config to eu-west + us-west as well. baseline miss rate now low across regions.
+
+Grafana: Alert state change: 6 firing -> 1 firing (rule: perf-canary-p95-regression-warn)
+
+Sofia Ivanova: remaining warning is llama-3-8b in eu-west with p95 +9%. likely real-ish but warning-level only. can follow up later.
+
+Nadia Rahman: baseline drift is another issue: baseline artifacts updated earlier today with different sample window (traffic mix changed). we should talk about rolling vs fixed baseline in ADR.
+
+Logan Wright: yep. but this incident was more “baseline key mismatch” than drift. still, drift makes it worse and increases fire rate.
+
+Sean Gallagher: can someone link the baseline drift thread? I remember we discussed anti-flap + smoothing.
+
+Nadia Rahman: thread: https://slack.redwood.ai/archives/eng-runtime/p1768604412-baseline-drift
+
+Allison Grant: we should capture both in postmortem:
+- primary: label/cardinality + baseline-key mismatch
+- contributing: baseline update + ingestion lag
+- mitigation: silence paging, reduce labels, set baseline_key_labels
+- prevention: guardrails + ADR + templates
+
+Rafael Mendes: I’ll create postmortem doc and assign owners. Noah can you be DRI for tech fixes? Allison for policy? Logan/Nadia for telemetry/baseline sections.
+
+Noah Patel: yep.
+
+Logan Wright: yes.
+
+Nadia Rahman: yes.
+
+Allison Grant: yes.
+
+Incident Bot: Status update requested. Please provide current status and next update ETA.
+
+Rafael Mendes: Status: paging silenced, storm stopped after canary config change to remove high-card labels + correct baseline key. Monitoring warnings for 2h. Next update in 60m; plan to re-enable paging tomorrow after rule/template changes.
+
+Connor O'Brien: note for releases: we should block any further paging enablement until the alert rule grouping is updated in observability-pack. I’ll coordinate.
+
+Sean Gallagher: ok closing the loop: once postmortem is drafted, we’ll un-silence paging in a controlled window with one model/region.
+
+Rafael Mendes: +1. leaving thread open until postmortem link is live.
+
+Allison Grant: quick PR idea: in alert rule, add `sum by (model, model_version, region, tier)` *before* evaluating regression. even if extra labels exist, they won’t affect alert identity.
+
+Caleb Johnson: that would help a lot. and maybe enforce via recording rule.
+
+Noah Patel: agreed. ok I’m off to implement guardrail + open ENG tickets.
+
+Rafael Mendes: ok. I’ll post postmortem link here once created.
+
+Rafael Mendes: Postmortem doc stub: https://confluence.redwood.ai/display/ONCALL/Postmortem%3A+Perf+Canary+False+Positive+Alert+Storm (please add details + action items)
+
+Incident Bot: :white_check_mark: Incident marked mitigated by Rafael Mendes (Sev3). Reminder: add follow-ups in Linear and link here when filed.

@@ -1,0 +1,209 @@
+Fallback experiment matrix + cost penalty catalog (working notes)
+
+Context / what changed since the Confluence version
+-----------------------------------------------
+This is a working doc intended to supersede the older Confluence page for day-to-day ops.
+
+Key updates vs. Confluence (note to reviewers):
+- We standardized on p95 + error-rate for decision gates; p99 is still tracked but no longer the primary gate except for cross-region routing tests.
+- Cross-region routing cost model updated: egress is now tracked per "GiB" from the provider bill and attributed back to request traces by sampled bytes (we can’t reliably infer from tokens alone).
+- CLI note: "redwoodctl" commands are still mostly correct, but platform tooling is being migrated to "rfctl". Keep both until Q2.
+- Added explicit "customer harm" metrics: support ticket rate + HTTP 429/5xx annotations for throttling experiments.
+
+Overview
+========
+
+This document captures a reproducible experiment matrix for operator-driven fallback strategies and an associated cost-penalty catalog used to evaluate trade-offs between SLO preservation and unit economics across regional surges. Intended audience: platform operators, SREs, runtime engineers, and product engineers running controlled degradation experiments or designing automatic fallback policies.
+
+Why this exists
+---------------
+- Fallbacks preserve SLOs during capacity scarcity or model regressions, but they can change cost, quality, and customer experience.
+- Operators need a concise experiment plan with metrics, dashboard queries, and a cost penalty model to compare candidate strategies.
+- We want a single template for telemetry, rollout/rollback steps, and decision criteria for productionizing fallbacks.
+
+Goals and scope
+---------------
+- Goal: Repeatable experiment matrix yielding quantitative comparisons of: latency SLO retention, token-cost delta, quality regressions (evals), and operator intervention effort.
+- Scope: Multiregion inference surface (hosted + dedicated), model variant fallbacks (quantized, smaller model families), routing degradations (regional drain, tenant throttling).
+- Out of scope: Model training/data pipelines, legal/customer contract negotiation.
+
+Definitions and abbreviations
+----------------------------
+- Fallback variant: Any alternative response path (e.g., primary model -> smaller model, cached response) used when the primary path is unavailable or overloaded.
+- Cost penalty: Unit cost increase or revenue impact metric associated with using a fallback (e.g., tokens * $/token diff, egress, incremental infra).
+- SLO preservation: Fraction of requests meeting the p95 latency target and error-rate SLO (tracked per region and tenant priority).
+
+Experiment matrix (canonical)
+-----------------------------
+Columns: experiment_id | description | fallback_type | trigger | primary-metric | cost-metric | quality-metric | run-length | owner
+
+Example rows (templates)
+1) EXP-001 | Model-variant degrade (Llama-70B -> Llama-13B-int8) | model_variant | queue-depth > 120 OR p95 latency > 650ms | p95 latency, error-rate | token-cost-delta-per-hour | eval-regression@30 prompts | 2h | operator-team
+2) EXP-002 | Regional drain to peer region (eu-west -> us-east) | regional-routing | region capacity throttle 85% | p99 tail latency cross-region | egress-cost-delta | user-visible-quality (latency jump) | 4h | platform-network
+3) EXP-003 | Prefetch cache fallback (serve from prefix cache) | cache_prefetch | cold-start rate > 25 req/min | mean latency | compute-cost-savings | correctness mismatch ratio | 3h | runtime-team
+4) EXP-004 | Token-budgeted throttling for low-priority tenants | quota_throttle | burst credits exhausted | p95 latency of high-priority | revenue-at-risk + support-load | customer-error-annotations | 6h | platform-ops
+
+New rows being piloted (add if you run them)
+5) EXP-005 | Partial streaming disable (force non-streaming responses) | response-mode | event-loop lag > 150ms | p95 latency, disconnect-rate | infra-cost-delta | CSAT proxy (thumbs down rate) | 2h | api-runtime
+6) EXP-006 | Retrieval reduced context window (RAG: 12 chunks -> 6 chunks) | retrieval-degrade | vector DB p95 > 200ms | end-to-end p95 | token-savings | answer completeness rating | 4h | rag-platform
+
+Telemetry and dashboarding recipe
+--------------------------------
+Create a dedicated experimental dashboard with the following panels per experiment run:
+- SLO heatmap: p50/p95/p99 latency over time (per region, per tenant priority).
+  - latency_p95{experiment_id="EXP-001"}
+  - request_duration_seconds_bucket (histograms)
+- Cost delta stream:
+  - token_cost_rate{fallback_variant!=""}
+  - egress_gib_rate{experiment_id="EXP-002"} (new; sourced from network collector + sampled trace attribution)
+- Quality regression signal:
+  - evaluation pass-rate across a held promptset (30–60 prompts) run every 15 minutes.
+  - eval_pass_rate{promptset="fallback-30"}
+- Operator interventions:
+  - operator_rollbacks_total{experiment_id="EXP-001"}
+  - operator_override_seconds_total{experiment_id="EXP-001"}
+- Customer harm / UX signals (especially for throttles):
+  - http_responses_total{code=~"429|5..",experiment_id="EXP-004"}
+  - support_ticket_rate{tag="fallback"}
+- Composite KPI panel: cost-penalty vs. SLO-preservation scatter plot for each variant.
+
+Minimum instrumentation checklist
+--------------------------------
+1) Annotate requests with experiment_id and fallback_variant in trace metadata.
+2) Emit fallback_reason counter in request pipeline.
+3) Record per-request token accounting and model_version label.
+4) Attach prompt-set id for synthetic eval traffic.
+5) Ensure operator actions log into the incident system with experiment_id tag.
+6) (New) For cross-region tests: emit egress bytes by src_region->dst_region at 1m resolution.
+
+Cost penalty catalog (examples + notes)
+--------------------------------------
+Catalog rows: fallback_variant | per-token-diff | expected-throughput | hourly-cost-delta | rollback-cost-estimate | notes
+
+Example entries (update these numbers when finance-eng confirms billing rates):
+- L70B -> L13B-int8 | -$0.0018 / token (lower cost) | ~2k tokens/s | -$12.96 / hour per 1000 rps (rough) | negligible | quality drop on long-form + tool use
+- L70B -> L34B | -$0.0007 / token | ~1.2k tokens/s | -$5.04 / hour per 1000 rps (rough) | negligible | smaller regression than int8 in our last eval
+- cross-region-eu->us | egress: +$0.085 / GiB (bill) | N/A | +$160–$260 / hour at 1000 rps (depends on payload/streaming) | potential SLA credits | must watch p99 + disconnect-rate
+- cached_prefix_response | -$0.001 / token (savings) | N/A | -$3.6 / hour per 1000 rps | risk of stale content | requires invalidation policy + allowlist
+- quota-throttle-low | revenue-at-risk estimate (see calc) | depends on tenant mix | - | revenue-impact = avg_MRR_per_req * blocked_reqs + support_cost | requires customer comms plan
+
+Notes to self / open questions on cost
+- Token price basis: some teams want $/1M tokens instead of $/token. Leave formulas in token-native form; dashboard can show both.
+- For streaming, payload size can dominate egress more than tokens. Need to keep measuring bytes/request, not guess.
+
+Cost calculations (short formulas)
+---------------------------------
+- token_cost_delta_hourly = sum_over_requests(token_count * (cost_primary - cost_fallback)) per hour
+- egress_delta_hourly = egress_gib * egress_rate_per_gib
+- revenue_at_risk = blocked_requests * avg_revenue_per_request
+- support_cost_proxy = (new_tickets * avg_handle_time_minutes * cost_per_minute)
+
+Include these calculations in the dashboard as derived timeseries.
+
+Experiment run playbook (step-by-step)
+--------------------------------------
+1) Planning (2–4 days)
+   a) Define hypotheses (example): "model-variant fallback preserves p95 latency with <=5% quality regression and cost delta within $250/hr"
+   b) Pick held promptset (30–60 prompts) and synthetic traffic profile matching customer mix.
+   c) Create experiment_id, add telemetry tags and dashboard.
+2) Preflight (1 day)
+   a) Run synthetic traffic against fallback in staging and collect baseline metrics.
+   b) Validate eval pass-rate and trace annotation.
+   c) Pre-commit rollback playbook and test it in canary.
+3) Execution (2–6 hours normally; up to 24 hours if capturing diurnal traffic)
+   a) Apply experiment on small cohort (1% of traffic or single region).
+   b) Monitor SLO panels and operator intervention panel.
+   c) Escalate to oncall if p95 > target * 2 or error-rate increases > 2x baseline.
+4) Ramp or rollback (decision gates)
+   a) If cost-savings or SLO-preservation meet hypothesis -> ramp to 10% then 50% using pre-defined step intervals.
+   b) If quality regression > threshold OR operator rollbacks > 1 -> rollback immediately, file incident.
+5) Post-run analysis (within 48 hours)
+   a) Populate experiment report template (see artifacts).
+   b) Archive synthetic trace samples and evaluation results.
+
+Rollback quick commands (examples)
+---------------------------------
+Keep both tool variants until migration completes.
+
+- Immediate global rollback:
+  - redwoodctl rollout cancel --experiment EXP-001 --force
+  - rfctl rollout cancel --experiment EXP-001 --force
+
+- Regional undo (eu-west):
+  - redwoodctl routing set-region-weight --region eu-west --weight 1.0 --experiment EXP-001
+  - rfctl routing set-region-weight --region eu-west --weight 1.0 --experiment EXP-001
+
+- Re-enable primary model:
+  - redwoodctl model set-default --model redwood/llama-70b --variant baseline --experiment EXP-001
+  - rfctl model set-default --model redwood/llama-70b --variant baseline --experiment EXP-001
+
+Operator note: verify RBAC scopes before running rollback under incident stress.
+
+Decision criteria matrix (accept/ramp/abandon)
+----------------------------------------------
+These are the current suggested gates (not absolute; document deviations in the report):
+- Accept: p95 latency within 10% of baseline AND eval regression <= 3% AND hourly cost delta within budgeted threshold AND no sustained increase in 429/5xx.
+- Ramp: p95 within 15% and eval regression <= 6% with operator + product approval.
+- Abandon: p95 > 20% degradation OR eval regression > 10% OR customer harm signals spike (tickets/429s) OR unexpected safety regressions.
+
+Artifacts to capture and store
+------------------------------
+- Experiment report (.md): hypothesis, traffic profile, duration, metrics before/after, cost calcs, operator notes.
+- Trace bundle (S3 link) and synthetic eval outputs (json).
+- Dashboard snapshot and Prometheus queries used.
+- Postmortem if rollback occurred.
+
+Operational responsibilities and ownership
+-----------------------------------------
+- Owner: platform-ops (primary contact: oncall@platform) for run coordination.
+- Instrumentation: runtime-team for trace + metric changes.
+- Cost modeling: finance-eng liaison for hourly cost validation.
+- Security review: security-team if any customer data is used in synthetic prompts.
+
+Safety and customer communication
+--------------------------------
+- For tenant-facing throttles/degradations that materially impact SLAs, coordinate with Customer Success for banner messaging and QBR notes.
+- For enterprise Dedicated/Private deployments, require explicit sign-off per customer SLAs before ramping.
+
+Retrospective template (post-experiment)
+---------------------------------------
+1) Summary: one-paragraph outcome
+2) Metrics: baseline vs experiment (latency, error-rate, cost, eval pass-rate, customer harm)
+3) What went well
+4) What failed / surprises
+5) Action items (owner + due date)
+6) Decision: accept/ramp/abandon
+
+Appendix A: sample PromQL snippets
+---------------------------------
+- p95 latency:
+  histogram_quantile(0.95, sum(rate(request_duration_seconds_bucket{job="inference",experiment_id=~"EXP-.*"}[5m])) by (le, region))
+- fallback rate:
+  sum(rate(fallback_reason_total[1m])) by (fallback_variant)
+- 429/5xx rate:
+  sum(rate(http_responses_total{code=~"429|5..",experiment_id=~"EXP-.*"}[5m])) by (code, region)
+
+Appendix B: experiment ticket checklist (copy/paste)
+---------------------------------------------------
+- Experiment ID:
+- Owner:
+- Hypothesis:
+- Synthetic promptset id:
+- Baseline run links:
+- Dashboard link:
+- Rollback commands verified (redwoodctl/rfctl): Y/N
+- Customer communication required: Y/N
+- Egress attribution required (cross-region only): Y/N
+
+Appendix C: change log (working doc)
+------------------------------------
+- 2026-01-22: Copied core content from Confluence page; started working notes version (Aisha).
+- 2026-02-11: Updated triggers (queue-depth/p95), added customer harm metrics + rfctl migration note (Miguel).
+- 2026-02-27: Updated egress cost modeling to GiB-based billing + trace sampling attribution (Dana).
+- 2026-03-08: Added EXP-005/EXP-006 pilots and tightened decision gates (Aisha + Priya).
+
+Where to ask questions
+----------------------
+- #platform-ops for run coordination
+- #runtime-inference for instrumentation changes
+- Finance-eng office hours for cost rate confirmation

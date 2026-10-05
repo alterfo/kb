@@ -1,0 +1,13 @@
+{
+  "qst_0411": {"current": ["30%"], "stale": ["20%"]},
+  "qst_0412": {"current": ["96%"], "stale": ["89%"]},
+  "qst_0416": {"current": ["260 QPS"], "stale": ["220 QPS"]},
+  "qst_0418": {"current": ["85"], "stale": ["80"]},
+  "qst_0419": {"current": ["/v1/capacity/migrations/start"], "stale": ["/v1/migration/start"]},
+  "qst_0420": {"current": ["$0.085 per GiB"], "stale": ["$0.05 per 1k tokens"]},
+  "qst_0421": {"current": ["120 seconds"], "stale": ["180 seconds"]},
+  "qst_0423": {"current": ["12 months"], "stale": ["18 months"]},
+  "qst_0424": {"current": ["1024 tokens"], "stale": ["512 tokens"]},
+  "qst_0427": {"current": ["Tuesdays"], "stale": ["Monday"]},
+  "qst_0428": {"current": ["250k"], "stale": ["100k"]}
+}

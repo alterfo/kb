@@ -1,0 +1,601 @@
+Private upgrades technical deep dive (design partner) - upgrade plan, backups, rollback
+
+Northstar walked through current pain points upgrading their on-prem Redwood Private environment: upgrades are high-touch, require manual sequencing between control plane components and data plane, and rollback is mostly 'restore from VM snapshot and hope'. They emphasized air-gapped constraints (no outbound internet), strict change windows, and audit evidence requirements.
+
+Redwood reviewed the planned upgrade workflow (preflight checks -> plan generation -> backup -> staged rollout -> verification) and discussed which prechecks should block vs warn (storage headroom, DB connectivity, OIDC reachability). Backup approach was discussed across CSI snapshots and logical DB dumps, with Northstar noting they do not have consistent snapshot support across clusters.
+
+Key concerns were around schema migrations (lock timeouts, partial upgrades), deterministic rollback hooks, and how artifacts are verified offline (checksums/signatures). The call ended with agreement on beta prerequisites, a rollback drill, and a short list of environment details Northstar will provide.
+Current on-prem upgrade workflow and failure modes
+Air-gapped artifact delivery and verification (checksums/signing)
+Preflight checks: cluster health, storage, RBAC/SSO, networking/DNS/TLS, DB readiness
+Backup/restore: CSI snapshots vs logical dumps, encryption/KMS expectations
+Rollback semantics: partial upgrade handling, schema migration guardrails
+Beta timeline, success criteria, and a rollback drill
+Meeting header
+Date: 2025-05-28
+Time: 4:03pm - 5:00pm PT
+Duration: 57 minutes
+Call type: Technical deep dive
+
+Attendees
+Redwood Inference: Markus Klein, Fatima Noor, Bruno Silva, Irene Choi, Sean Gallagher
+Northstar Health Systems: Priya Raman, Evan Wu, Marisol Chen, Jake Miller
+
+---
+
+[00:00] Markus Klein: Cool, I think we’re recording. Um, thanks everyone for making time. Goal today is to go deeper on the upgrade and rollback stuff for Private, especially for on-prem, air-gapped. We’ve got Fatima, Bruno, Irene, Sean here.
+
+[00:15] Priya Raman: Sounds good.
+
+[00:16] Markus Klein: Priya, do you wanna start with what you all do today for upgrades and, like, where it’s painful?
+
+[00:24] Priya Raman: Yeah. So currently our process is basically, we schedule a maintenance window, we… we download the new package from our internal mirror, we do a Helm upgrade, and then it’s like, fingers crossed. The ordering is not obvious. We’ve had one incident where control plane came up but data plane got stuck because of… I think it was a migration? And rollback was manual.
+
+[00:47] Jake Miller: The rollback is basically, we restore etcd snapshots and PV snapshots where we can, but not all clusters have the same storage. Sometimes we revert the whole node pool image. It’s… it’s messy.
+
+[01:01] Evan Wu: Yeah and the charts have hooks but they don’t always run in the order we expect. Like pre-upgrade jobs time out and then Helm rolls back but the DB already got migrated.
+
+[01:16] Sean Gallagher: Yep, that’s the exact class of issue we’re trying to kill. Partial upgrades + schema migration side effects.
+
+[01:23] Markus Klein: Great context. Fatima, do you wanna give the 2-minute overview of the new approach we’re implementing?
+
+[01:30] Fatima Noor: Sure. So the direction is: the installer generates an upgrade plan first, it’s a versioned artifact that lists stages and steps. Before doing anything, we run preflight checks—cluster health, storage headroom, DNS/TLS, RBAC, database connectivity, and also artifact availability. Then we orchestrate backups. After that we execute the plan in phases: control plane first, then data plane, with readiness gates. If something fails, we have deterministic rollback entry points that use stored state from the plan execution.
+
+[02:05] Priya Raman: When you say installer—this is the redwood-private-installer CLI, right? Not Helm itself?
+
+[02:10] Fatima Noor: Correct. Helm still does the actual apply of charts, but we wrap it with an orchestrator so we can be consistent and auditable.
+
+[02:19] Marisol Chen: Auditable meaning we can show, like, exactly what checks ran and what was backed up?
+
+[02:24] Fatima Noor: Exactly. Plan output persisted, precheck results, backup IDs, and upgrade start/stop events.
+
+[02:31] Irene Choi: And timestamps, plus versions: current version, target version, and what artifacts were used.
+
+[02:39] Marisol Chen: Okay.
+
+[02:41] Markus Klein: Evan, can you describe your on-prem constraints? Like how air-gapped are we talking.
+
+[02:47] Evan Wu: Fully. No outbound internet. We have an internal artifact mirror for container images and we can host a chart repo internally, but it’s manual. Also we need checksums for everything. Our security team won’t allow “curl random thing during upgrade.”
+
+[03:06] Marisol Chen: And signatures if possible. Checksums alone are… better than nothing, but ideally there’s a signing chain.
+
+[03:13] Fatima Noor: Yep. So we’re adding bundle verification: manifest, checksums, and optional signatures. The installer will fail early if the bundle doesn’t match.
+
+[03:24] Priya Raman: Can it operate with, like, a USB drop? We sometimes do physical transfer to the restricted enclave.
+
+[03:30] Fatima Noor: That’s a supported model. The bundle is basically a directory or tarball with a manifest file plus all referenced artifacts.
+
+[03:40] Bruno Silva: And on the Terraform side for VPC it’s a bit different, but for on-prem we’ll document “offline registry endpoint” variables too, so the installer knows where to pull from without going to the public registry.
+
+[03:54] Evan Wu: Okay. Biggest pain for us is, if Helm upgrade fails, we don’t know what state we’re in. Like, was the database migrated? Was it halfway? And then we get stuck.
+
+[04:08] Sean Gallagher: Right. So we’re defining “rollback hooks” as part of the plan. The critical part is: schema migrations have to be guarded. We’re implementing idempotency checks and lock timeouts. Also, we’re biasing to backwards-compatible changes when possible so rollback doesn’t require “un-migrating” data.
+
+[04:28] Jake Miller: That’s good in theory but we’ve seen migration jobs hold locks for a long time.
+
+[04:32] Sean Gallagher: Yep. We’ve been tuning defaults—like statement timeouts and lock timeouts—so a bad migration doesn’t freeze the cluster. And the precheck will also test DB connectivity and maybe space.
+
+[04:45] Priya Raman: Can we dig into prechecks? Which ones are blocking? Because we don’t want the system to block over something we accept risk on.
+
+[04:52] Fatima Noor: For beta, we’re proposing a mix. Blocking: unsupported version jump, missing artifacts, DB not reachable, insufficient storage headroom for backups, and cluster not healthy (like nodes NotReady). Warning: OIDC reachability maybe, depending on your setup, and DNS latency, stuff like that.
+
+[05:15] Marisol Chen: OIDC reachability as a warning seems dangerous? If auth breaks, we can’t log in.
+
+[05:21] Irene Choi: The nuance is, some customers have break-glass local admin. If you have that, we can make it warn; if you don’t, it should block.
+
+[05:30] Jake Miller: We do have break-glass but it’s painful and audited.
+
+[05:35] Priya Raman: Our preference is: block if OIDC is required for operator access. If it’s only for end-user, maybe warning.
+
+[05:44] Fatima Noor: That’s fair; we can make it configurable, like policy.
+
+[05:50] Markus Klein: Marisol, what would you need from an audit standpoint for “we ran prechecks”?
+
+[05:56] Marisol Chen: We need a record of what ran, outcome, and ideally configuration and versions. Also backup encryption verification. And who initiated it.
+
+[06:06] Markus Klein: Got it.
+
+[06:08] Sean Gallagher: We’re also planning to emit audit events: upgrade started, prechecks pass/fail, backup complete, rollback invoked. Those events can go to your SIEM if you have an integration.
+
+[06:21] Marisol Chen: Okay, that’s good.
+
+[06:24] Evan Wu: Precheck for storage headroom—how do you calculate that? Because our PVs are not all on the same backend.
+
+[06:31] Irene Choi: Great question. We’re probably going to start with a conservative heuristic. If CSI snapshots are available, we’ll check snapshot capability and ensure there’s enough capacity for snapshot deltas, but that’s hard to estimate. If we do logical backups, we’ll check the backup target volume has X free GB and that DB size is below that.
+
+[06:53] Evan Wu: We have Ceph in one cluster and local PV in another. Snapshots only on Ceph.
+
+[07:00] Irene Choi: Yeah, that’s common. In that case we’d pick the backup strategy per environment: CSI snapshots for Ceph cluster, and logical dumps + config export for the local PV cluster.
+
+[07:13] Jake Miller: Logical dump meaning, like, pg_dump?
+
+[07:16] Irene Choi: Yes, for Postgres. Or whatever backing DB is in your Private deployment—most folks are Postgres. Plus we back up config and the installer state.
+
+[07:26] Priya Raman: What about secrets? We don’t want secrets copied around.
+
+[07:30] Irene Choi: We don’t copy raw secret values if we can avoid it; we store references and rely on your KMS/HSM for actual material. But for on-prem, it depends—if you’re using Kubernetes secrets, we need to be explicit about what’s included.
+
+[07:46] Marisol Chen: Yeah, we use an internal secrets manager, not just K8s secrets. We can’t have the installer dumping secrets in cleartext.
+
+[07:53] Fatima Noor: Understood. We can scope backups to exclude secret values and document prerequisites. We can also encrypt the backup artifacts with customer-provided keys.
+
+[08:04] Bruno Silva: For on-prem, we’re going to support pointing the installer at a KMS endpoint if you have one inside the environment. Otherwise, passphrase-based encryption is a fallback, but less ideal.
+
+[08:18] Jake Miller: Okay.
+
+[08:20] Markus Klein: Let’s talk about upgrade ordering. Evan you said control plane vs data plane got out of order sometimes.
+
+[08:27] Evan Wu: Yeah. Like, the console upgraded, but the “serving” components didn’t, and we saw mismatch.
+
+[08:33] Sean Gallagher: So we’re explicitly splitting phases. Control plane first: API, console, controllers, DB migrations. Wait for ready. Then data plane: runtime/serving deployments, gateways, etc. There are readiness gates between phases.
+
+[08:50] Priya Raman: Is that still Helm? Or separate charts?
+
+[08:53] Fatima Noor: Still Helm charts, but with hooks + ordering, and the installer enforces stage transitions.
+
+[09:02] Evan Wu: Helm hooks have bitten us, honestly.
+
+[09:05] Fatima Noor: Yep. We’re adding explicit timeouts and fail-fast behavior. And more importantly we persist state so if it fails, the rollback command knows what happened.
+
+[09:18] Jake Miller: What does rollback actually do? Like “helm rollback” only?
+
+[09:22] Sean Gallagher: It depends on where you are. If it’s an early failure before migrations, it’s basically revert chart versions. If migrations have run, rollback may involve restoring from backups or switching to a compatible older app version that can still read the newer schema (that’s the backwards-compat work).
+
+[09:41] Priya Raman: And if you can’t go back, you’ll tell us?
+
+[09:44] Sean Gallagher: Exactly. The plan has rollback metadata per step. Some steps are “non-reversible” and then rollback requires restore, not just “undo.”
+
+[09:55] Marisol Chen: That needs to be very clear. We can’t have ambiguity in a change window.
+
+[09:59] Markus Klein: Agree. That’s why the plan is meant to be human-readable too, not just machine.
+
+[10:04] Evan Wu: Also, artifact mismatch is a common problem for us. Someone updates the internal mirror but not the chart version, or vice versa.
+
+[10:12] Fatima Noor: Bundle manifest addresses that. The plan generation step verifies artifact presence and digest. It won’t proceed if the digest doesn’t match what’s expected.
+
+[10:25] Priya Raman: Is the digest pinned in the plan, or in some compatibility file?
+
+[10:29] Fatima Noor: In the bundle manifest and in the plan output. The plan references exact artifact versions.
+
+[10:36] Bruno Silva: And for VPC customers, Terraform can pin versions too; but for on-prem, the bundle is the primary mechanism.
+
+[10:45] Jake Miller: What about model cache? We’ve had upgrades that nuked the cache and caused a performance issue after.
+
+[10:51] Sean Gallagher: Great point. We’re treating model cache as “rebuildable” but operationally it matters. The plan will have steps like “drain traffic / warm cache” and rollback will consider it. We’re not promising cache preservation in v1 but we can avoid deleting it unless necessary.
+
+[11:10] Evan Wu: Please don’t delete it during upgrade. Even if it’s rebuildable, it’s like hours.
+
+[11:14] Sean Gallagher: Understood. Default will be to preserve and only invalidate if version requires it.
+
+[11:21] Irene Choi: Also, storage headroom check will consider cache volumes if they’re on the same PVs.
+
+[11:28] Priya Raman: Another requirement: no downtime if possible, but we can accept some. What’s the expectation?
+
+[11:35] Markus Klein: For in-place upgrades, there might be a small control plane blip depending on DB migrations. We’re trying to make it minimal. For serving, we do rolling, but if you’re at capacity, you might see increased latency.
+
+[11:50] Jake Miller: We can plan a maintenance window. We just need predictability.
+
+[11:54] Markus Klein: Okay.
+
+[11:55] (crosstalk)
+
+[11:56] Marisol Chen: Sorry, one more thing: logging. We need logs retained for at least 90 days for change evidence.
+
+[12:02] Sean Gallagher: Audit events can be shipped. For installer logs, we can include them in a support bundle and you can store them internally. We’ll document what’s in there.
+
+[12:14] Priya Raman: Support bundle includes upgrade plan output too?
+
+[12:17] Fatima Noor: Yes, that’s the intent.
+
+[12:20] Markus Klein: Maybe we walk through a hypothetical upgrade flow. Fatima, can you do that? Like commands.
+
+[12:26] Fatima Noor: Sure. Something like:
+1) `redwood-private upgrade plan --target 1.14.0 --bundle /mnt/bundles/1.14.0`
+It outputs a JSON plan plus a human summary.
+2) `redwood-private upgrade precheck --plan plan.json`
+3) `redwood-private upgrade backup --plan plan.json`
+4) `redwood-private upgrade apply --plan plan.json`
+And if failure: `redwood-private upgrade rollback --plan plan.json --to-stage control-plane` or `--restore backup-id` depending.
+
+[13:02] Evan Wu: That’s helpful.
+
+[13:03] Priya Raman: The plan JSON—can we parse it? We might want to store it in our change system.
+
+[13:09] Fatima Noor: Yes, schema is stable-ish. We’ll share a draft. It’ll include stages, steps, dependencies, rollback info.
+
+[13:19] Marisol Chen: Will it include a risk score?
+
+[13:21] Markus Klein: We have internal change management risk scoring. For customers we can include warnings like “risky jump” if version compatibility matrix says so.
+
+[13:31] Sean Gallagher: And prechecks can output severity: block / warn / info.
+
+[13:36] Jake Miller: Version compatibility matrix—what’s supported? We’re usually behind.
+
+[13:42] Sean Gallagher: Initially we’re optimizing for N-1 to N. Like one minor step. If you’re multiple versions behind, we might require intermediate upgrades, and we’ll flag it.
+
+[13:54] Priya Raman: That’s going to be a challenge. We’re on… I think 1.11? and you’re talking 1.14.
+
+[14:00] Markus Klein: That’s good to know. For beta, we can target one hop to validate the machinery, but longer term we’ll add multi-hop guidance.
+
+[14:10] Evan Wu: If it blocks, can it still produce a plan so we can see what would happen?
+
+[14:14] Fatima Noor: Yes. Plan generation can succeed but precheck will block, and it’ll tell you why.
+
+[14:21] Priya Raman: That’s actually what we want.
+
+[14:24] Irene Choi: On backup: do you have a preferred backup target? NFS? Object store?
+
+[14:29] Evan Wu: We have an internal S3-compatible object store for some clusters. Not in the restricted one.
+
+[14:36] Irene Choi: Okay. For restricted cluster, we can write to a mounted volume, and you can export it after.
+
+[14:43] Marisol Chen: Must be encrypted at rest.
+
+[14:45] Irene Choi: Yup. Either storage-level encryption or installer-level encryption.
+
+[14:50] Jake Miller: Another issue: We need a hard stop if nodes are under disk pressure. We had that once and upgrade made it worse.
+
+[14:58] Fatima Noor: Node disk pressure will be a blocking precheck.
+
+[15:02] Sean Gallagher: And we can check kube events for Evicted pods etc.
+
+[15:08] Priya Raman: Great.
+
+[15:10] Markus Klein: Let’s talk about what “success” looks like post-upgrade. Jake, what do you verify today?
+
+[15:16] Jake Miller: Mostly we check pods are running, API responds, and we do a smoke test—generate a response. But we don’t have good metrics.
+
+[15:26] Sean Gallagher: We’ll provide an upgrade dashboard: error rate, latency, migration duration. For on-prem, you can use our observability pack if you’re running Prometheus/Grafana.
+
+[15:39] Evan Wu: We are.
+
+[15:40] Sean Gallagher: Great. Then we can provide alert thresholds too.
+
+[15:44] Marisol Chen: Does the dashboard help with audit?
+
+[15:47] Sean Gallagher: More operational, but combined with audit events it does.
+
+[15:52] Priya Raman: Okay.
+
+[15:53] Markus Klein: I want to make sure we capture the top pain points to feed into beta requirements. I heard: ordering, partial DB migrations, artifact mismatch, and inconsistent snapshot support.
+
+[16:06] Priya Raman: Also, “who can run upgrades” is important. Needs RBAC.
+
+[16:10] Marisol Chen: Yes, RBAC and break-glass. And SSO integration. During upgrade we sometimes lose SSO.
+
+[16:18] Fatima Noor: Precheck can validate RBAC and that the service account has required permissions. For SSO, we can check reachability to IdP.
+
+[16:28] Evan Wu: One more thing: DNS. In our enclave, DNS can be flaky.
+
+[16:33] Irene Choi: DNS resolution check will be included. And TLS certificate validity. We can catch expired certs before upgrade.
+
+[16:42] Jake Miller: Good.
+
+[16:44] Markus Klein: We’ve got about 40 minutes left; let’s go deeper on rollback semantics because that’s usually the scary one. Sean, can you describe “rollback entry points” with an example.
+
+[16:55] Sean Gallagher: Yeah. Think of the plan as stages: prechecks, backup, control-plane upgrade, data-plane upgrade, verification. If we fail during control-plane upgrade before applying schema changes, rollback is “revert charts and configs.” If we fail after schema changes, rollback might require restore of DB snapshot. So the rollback command reads the stored state: which steps completed, what backup IDs exist, and then executes rollback hooks in reverse order.
+
+[17:25] Evan Wu: Reverse order meaning last step undone first.
+
+[17:28] Sean Gallagher: Exactly.
+
+[17:29] Priya Raman: Can we choose “stop and hold” instead of rollback? Like, for us, sometimes we want to fix forward.
+
+[17:36] Sean Gallagher: Yes. There’ll be a “pause” / “manual intervention required” mode. The plan output should tell you which step failed and suggested remediation.
+
+[17:48] Jake Miller: But the biggest problem is, once you’ve run a migration, “fix forward” may be hard.
+
+[17:53] Sean Gallagher: Agree. That’s why we’re focusing on backwards-compatible migrations and guardrails.
+
+[18:00] Marisol Chen: How do you guarantee backwards-compatible? That’s not always possible.
+
+[18:04] Sean Gallagher: We can’t guarantee for all time. We can say: in supported upgrade paths, we require migrations to be safe for rollback or require snapshot restore as the rollback method. That’s part of compatibility policy.
+
+[18:20] Priya Raman: So we’ll have a doc that says “supported upgrade paths” and what rollback guarantees are.
+
+[18:25] Markus Klein: Yes.
+
+[18:27] Evan Wu: For on-prem, do you test this? Like end-to-end in CI?
+
+[18:32] Fatima Noor: We’re building an integration test matrix: different k8s versions, storage backends, VPC vs on-prem-ish scenarios, and failure injection.
+
+[18:45] Jake Miller: Failure injection meaning you simulate a migration timeout?
+
+[18:48] Fatima Noor: Exactly. Or precheck failures.
+
+[18:51] Sean Gallagher: And we’ll track rollback frequency too.
+
+[18:56] Priya Raman: Great.
+
+[18:58] Markus Klein: Let’s talk about your maintenance window constraints. How long is typical?
+
+[19:03] Priya Raman: Usually 2 hours, but change freeze around end of quarter. We can do a beta window mid-June.
+
+[19:12] Markus Klein: Okay.
+
+[19:13] Evan Wu: But we need a rollback plan before we do it.
+
+[19:16] Markus Klein: Absolutely. We propose a rollback drill planning session.
+
+[19:21] Jake Miller: Like a tabletop.
+
+[19:22] Markus Klein: Exactly.
+
+[19:24] Marisol Chen: We also need to validate bundle verification. We have a policy: all binaries must be signed.
+
+[19:31] Fatima Noor: We support checksums now and optional signatures; we can align with your policy. The signing authority might be ours or yours depending on how you repackage.
+
+[19:44] Marisol Chen: Ideally you sign, and then we validate.
+
+[19:47] Fatima Noor: Makes sense.
+
+[19:49] Evan Wu: Quick question: What about Kubernetes version compatibility? We’re on 1.28.
+
+[19:55] Irene Choi: That should be supported. We’ll confirm with the matrix.
+
+[19:59] Sean Gallagher: The installer will check K8s version as part of prechecks.
+
+[20:05] Priya Raman: Okay.
+
+[20:06] Markus Klein: Any competitor solutions you evaluated for this? Just to understand baseline.
+
+[20:12] Priya Raman: For inference we looked at Bedrock, Azure OpenAI, but we can’t use them. For internal we looked at KServe. But the upgrade story is also hard.
+
+[20:25] Evan Wu: SageMaker too, but not on-prem.
+
+[20:28] Markus Klein: Got it.
+
+[20:31] Irene Choi: On backups, one question: Do you have a DB external to the cluster or in-cluster Postgres?
+
+[20:38] Evan Wu: In-cluster, currently.
+
+[20:40] Irene Choi: That makes snapshot strategy more important.
+
+[20:44] Jake Miller: We could move it external but that’s another project.
+
+[20:48] Irene Choi: Understood.
+
+[20:50] Sean Gallagher: In-cluster DB upgrades also need care. We’ll sequence DB components before app layers.
+
+[20:58] Priya Raman: Another pain: We don’t know what changed between versions. Release notes are sometimes too high level.
+
+[21:05] Markus Klein: We’re adding a customer-facing changelog specifically for Private, including “upgrade notes” and “breaking changes” callouts.
+
+[21:14] Marisol Chen: Needs security impact notes too.
+
+[21:16] Markus Klein: Yep.
+
+[21:18] Evan Wu: Can you make the precheck output actionable? Like “run this kubectl command” to fix.
+
+[21:24] Fatima Noor: That’s a goal. Each check will have remediation pointers.
+
+[21:31] Jake Miller: Please include “what’s blocking” in one line. Not like a wall of text.
+
+[21:36] Fatima Noor: Noted.
+
+[21:39] Markus Klein: Alright. Maybe we get more concrete: for your environment, what prechecks would you want to be hard blockers?
+
+[21:48] Priya Raman: Blockers: unsupported version jump, DB not reachable, nodes not ready, disk pressure, insufficient backup target space, and missing artifact checksums. Also if SSO is down and no break-glass.
+
+[22:06] Marisol Chen: TLS cert expiry too.
+
+[22:08] Evan Wu: And the ability to pull images from our internal registry. We’ve had auth token issues.
+
+[22:14] Bruno Silva: Registry auth check is on the list. We can validate image pull secrets by doing a dry-run pull.
+
+[22:23] Evan Wu: Great.
+
+[22:25] Jake Miller: Warnings: maybe like “your cluster is at 80% CPU” — we can accept that.
+
+[22:31] Sean Gallagher: Yep.
+
+[22:33] Irene Choi: Another one is “PV snapshot capability” - if you selected snapshot backup but snapshots aren’t supported, that should block.
+
+[22:40] Evan Wu: Totally.
+
+[22:42] Markus Klein: Good. On rollback: what would you consider an acceptable rollback guarantee?
+
+[22:49] Priya Raman: For beta: if upgrade fails, we can restore to pre-upgrade state within the maintenance window. That’s the goal.
+
+[22:58] Jake Miller: Like < 60 minutes to restore.
+
+[23:01] Marisol Chen: And evidence of what happened.
+
+[23:04] Sean Gallagher: We can aim for that. Restore time depends on backup type and data size.
+
+[23:11] Irene Choi: We might want to measure your DB size and estimate restore time.
+
+[23:15] Evan Wu: It’s around 180 GB.
+
+[23:18] Irene Choi: Okay, logical restore might be slower. Snapshot restore would be faster if available.
+
+[23:26] Evan Wu: In our Ceph cluster we can do snapshots.
+
+[23:29] Irene Choi: Then we’d strongly recommend snapshots for that one.
+
+[23:34] Priya Raman: But our restricted enclave is the one without snapshots.
+
+[23:38] Irene Choi: Then we’ll tune the logical backup/restore and maybe do a verification step ahead of time.
+
+[23:46] Jake Miller: Verification step meaning test restoring in staging?
+
+[23:49] Irene Choi: Exactly.
+
+[23:52] Markus Klein: That might be part of beta prep.
+
+[23:56] Marisol Chen: Also: do you back up config and “state”? There’s some config in CRDs.
+
+[24:02] Fatima Noor: Yes, config export includes CRDs/CRs relevant to Redwood, plus installer state.
+
+[24:10] Evan Wu: Okay.
+
+[24:12] Sean Gallagher: One subtlety: we need to coordinate control plane and data plane in rollback too. If DP upgraded and CP didn’t, we can get weirdness.
+
+[24:20] Jake Miller: Yeah.
+
+[24:22] Sean Gallagher: That’s why we gate phases and record stage completion.
+
+[24:28] Priya Raman: Are you planning blue/green?
+
+[24:31] Markus Klein: Not initially. We considered it, but it’s expensive and operationally heavy for on-prem. This is in-place with deterministic rollback hooks.
+
+[24:44] Evan Wu: Makes sense.
+
+[24:46] Markus Klein: Any other must-haves before you’ll do beta?
+
+[24:51] Marisol Chen: Documentation. Not just “run this command” but what it does.
+
+[24:56] Jake Miller: And support coverage. If it goes bad, we need someone on the line.
+
+[25:01] Markus Klein: We can coordinate with Support and SRE for the beta window.
+
+[25:06] Priya Raman: Also, we need to know what data leaves the cluster. Ideally none.
+
+[25:11] Markus Klein: For on-prem, none unless you ship logs. The installer can operate fully offline.
+
+[25:18] Marisol Chen: Good.
+
+[25:20] Evan Wu: One more detail: Helm itself wants to call home sometimes? Not really, but chart dependencies maybe.
+
+[25:26] Fatima Noor: We’ll vendor dependencies into the bundle so no network calls.
+
+[25:33] Evan Wu: Perfect.
+
+[25:35] Markus Klein: We’re at about halfway. Let’s pause and do a quick recap of what we’re taking away, then we can open it up for Q&A.
+
+[25:43] Markus Klein: Takeaways: (1) you need a deterministic, auditable plan and clear blockers, (2) air-gapped artifact verification with checksums/signing, (3) backup strategy varies by cluster; snapshots where possible, logical backup otherwise, (4) rollback must be explicit about what’s reversible vs restore-required.
+
+[26:03] Priya Raman: Yep.
+
+[26:04] Markus Klein: Okay, questions.
+
+[26:06] Evan Wu: About the plan JSON. Is it stored in the cluster? Or only local.
+
+[26:10] Fatima Noor: Both options. By default we persist it as a Kubernetes secret or configmap plus local copy, but we can configure storage.
+
+[26:19] Marisol Chen: Kubernetes secret storage might violate our policy if it includes sensitive info.
+
+[26:24] Fatima Noor: The plan itself shouldn’t include secrets. It might include endpoints and versions.
+
+[26:30] Marisol Chen: Okay.
+
+[26:32] Jake Miller: What if the installer host dies mid-upgrade?
+
+[26:36] Fatima Noor: That’s why state is persisted. You can resume from another host using the stored state.
+
+[26:44] Jake Miller: Nice.
+
+[26:46] Sean Gallagher: And we’ll make operations idempotent, so retries won’t make it worse.
+
+[26:53] Evan Wu: Can you “dry run” the upgrade? Like show what would change.
+
+[26:57] Fatima Noor: Plan generation is basically that, plus we can do Helm diff.
+
+[27:03] Priya Raman: That would help with approvals.
+
+[27:06] Bruno Silva: If you’re using Terraform for any parts, we also have a variable for upgrade windows to integrate with your scheduling.
+
+[27:14] Priya Raman: On-prem we don’t use Terraform much.
+
+[27:17] Bruno Silva: Understood.
+
+[27:20] Marisol Chen: Do you have SOC 2 reports that mention change management?
+
+[27:24] Markus Klein: Yes, we can share under NDA. But for on-prem, your controls are primary; our tool helps produce evidence.
+
+[27:34] Marisol Chen: Okay.
+
+[27:36] Jake Miller: Another technical question: If a migration times out, what happens? Does the job retry automatically?
+
+[27:42] Sean Gallagher: We’re careful there. Some migrations can be retried safely, others cannot. The job will fail and the installer will mark that step as failed with a reason. Then you can choose to retry or rollback.
+
+[27:56] Jake Miller: Okay.
+
+[27:57] Evan Wu: And lock timeouts are configured by you?
+
+[28:01] Sean Gallagher: Defaults by us, configurable by you via values/config.
+
+[28:07] Priya Raman: Good.
+
+[28:09] Irene Choi: On the storage check: we should confirm how your PVs are provisioned. If it’s dynamic provisioning, we can check storageclass capacity maybe. If it’s static local PV, we may need node-level checks.
+
+[28:25] Evan Wu: It’s a mix.
+
+[28:27] Irene Choi: Okay, we’ll follow up with a questionnaire.
+
+[28:32] Markus Klein: Let’s talk about timing for beta. You said mid-June.
+
+[28:37] Priya Raman: Yes. But we need at least 2 weeks to do internal change approval.
+
+[28:42] Markus Klein: So we should aim to provide docs and precheck list by end of next week.
+
+[28:48] Fatima Noor: That’s doable.
+
+[28:50] Marisol Chen: Include the data handling and encryption details.
+
+[28:54] Fatima Noor: Yes.
+
+[28:56] Jake Miller: Also, can we test in staging first? We have a staging cluster but it’s not identical.
+
+[29:01] Sean Gallagher: We should. Even if not identical, it helps validate plan and basic hooks.
+
+[29:08] Evan Wu: Staging has snapshots. Prod restricted doesn’t.
+
+[29:12] Irene Choi: Then we should also do a logical backup restore test somewhere.
+
+[29:17] Priya Raman: Okay.
+
+[29:18] Markus Klein: Anything else you want to see in the plan output? Like downtime estimate.
+
+[29:25] Jake Miller: If you can estimate, great, but not required.
+
+[29:28] Priya Raman: Risk warnings are more important.
+
+[29:32] Fatima Noor: We can include “expected impact” fields but might be best-effort.
+
+[29:38] Marisol Chen: I’d rather have honest uncertainty than fake precision.
+
+[29:42] Markus Klein: Yep.
+
+[29:44] Evan Wu: One more: Our operators prefer non-interactive mode. Can the installer run fully unattended?
+
+[29:50] Fatima Noor: Yes. It can run with flags and produce logs. We might have a confirmation prompt for risky actions but you can override with `--yes`.
+
+[30:01] Evan Wu: Great.
+
+[30:02] Markus Klein: We’re getting close to wrap. Let’s do a quick pass on concrete next steps and owners.
+
+[30:08] Markus Klein: Fatima will send bundle format overview + precheck list. Bruno will send version pinning / artifact source override notes. Irene will send backup strategy recommendations. Sean will send verification checklist + dashboard pointers. Priya will confirm OIDC reachability and storage backend details. Then we schedule a rollback drill planning session.
+
+[30:33] Priya Raman: Works.
+
+[30:35] Marisol Chen: Please include signature verification details.
+
+[30:38] Fatima Noor: Yep.
+
+[30:40] Jake Miller: And if possible, share an example plan JSON.
+
+[30:44] Fatima Noor: Will do.
+
+[30:46] Markus Klein: Great. Before we end, any last questions?
+
+[30:50] Evan Wu: None from me.
+
+[30:52] Marisol Chen: Good.
+
+[30:53] Jake Miller: All set.
+
+[30:55] Markus Klein: Awesome. Thanks everyone.
+
+---
+Note: Transcript auto-generated; speaker attribution may be imperfect in places.
+Redwood to send draft precheck list + which items will be blocking vs warning for beta.
+Northstar to confirm storage backend details (Rook/Ceph vs local PV) and whether CSI snapshots are available in prod.
+Redwood to share offline/air-gapped upgrade bundle requirements and signing/checksum verification flow.
+Schedule a 60-minute rollback drill planning session (tabletop) before beta upgrade window.
+Northstar to provide a redacted sample of their current upgrade runbook and maintenance window constraints.
+Fatima Noor: Share on-prem/air-gapped bundle format overview + required inputs (registry mirror, chart repo mirror) by 2025-05-30.
+Bruno Silva: Follow up with Terraform variables for version pinning + artifact source overrides relevant to on-prem by 2025-06-03.
+Irene Choi: Provide recommendation for snapshot approach per storage backend (CSI vs logical dump) and retention defaults by 2025-06-04.
+Sean Gallagher: Draft what 'upgrade success' verification checklist looks like (health checks + dashboards) by 2025-06-05.
+Priya Raman (Northstar): Confirm whether OIDC/SSO can be reachable from the cluster during maintenance window; note any change-freeze constraints by 2025-06-03.

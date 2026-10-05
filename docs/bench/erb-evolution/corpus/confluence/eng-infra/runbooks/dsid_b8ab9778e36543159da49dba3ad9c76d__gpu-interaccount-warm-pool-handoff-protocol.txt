@@ -1,0 +1,150 @@
+Inter-account GPU Warm-Pool Handoff Protocol (Oncall Runbook)
+
+Summary
+
+This document describes the step-by-step oncall protocol for performing an inter-account GPU warm-pool handoff when the primary tenant capacity is exhausted and a cross-account burst is required. It covers preflight checks, the handshake sequence between warm-pool-manager instances, IAM role chain assumptions, Terraform/IaC changes required for emergency handoffs, verification, rollback, and observability. This runbook is intended for oncall engineers (infra SRE and GPU fleet owners) who manage multi-account GPU bursting and warm-pool orchestration.
+
+When to run this
+
+- Automatic trigger: capacity-sentry signals a sustained 90th-percentile queue time > 2.5s and warm-pool saturation for 3 minutes.
+- Manual trigger: customer-facing latency incidents, region outage, or when the allocation controller requests cross-account burst.
+
+Preflight (5 minutes)
+
+1) Confirm incident context and scope: affected tenant(s), region(s), and SLO impact.
+2) Check SLO dashboard:
+   - 99th-pct latency target: 500ms token-serving
+   - Queue-time SLO: 95th-pct < 1.2s
+3) Verify warm-pool health in both accounts: runbook-owner should check warm-pool-manager metrics for: active leases, available-gpus, preheat-success-rate.
+
+Quick commands (run from the oncall bastion with appropriate MFA)
+
+- Check capacity-sentry alerts: curl -s https://prometheus.internal/api/v1/query?query=capacity_sentry_alert
+- List warm pool instances (k8s): kubectl -n infra get pods -l app=warm-pool-manager -o wide
+- Inspect lease table: psql -h leases-db.internal -U infra_user -c "select * from leases where state='handshake' order by created_at desc limit 20;"
+
+Roles and architecture notes
+
+- warm-pool-manager: service running in every account responsible for preheating GPUs, tagging instances, and performing handshake.
+- burst-orchestrator: global controller that decides target account for overflow.
+- capacity-sentry: SLO monitor and alerting signal source.
+- egress-shim: per-account egress proxy that performs bandwidth-aware stamping for cross-account traffic.
+- lease-daemon: lightweight agent on compute nodes that accepts ephemeral leases and streams KV-cache seeds.
+
+Handshake protocol overview (high level)
+
+1) burst-orchestrator determines target account and issues an ephemeral handshake token (valid for 3 minutes).
+2) warm-pool-manager in target account validates the token via IAM role chain and creates a placeholder Lease record in read-only state.
+3) Source warm-pool-manager begins KV-cache seed transfer using the lease token and a TLS-auth channel to the target account's lease-daemon.
+4) After successful seed receipt, the target upgrades the Lease to Active and updates routing tables so the router sidecar can route tenant requests into the new pool.
+
+Detailed emergency handoff procedure (approx. 18–30 minutes)
+
+Step 0 — Notify stakeholders (2 minutes)
+- Announce on #infra-oncall and page the oncall rotation in PagerDuty with priority P2. Include region, tenant, and current capacity metrics.
+
+Step 1 — Confirm IAM and trust boundary (3 minutes)
+- Validate the target account has the cross-account role configured: role name "redwood/warm-pool-handoff".
+- Quick check (from source account):
+  aws sts assume-role --role-arn arn:aws:iam::TARGET_ACCOUNT_ID:role/redwood/warm-pool-handoff --role-session-name handoff-check
+- If assume-role fails: escalate to cloud-accounts team (page Slack: @cloud-accounts). Do not proceed.
+
+Step 2 — Issue ephemeral handshake token (1 minute)
+- From burst-orchestrator console: POST /api/v1/handshake {"source_account":"A","target_account":"B","ttl_s":180} -> returns token.
+- Record token id and TTL in the incident timeline.
+
+Step 3 — Reserve capacity in target pool (3 minutes)
+- In target account run: kubectl -n infra exec deploy/warm-pool-manager -- /bin/warmctl reserve --token <TOKEN_ID> --count <n_gpus>. Aim to reserve 10–20% above predicted peak for safety.
+- If reserve fails due to account quotas, run the quota increase quick path (see Quota quick path below).
+
+Step 4 — Seed transfer and KV-cache sync (6–12 minutes)
+- Initiate transfer from source warm-pool-manager: /usr/local/bin/warmctl transfer-seed --token <TOKEN_ID> --target-endpoint https://lease-daemon.target.internal:8443 --profile fast
+- Watch transfer metrics in Prometheus: warm_seed_transfer_duration_seconds, warm_seed_transfer_error_count.
+- Expected durations: 90% < 90s for a 4GB seed over inter-region link (with typical egress-shim compression enabled).
+- If transfer stalls > 180s: reduce concurrent shards (--shards 4) and retry. If repeated failures, abort and fall back to DNS-level routing (see Fallback options).
+
+Step 5 — Activate lease and switch routing (2 minutes)
+- On target: kubectl -n infra exec deploy/warm-pool-manager -- /bin/warmctl activate --token <TOKEN_ID>
+- Update router sidecar config: POST /router/configs/apply with route override: route { tenant: "TENANT_ID", pool: "target-account-pool" }
+- Wait for 1 minute for caching to propagate.
+
+Verification (5 minutes)
+
+- Confirm incoming requests are served from target pool: query per-request trace header x-redwood-pool in the last 100 requests.
+- Confirm token billing tags and cost attribution are set: check cost-annotator logs for token_id tag.
+- SLO check: observe latency and queue-time dashboards for the affected tenant for a 10-minute window; expect queue-time to drop by >= 40%.
+
+Rollback and fallback options
+
+- If KV-cache transfer fails irrecoverably: run fallback DNS-level routing to a best-effort cached model in a regional pool: runbook command: /usr/local/bin/warmctl fallback-dns --tenant TENANT_ID --region REGION_CODE.
+- To fully rollback (deactivate target pool): kubectl -n infra exec deploy/warm-pool-manager -- /bin/warmctl deactivate --token <TOKEN_ID> --force
+- Post-rollback: ensure that lease state in leases-db is set to "aborted" and trace ids are added to the incident record.
+
+Quota quick path (when target reservation fails)
+
+1) Check current quota: aws service-quotas get-service-quota --service-code ec2 --quota-code L-ABCDEFGH --region <REGION>
+2) If instantaneous quota bump is configured (emergency-bump role): assume role: aws sts assume-role --role-arn arn:aws:iam::TARGET_ACCOUNT_ID:role/redwood/instant-quota-bump --role-session-name qb
+3) Run Terraform apply against iac/quotas/emergency-bump.tf with variables: --var 'account=TARGET_ACCOUNT_ID' --var 'delta_gpu=+X' and set -auto-approve. Only the cloud-accounts engineer should execute this; page them if necessary.
+
+Observability and dashboards (ongoing)
+
+- Prometheus metrics to watch:
+  - warm_pool_active_leases{account,region} (target should increase)
+  - warm_seed_transfer_rate_bytes
+  - capacity_sentry_queue_time_seconds
+  - egress_shim_bandwidth_utilization
+- Logs: lease-daemon logs (stdout) aggregated in kibana index leases-logs-*/_search. Look for "seed-received" and "seed-commit" events.
+- Traces: sampling key x-redwood-trace-token in Jaeger should show cross-account hops.
+
+Post-incident tasks (owner: GPU-Fleet)
+
+1) Create postmortem within 48 hours if handoff was non-trivial or if SLOs were missed. Include timeline and seed-transfer traces.
+2) If quota bumps were used, reconcile cost center tags and submit billing adjustment within 5 business days.
+3) If transfer retries occurred >2x, open a backlog ticket for transfer optimization and include transfer artifacts (logs, histogram).
+
+Security considerations
+
+- Handshake tokens are single-use and TTL-limited (default 180s). Never copy tokens into external channels.
+- All cross-account transfers must happen over mTLS endpoints; confirm cert fingerprint before starting (see cert-check below).
+
+Cert check (one-liner)
+
+- openssl s_client -connect lease-daemon.target.internal:8443 -servername lease-daemon.target.internal | openssl x509 -noout -fingerprint -sha256
+- Confirm fingerprint matches entry in keyring: kubectl -n infra get configmap handoff-keyring -o yaml | grep <fingerprint>
+
+Ownership and escalation
+
+- Primary owner: GPU-Fleet (pager oncall alias: #gpu-fleet-oncall).
+- Secondary (cloud accounts): @cloud-accounts.
+- Escalation path: after 10 minutes of blocked handoff, escalate to SRE manager and run a P1 bridging call if customer impact is P1.
+
+Change control and IaC notes
+
+- Any permanent changes to the warm-pool-handoff role, token TTL, or the transfer protocol must be implemented in Terraform and go through the infra GitHub repo CI/CD gates. PRs must include: unit test for token TTL enforcement, integration test that mocks assume-role, and a canary rollout policy for warmctl binary.
+- Quick emergency IaC patch (only cloud-accounts): update terraform/modules/iam/roles.tf and run: terraform plan -var 'account=TARGET_ACCOUNT_ID' && terraform apply -auto-approve. Always run terraform fmt and run the policy-as-code checks before apply.
+
+Appendix: common failure modes and remediation
+
+| Symptom | Probable cause | Remediation |
+| --- | --- | --- |
+| Seed transfer stalls at 0% | Egress-shim throttling | Reduce parallel shards; enable compressed profile; contact networking if sustained >5min |
+| Assume-role fails | Missing trust policy | Validate role ARN and trust relationship; escalate to cloud-accounts |
+| Router override not applied | Config propagation error | Reapply router config and check config-version in /router/status; restart router sidecar if necessary |
+
+Change history
+
+- 2024-11-12: Initial draft (Marisol Ortega)
+- 2025-02-08: Clarified quota quick path and added cert-check (Ethan Kwan reviewer)
+
+Related reading
+
+- See the GPU capacity runways and warm-pool sizing whitepaper for sizing heuristics.
+- See the egress-shim operational runbook for bandwidth shaping and compression settings.
+
+Contact matrix
+
+- gpu-fleet-oncall: pagerduty/@gpu-fleet-oncall
+- cloud-accounts: slack/#cloud-accounts
+- networking: slack/#infra-networking
+
+End of runbook

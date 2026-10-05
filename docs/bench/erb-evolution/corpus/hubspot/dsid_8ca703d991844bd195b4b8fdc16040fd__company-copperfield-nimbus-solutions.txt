@@ -1,0 +1,22 @@
+Copperfield Nimbus Solutions
+
+2025-11-12 - Initial inbound via community trial sign-up (self-serve).
+2025-12-02 - Discovery call (Maya + Diego) - product: collaborative knowledge + chat; initial KPIs discussed.
+2026-01-05 - Hosted API trial started (3-week trial, dev + staging integration).
+2026-01-20 - Trial metrics snapshot: average QPS 42, peak QPS 160 during batch sync, average tokens/request 185.
+2026-02-07 - Demo: Dedicated intro + cost model (Diego) — customer asked about reserved GPU sizing and canary rollout.
+2026-02-18 - Capacity sizing workshop (Diego, Maya, infra lead Tom) — sketched out concurrency and token mix assumptions.
+2026-02-26 - Security & compliance kick-off (Priya) — requested SOC2 evidence and KMS integration pattern.
+2026-03-01 - Pricing follow-up email with committed throughput tiers and discount math sent (thread-1782345).
+Mid-market collaboration SaaS building an in-app assistant + enterprise doc search. Started on Hosted API to validate UX and quality. After positive hosted trial metrics, moving toward Dedicated for predictable latency and data isolation. Core asks: predictable p50/p95 latency for chat (target p50 <150ms, p95 <400ms), embeddings throughput for nightly index jobs, and a routing policy that falls back to a smaller model for non-critical requests. Sizing inputs from customer workshop:
+- Current production-ish load (post-trial projection): baseline 50 QPS, expected growth to 120 QPS within 6 months, peak 220 QPS during daytime syncs.
+- Concurrency: planning for 120 concurrent sessions at peak (chat sessions with active KV cache).
+- Token mix (measured during Hosted trial): ~60% short requests (<=64 tokens), ~30% medium (64-512 tokens), ~10% long (>512 tokens). Average request tokens ~180; average response tokens ~140; combined per-request tokens ~320.
+- Monthly token forecast (conservative): 1.2B tokens/mo with burst headroom to 2.5B/mo.
+- Target model profile: prefer open/Redwood-verified medium/large models (opt for 13B-70B Q4 quantized variants) with automatic fallback to 7B for cost-sensitive traffic.
+- Operational requirements: VPC deployment, KMS integration for keys, audit logs retention 13 months, SSO via SAML for admin portal.
+- POC asks: Dedicated sizing plan for 3 tiers (dev/staging, prod baseline, prod peak), demo of autoscaling behavior under steady QPS and flash bursts, and a pricing worksheet showing reserved vs burst capacity costs.
+Finalize dedicated sizing and pricing; legal review of contract; schedule VPC peering window
+internal budget approval (finance)
+network peering details for VPC deployment
+clarify token pricing for mixed chat+embedding workload

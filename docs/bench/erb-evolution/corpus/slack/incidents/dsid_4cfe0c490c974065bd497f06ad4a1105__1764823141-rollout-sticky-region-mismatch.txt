@@ -1,0 +1,64 @@
+incidents
+
+incident-bot: :rotating_light: INCIDENT ALERT: Canary rollout for model redwood-text-2-canary in eu-west-1 showing elevated 5xx rate and tail latency. Auto-fallbacks triggering repeatedly. Paging @alice_oncall and @erin_sre. Please ack.
+
+alice_oncall: Acked. I'm on it — collecting quick logs and scope. Can someone drop the rollout config?
+
+bob_runtime: Copy — looking at runtime metrics. We're seeing error surge starting 11:30 UTC. KV cache misses + OOM-ish stack traces in the canary pods. Logs: ```2026-03-15T11:30:22Z service:model=redwood-text-2-canary region=eu-west-1 error=502 upstream=kv-cache OOM java.lang.OutOfMemoryError```
+
+carol_platform: FYI the rollout policy for this canary is: ```{
+  "strategy": "rolling",
+  "canary_pct": 10,
+  "regions": ["eu-west-1","us-west-2"],
+  "fallback_policy": {"type":"sticky","sticky_ttl_sec":3600,"preferred_variant":"latest"}
+}``` I think preferred_variant should've been "stable-quantized" but config says "latest" — that causes fallback to pick the canary variant instead of the older stable one.
+
+alice_oncall: That would explain why fallback loops back into canary in eu-west-1. So the "sticky" fallback is sticky to the variant label, not to a stable region. Can we pause the rollout and flip fallback to force-stable?
+
+dave_support: Noted — customers affected: SatoriPay (eu customers seeing elevated latency), AcmeAnalytics (partial failures on batch embeddings). I'll open an incident page for outreach.
+
+erin_sre: I'm running the mitigation playbook. Immediate steps: 1) pause canary 2) set fallback_policy to forced_variant: stable-quantized 3) drain canary pods in eu-west-1 4) monitor error-rate.
+
+alice_oncall: Executing step 1 now. CLI: `redwood rollout pause --id rlt-9a3f --region eu-west-1`
+
+deploy-bot: deploy-bot: Rollout rlt-9a3f paused by alice_oncall at 2026-03-15T11:33:10Z. Canary traffic freeze initiated.
+
+bob_runtime: Patching fallback policy to forced_variant. Patch command: ```redwood rollout update --id rlt-9a3f --patch '{"fallback_policy":{"type":"forced_variant","variant":"stable-quantized"}}'``` Applying...
+
+carol_platform: Patch applied. Confirmed fallback now routes to stable-quantized in eu-west-1. Also noticed sticky_ttl was 3600s which made transient drains sticky — we'll lower it.
+
+erin_sre: Draining canary pods now: `kubectl cordon pod/redwood-canary-... && kubectl drain pod/redwood-canary-... --ignore-daemonsets`
+
+bob_runtime: Post-patch logs show 5xx falling from 18% -> 1.2% over 3 minutes. Tail latency returning to baseline.
+
+alice_oncall: Handing off to @erin_sre for monitoring and remediation for the next hour. I'm switching to incident commander -> @alice_oncall stepping down after notes.
+
+erin_sre: Taking over monitoring. I'll keep a 15m cadence check and watch for sticky routing loops. If error spikes >5% for 10m, I'll escalate to runtime.
+
+dave_support: Notifying affected customers with a hold message: "We detected intermittent errors with the recent canary in eu-west-1; traffic has been rolled back to a stable model while we investigate. We'll follow up with a postmortem."
+
+carol_platform: Root-cause hypothesis: rollout config used invariant label 'latest' for preferred_variant while canary also used label 'latest' — fallback logic resolved label to newest tag (canary), producing immediate sticky fallback back to failing variant in region. Secondary issue: sticky_ttl too long, preventing quick re-routing during mitigation.
+
+bob_runtime: Quick remediation checklist for engineers (short): - validate variant selectors are explicit (stable-quantized) - validate sticky_ttl <= 300s for canaries - add guard that fallback won't resolve to in-flight canary tag - add circuit-breaker on per-region error-rate to force global stable routing
+
+erin_sre: I'm updating the incident runbook with those mitigations and will open a backlog ticket for a runtime guard. Also enabling a temporary region circuit-breaker: `redwood routing update --region eu-west-1 --circuit-breaker error_rate=0.05 duration=300s --action=force-stable`
+
+deploy-bot: deploy-bot: Routing policy update applied by erin_sre at 2026-03-15T11:41:05Z. Circuit-breaker active for eu-west-1.
+
+alice_oncall: Quick customer impact summary for postmortem: 3 enterprise customers affected intermittently, peak 12 min elevated 5xx window, auto-fallback created sticky loop to canary due to label misconfiguration. No data exfiltration. Will assign owners.
+
+dave_support: Assigned outreach owner: me (dave_support). Postmortem audience: SRE, Runtime, Platform, Product. ETA draft: EOD 2026-03-15.
+
+bob_runtime: I'll own the follow-up for runtime guard and variant resolution change. Ticket: RT-4729.
+
+carol_platform: I'll own platform change to warn on ambiguous preferred_variant values during rollout creation and add a validation error for sticky type with 'latest' variant. Ticket: PLAT-2310.
+
+erin_sre: Monitoring shows stable for 20m. I'll keep circuit-breaker for 30m and then re-evaluate. If all good, I'll close the incident and mark remediation complete.
+
+alice_oncall: Thanks team. I'm marking this thread as incident.commander_handled. Leaving final notes: root cause = config mismatch + sticky fallback semantics. Immediate cause of customer impact = sticky fallback resolving to canary variant.
+
+incident-bot: INCIDENT RESOLVED: Canary rollback and routing fixes mitigated customer impact. Incident severity: SEV2 -> reduced. Postmortem owner: bob_runtime.
+
+erin_sre: Closing handoff: monitoring stable at 11:54 UTC. Follow-ups: RT-4729 (runtime guard), PLAT-2310 (rollout validation), DOC-889 (runbook update).
+
+alice_oncall: Closing thread. Good job everyone. :thumbsup:

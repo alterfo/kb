@@ -1,0 +1,57 @@
+Interactive Latency Canvas — model/route timelines and streaming vs blocking decomposition
+
+Background:
+We need a single exploratory dashboard (the "Interactive Latency Canvas") that lets SREs, runtime and product owners compare latency distributions across models and routes with automatic separation between streaming vs blocking (non-streaming) IO modes. Existing dashboards are numerous but fragmented; this work consolidates cohorting, trace hooks, and enriched metrics into a unified surface that supports root-cause drills and runbook actions.
+
+Goals:
+- Surface p50/p95/p99 latency by model_version and route_name with a toggle for streaming vs blocking IO.
+- Allow cohort-based comparisons (prompt length, open/closed loop, kv-cache hit/miss) and request-shape bucketing (short/medium/long).
+- Overlay KV-cache hit-rate, batch-size distribution and 'stream-early-output' metric to explain downstream latency variance.
+- Link directly to pre-sampled traces that include kernel selection, batch_id, and early-output anchors.
+- Provide alerting recipes for streaming-mode regressions (spike in p95 or increase in chunk-latency).
+
+Design & instrumentation changes required:
+- Tracing: add trace attributes: model_version, route_name, io_mode (streaming|blocking), batch_id, kernel_variant, kv_cache_hit (true|false), response_first_chunk_ts. Update trace hook to capture first-chunk timestamp for streaming flows.
+- Metrics: enrich latency timer metrics with tags: model_version, route_name, io_mode, prompt_len_bucket, kv_cache_hit. Emit histogram buckets suitable for p50/p95/p99 calculation.
+- Logs: surface error_code and internal_fallback flags per request; forward to logs pipeline with same enrichment tags.
+- Metrics/log pipeline: ensure enrichment occurs in the metrics agent before aggregation and that the metrics backend stores per-model/route series (avoid cardinality explosion by using prompt_len_bucket).
+
+Dashboard components (interactive):
+1) Top-line selector: model_version, route_name, time window, compare axis (left/right).
+2) Latency skyline: stacked percentiles (p50/p95/p99) over time with shading for streaming vs blocking. Clicking a percentile drills to the cohort table.
+3) Cohort panel: single-click cohorts by prompt_len_bucket, kv_cache_hit, request_shape, and client_region with sparklines.
+4) Batch/Kernel overlay: histogram of batch sizes and kernel_variant frequency correlated to latency spikes.
+5) Streaming chunk inspector: distribution of response_first_chunk_latency and subsequent chunk inter-arrival latencies.
+6) Trace link column: sampled trace IDs with reason tags (high p99, kv miss, fallback).
+7) SLO heatmap: per-model/route p95 breach frequency and recent incidents.
+
+Acceptance criteria (definition of done):
+- Dashboard deployed in staging with live data for at least 48 hours and accurate p50/p95/p99 breakdowns for streaming and blocking modes.
+- Trace hooks emit the new attributes and the trace link opens to a trace that includes kernel_variant and response_first_chunk_ts.
+- Metrics enrichment is in place for model_version and route_name without unbounded cardinality; queries for p50/p95/p99 are efficient (< 5s for 1h window).
+- Cohort filters correctly subset series and re-compute percentiles; KV-cache overlay aligns with latency spikes.
+- Alerting rule for streaming-mode p95 increase is added with paging policy and runbook link.
+- PR and design doc reviewed by Observability and Runtime teams and QA runbook created.
+
+Implementation notes / queries for reviewers:
+- Suggest storing prompt_len_bucket at source (agent) with buckets: short(<64), medium(64-512), long(>512) to limit cardinality.
+- For streaming traces we need to decide sampling policy: 1% baseline + 100% for requests with p99 > threshold. Does SRE approve temporary higher sampling during rollout?
+- Consider pre-computing p95/p99 in metrics ingest layer for common model/route combinations to keep query latency low.
+
+Rollout plan:
+1) Instrumentation PRs (tracing + metrics agent) -> staging smoke test -> metric cardinality sanity run.
+2) Dashboard initial UAT with Runtime/Observability -> tweak cohorts.
+3) Enable in prod read-only for 1 week, then open edit and alerts.
+4) Postmortem after 2 weeks to capture false positives and tuning.
+
+Notes for follow-up tickets:
+- Follow-up: add model-compare mode to overlay two models on same route (separate ticket).
+- Follow-up: per-customer (org) breakdown for Dedicated customers with private metrics routing.
+
+2026-03-10 Asha Patel: Created ticket and sketched initial panels. Added project and cycle.
+2026-03-11 Liam Chen: Synced with Runtime team. Agreed to add response_first_chunk_ts to trace hooks. Runtime to own kernel_variant attribute.
+2026-03-12 Design review: Sizing for dashboard tiles looks acceptable. Request to add batch-size histogram and allow log-linking to error traces.
+2026-03-13 PR: github.com/redwood-inference/observability/pull/189 - adds metric tag enrichment and prompt_len_bucket. Needs load test signoff.
+2026-03-13 QA: staging smoke tests running; awaiting metrics backend cardinality report (expected <10% series growth).
+2026-03-13 Note: SRE recommended 2% sample + triggered full-sample for p99 breaches during rollout.
+Design doc: https://confluence.redwood.ai/display/OBS/Interactive+Latency+Canvas

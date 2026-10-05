@@ -1,0 +1,195 @@
+ADR-021: Region Pinning — Enforcement Boundaries and Cross-Region Allowances
+
+## Status
+Published (effective for Hosted API residency enforcement v1).
+
+## Context
+Redwood Inference is implementing **Hosted data residency enforcement** with customer-configurable **region pinning** (allowed regions set + primary region). Enforcement must ensure that **customer content** does not leave the pinned region(s) via request routing, fallbacks, background processing, or operational tooling.
+
+Multiple subsystems touch request data (gateway, routing, runtime, caches, logs, traces, analytics, support tooling). This ADR defines:
+1) What is considered **customer content**.
+2) Which systems are **in-scope** for residency enforcement in v1.
+3) What limited **cross-region metadata** is explicitly permitted.
+4) How we treat **logs, traces, metrics, and audit events**.
+
+This ADR is intentionally strict: if a data flow is not explicitly permitted here, it is considered disallowed for pinned orgs/projects.
+
+## Decision
+### 1) Definition: “Customer content”
+For the purposes of region pinning enforcement, **customer content** includes any data that could reveal or reconstruct customer-provided or model-produced content.
+
+**Customer content (MUST remain within pinned region(s))**
+- Prompt / messages / input text (including system prompts provided by customer)
+- Tool/function call arguments provided by customer
+- Uploaded documents or retrieved passages (RAG payloads) provided by customer
+- Model outputs (including partial streaming tokens)
+- Embeddings input text and embeddings vectors derived from customer text
+- Rerank inputs (candidate passages) and rerank outputs derived from those passages
+- Fine-tuning / adapter payloads if routed through Hosted API pathways (not in scope for v1 feature, but classification applies)
+- Any debug payloads that include raw request/response bodies
+- Any derived artifacts that can reconstruct content (e.g., token logs, decoded segments, sampled prompt fragments)
+
+**Not customer content (may be processed outside pinned region(s) under constraints below)**
+- Non-content operational metadata that does not include request/response bodies and cannot reasonably be used to reconstruct them (see “Allowed cross-region metadata”).
+
+Notes:
+- Whether content includes PII is not determinative; **all prompts/outputs are treated as sensitive content**.
+- “Derived” includes transformations (tokenization, embedding vectors, compression) if they are computed from customer text/output.
+
+### 2) Enforcement boundary: “Where residency applies”
+For pinned orgs/projects/API keys, **all handling of customer content** must remain in allowed region(s) for:
+- **Request routing** and execution (including retries and fallbacks)
+- **Background work** that uses the request payload or output (e.g., async logging of bodies, eval capture, replay queues)
+- **Persistence and caching** of any form of request/response content
+- **Observability signals** that contain content (logs/traces/debug captures)
+
+Residency enforcement is evaluated at request time by the gateway/routing policy engine and must be **deterministic** (same policy + same request context → same allow/block outcome).
+
+### 3) In-scope subsystems (v1)
+The following are **in-scope** for enforcement and must be guaranteed for GA:
+
+1. **API Gateway**
+   - Validates residency context (resolved org/project/key policy)
+   - Attaches a “residency decision context” to downstream requests
+   - Blocks requests that cannot be served in an allowed region
+   - Ensures streaming and non-streaming paths return standardized block behavior (see ADR-022)
+
+2. **Smart Routing Layer**
+   - Region selection must respect allowed regions
+   - Cross-region fallback is **disabled by default** for pinned traffic
+   - Retries must remain within allowed regions
+   - Capacity-based routing must not override residency constraints
+
+3. **Serving Runtime / Inference Workers**
+   - Must not emit request/response content to cross-region sinks
+   - Must not forward payloads to remote debugging, sampling, or model telemetry outside allowed regions
+
+4. **Caching Layer(s) used for request acceleration**
+   - Prefix/KV caches and any semantic/prompt caches containing content must be region-local
+   - Cache keys must not include raw content; if derived hashes are used, treat them as sensitive unless approved as “allowed metadata” (see below)
+
+5. **Logging & Tracing**
+   - For pinned traffic, application logs and traces must not include raw request/response content outside allowed regions
+   - Any “debug mode” that captures bodies is prohibited for pinned traffic unless the capture sink is region-local and access-controlled
+
+6. **Usage Analytics / Billing Events**
+   - Aggregations that do not include content may be cross-region (per allowed metadata rules)
+   - Any pipeline that currently samples raw prompts/outputs for quality must be disabled or region-local for pinned traffic
+
+7. **Audit Logs (Control plane)**
+   - Policy change events can be stored centrally, provided they do not contain customer content (see allowed metadata)
+
+### 4) Out-of-scope subsystems (v1) / explicit non-guarantees
+The following are **not guaranteed** by the v1 enforcement feature and must be described as such in customer-facing docs:
+- Automatic multi-region replication of customer content
+- Custom per-endpoint residency behavior for every internal subsystem not listed as in-scope
+- Historical data created before pinning is enabled (handled by separate retention/migration workstreams)
+
+However, “out-of-scope” does not mean “allowed to violate residency.” If an out-of-scope subsystem currently receives customer content for pinned traffic, it must be blocked/disabled or brought into compliance before GA.
+
+## Allowed cross-region metadata (explicit allowlist)
+The following metadata is permitted to leave the pinned region(s) because it is required for global operations (billing, abuse prevention, reliability) and is designed to be non-reconstructive.
+
+**General rules for allowed metadata**
+- MUST NOT include raw prompt text, model output text, embeddings vectors, token sequences, or decoded fragments.
+- MUST be bounded in size and structured.
+- MUST avoid free-form string fields that could accidentally contain user content.
+- MUST use explicit schemas with linting/validation where feasible.
+- MUST be reviewed by Security Engineering (Marcus Lin) and documented prior to adding new fields.
+
+### Allowed fields (v1)
+Permitted to be processed/stored outside pinned region(s):
+- Redwood identifiers: org_id, project_id, api_key_id (internal), user_id (console user), policy_id
+- Region decision metadata: requested_region (if present), selected_region, allowed_regions_set_id/version, decision (allow/block), decision_reason_code
+- Request metadata (non-content): request_id, idempotency_key (hashed), endpoint name, model identifier, model version, deployment mode (hosted/dedicated), streaming=true/false
+- Timing and sizing (aggregated/non-content): input_tokens_count, output_tokens_count, total_tokens, latency_ms (p50/p95 aggregates), queue_time_ms
+- Infrastructure metadata: service name, instance id, cluster id, availability zone (if applicable), routing path id
+- Error metadata: HTTP status, public error_code, internal error_class, retryable flag
+- Security/abuse metadata: rate-limit bucket id, enforcement action id, WAF rule id (no payload capture)
+- Customer configuration metadata: residency tier, primary region, allowed region list (as region codes), effective_at timestamps
+
+### Explicitly disallowed fields
+Not permitted to leave pinned region(s) for pinned traffic:
+- Any request/response bodies (full or partial)
+- Any structured output JSON emitted by the model (even if schema-validated)
+- Token logs, logits, top-k token candidates
+- Embeddings vectors (or compressed/quantized representations)
+- Prompt hashes where collision risk or dictionary attacks could reconstruct content, unless approved case-by-case with threat model review
+- “Redacted” prompts/outputs unless redaction is formally specified and validated (not part of v1)
+
+## Subsystem boundary matrix
+The table below describes the residency requirement per subsystem.
+
+| Subsystem | Handles customer content? | Residency requirement for pinned traffic | Notes |
+|---|---:|---|---|
+| API Gateway | Yes | Content must remain in allowed region(s); gateway must not mirror bodies cross-region | Gateway enforcement is authoritative for public contract |
+| Smart Routing | Yes | Region selection/retries/fallback must stay within allowed region(s) | No cross-region fallback by default |
+| Inference Workers | Yes | Execution and any content-adjacent artifacts must be region-local | Includes streaming token emission |
+| Caches (prefix/KV/semantic) | Yes | Region-local only | Cache eviction/telemetry must not export content |
+| Logs (app/system) | Sometimes | Logs may be centralized only if they contain allowed metadata; content logs must be region-local | Prefer structured logs with schema |
+| Tracing | Sometimes | Same as logs | Disable body capture for pinned traffic |
+| Metrics | No (by design) | Can be centralized if content-free | Histograms/counters ok |
+| Billing/usage aggregation | No (by design) | Can be centralized if content-free | Token counts ok |
+| Audit logs (policy changes) | No | Can be centralized | Must not include content |
+| Support tooling (request replay/debug) | Yes | Must be region-local or disabled for pinned traffic | Replay queues are considered content |
+
+## Enforcement implications
+### Routing and fallback
+- The router MUST treat residency as a **hard constraint**.
+- When capacity is constrained, router behavior for pinned traffic is:
+  1) Try primary region.
+  2) Try other allowed regions (if configured).
+  3) If none available, block with residency/capacity-appropriate error per ADR-022.
+- “Fail open” to a non-allowed region is prohibited.
+
+### Background processing
+Any background job that consumes customer content (e.g., async debug logging, replay, quality sampling) MUST be region-local for pinned traffic or disabled.
+
+### Logging & tracing defaults
+- Default logging for pinned traffic is “metadata-only.”
+- Any feature flag that enables body logging must enforce a hard check: pinned traffic cannot be captured unless the sink is region-local and access is restricted.
+- Trace propagation headers may be global, but span attributes must follow allowed metadata rules.
+
+### Data stores
+- Any persistent store that includes customer content must be region-scoped by construction.
+- If a global store is used for metadata, schemas must prevent accidental inclusion of content.
+
+## Threat model notes (summary)
+Key risks addressed by this ADR:
+- Accidental content leakage via logs/traces (free-form fields)
+- Cross-region fallback during partial outages
+- Debug tooling capturing bodies and exporting to global buckets
+- Derived artifacts (embeddings, token logs) treated incorrectly as “metadata”
+
+Mitigations:
+- Explicit allowlist of cross-region metadata
+- Centralized enforcement in gateway + router with deterministic checks
+- Content capture disabled by default for pinned traffic
+- Security review required for schema changes that add metadata fields
+
+## Rollout / compliance considerations
+- Engineering MUST provide evidence that in-scope subsystems comply (tests + config + dashboards).
+- GRC mapping: This ADR is an input to the formal policy narrative and evidence pack (see related pages).
+
+## Consequences
+### Positive
+- Clear, auditable boundary definition reduces ambiguity during implementation and security reviews.
+- Minimizes risk of “hidden” cross-region content flows through observability tooling.
+
+### Trade-offs
+- Reduced operational flexibility (e.g., cross-region fallback) for pinned customers.
+- Additional engineering work to ensure global pipelines accept only allowed metadata.
+
+## Open questions
+1) Are hashed prompt fingerprints ever acceptable as cross-region metadata for abuse detection? (Requires separate threat model review; default is no.)
+2) For Dedicated deployments, do we require identical boundaries or allow customer-managed exceptions? (To be handled in Dedicated-specific addendum.)
+
+## Action items
+- API Gateway: implement residency context propagation and prohibit body logging for pinned traffic (Owner: Amara Diallo)
+- Routing: enforce “no cross-region fallback” default and record decision_reason_code (Owner: Mina Haddad / Ravi Menon)
+- Observability: schema-check structured logs for pinned traffic; block free-form payload fields (Owner: Allison Grant)
+- Security: review allowed metadata schemas and approve any exceptions (Owner: Marcus Lin)
+
+---
+Changelog
+- 2025-02-12: Clarified that embeddings vectors are treated as customer content; added explicit disallow list for token logs/logits.

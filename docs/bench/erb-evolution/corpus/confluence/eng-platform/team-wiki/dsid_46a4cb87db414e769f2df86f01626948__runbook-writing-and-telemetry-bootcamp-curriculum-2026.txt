@@ -1,0 +1,140 @@
+Runbook Writing and Telemetry Bootcamp Curriculum — Operator Training
+
+Summary
+
+This page documents a repeatable, instructor-led bootcamp to train platform operators and engineers to write high-quality runbooks that are telemetry-driven, testable, and maintainable. The curriculum is designed for new operators, service owners, and incident responders who will author or own runbooks for platform services (prefix cache, allocator, tenant-slicing, model-variant router).
+
+Audience
+
+- Platform operators and SREs
+- Service owners in eng-platform and eng-serving-runtime
+- Oncall engineers who respond to latency/cost incidents
+
+Learning objectives (measurable)
+
+1. Produce a runbook that contains a clear escalation path, data-driven detection predicates, and an operator checklist.
+2. Write two telemetry queries (one metric-based, one log-based) that reliably surface the condition the runbook describes.
+3. Create a synthetic verification (unit) that validates the runbook’s detection predicates against a small replay dataset.
+4. Implement a post-incident update cycle and link to the action in the runbook so it can be closed by the owner.
+
+Curriculum overview (3-day instructor-led)
+
+Day 0 — Prework (self-paced)
+- Read: "Runbook authoring and maintenance guidelines" (required).
+- Complete a short quiz on SLO definitions and common platform failure modes.
+- Setup: access to Grafana/Tempo, Kibana, and a sandbox tenant. Confirm permissions with infra-oncall.
+
+Day 1 — Foundations and detection
+- Morning: Lecture (1.5 hr) — Runbook structure and the telemetry-first principle.
+  - Sections: Summary, Impact, Detection (metric + log predicates), Immediate actions, Escalation, Rollback, Postmortem link.
+  - Example services: kv-prefix-cache, dynamic-allocator, model-variant-router.
+- Lab (2.5 hr): Write detection predicates for a synthetic latency spike:
+  1) Metric predicate: p95 latency > 300ms for 5m AND error rate > 1% for 2m.
+  2) Log predicate: queries that include "kv-cache:miss" and "eviction-reason=reshuffle" for >50 events in 10m.
+- Homework: Author a first draft runbook for a provided scenario.
+
+Day 2 — Triage, actions, and testability
+- Morning: Workshop (2 hr) — Mapping telemetry to operator actions.
+  - Instrumentation checklist: SLI names, tag conventions (region, tenant_id, model_variant), and minimum retention expectations (30 days for alerts, 90 days for postmortem traces).
+  - Ownership patterns: primary, secondary, oncall-runbook-maintainer.
+- Lab (3 hr): Implement a synthetic verification for the runbook detection predicates using the synthetic-replay harness.
+  - Deliverable: three test cases (baseline, transient spike, persistent degradation).
+- Evening: Peer review session — teams exchange runbooks and provide 3 actionable comments.
+
+Day 3 — Escalation, de-escalation, and lifecycle
+- Morning: Tabletop simulation (2 hr) — live incident with operator rotation. Measured outcomes: time to detection, time to mitigate, number of escalations, checklist completeness.
+- Afternoon: Retrospective (1.5 hr) — calibrate SLOs and adjust detection thresholds.
+- Closing: Runbook merge checklist and post-incident update procedure.
+
+Assessment and certification
+
+- Pass criteria: runbook accepted in repo (PR merged), synthetic verification green, and at least one successful tabletop participation.
+- Certificate: "Telemetry-Driven Runbook Author (Redwood)" valid for 18 months. Re-certification: 2-hour refresher + one tabletop.
+
+Delivery model and resourcing
+
+- Instructor: Platform training lead (approx. 1 dedicated trainer per cohort of 12).
+- Duration: 3 days (24 total hours including pre/post work).
+- Environment: sandbox cluster with one copy of kv-prefix-cache and dynamic-allocator seeded with synthetic load.
+- Tools: Grafana (dashboards pre-built), Loki/Kibana, Tempo (trace slices), synthetic-replay harness (repo: infra/synthetic-replay).
+
+Runbook template (required fields)
+
+1) Title (single line)
+2) Summary (1–2 sentences) — short impact statement
+3) Owner (primary, secondary) — team and pager alias
+4) Impact and user-visible symptoms — list
+5) Detection
+   - Metric predicate (exact expression)
+   - Log predicate (example query)
+   - Trace pattern (optional)
+6) Immediate mitigation steps (numbered)
+7) Escalation path (names/roles and contact method)
+8) Safe rollback / service-level de-escalation (how to revert changes)
+9) Diagnostics checklist (commands, queries, dashboard links)
+10) Post-incident required actions (TTR SLA for update: 7 days)
+11) Verification tests (links to synthetic tests)
+12) Related runbooks and runbook-ids
+
+Required telemetry examples (copyable)
+
+- Metric predicate (PromQL):
+  sum(rate(request_duration_ms_bucket{job="kv-prefix-cache",le="0.3"}[5m])) by (region) / sum(rate(request_duration_ms_count{job="kv-prefix-cache"}[5m])) by (region) > 0.95
+- Log predicate (Loki):
+  {app="kv-prefix-cache",env="prod"} |= "kv-cache:miss" | json | tenant_id!="" | count_over_time(10m) > 50
+- Trace predicate (Tempo/trace): search for spans with operation.name =~ "kv-prefix-cache.*evict" and duration > 100ms, aggregated by tenant_id.
+
+Synthetic verification example (bash)
+
+- Reproduce a persistent-degradation case with synthetic-replay:
+  1) ./synthetic-replay --scenario=kv-cache-eviction-heavy --duration=15m --tenants=10
+  2) Wait for PromQL predicate to evaluate true in the sandbox (check metrics-exporter).
+  3) Run owner diagnostics script: tools/diagnostics/kv-cache-inspect.sh --tenant <id>
+
+Tabletop scenarios (catalog)
+
+- KV cache shard reshuffle during black-box warmup
+- Region-specific allocator starvation (spot preemption cascade)
+- Model-variant fallback thrash causing token-cost spikes
+- Multi-tenant cold-cache cold-start causing onboarding failures
+
+Retention and SLO guidance for runbooks
+
+- Telemetry retention required for runbook validation: metrics 30d, logs 90d, traces 90d.
+- Alert SLO: detection-to-acknowledge median <= 3m for SEV2, median <= 1m for SEV1 during business hours.
+- Escalation target: oncall primary owns initial mitigation within 15m of alert for SEV1.
+
+Merge checklist (PR to runbook repo)
+
+1) Runbook filled using template and linked to service metadata (service ID, repo).
+2) At least one synthetic verification included and green in CI.
+3) Two reviewers from different teams approved (one operator, one service owner).
+4) Dashboard links present and dashboards annotated with threshold panels.
+
+Ownership and follow-up
+
+- Course owner: Priya Kapoor (eng-platform training). Contact: priya@redwood.ai (internal).
+- Curriculum reviewers: see metadata above.
+- Quarterly review: curriculum and scenario catalog reviewed each quarter; runbook templates updated at least annually.
+
+Appendix A — Example telemetry queries and dashboard panels
+
+- Grafana panel: "kv-prefix-cache p95 by region"
+  - PromQL: histogram_quantile(0.95, sum(rate(request_duration_ms_bucket{job=\"kv-prefix-cache\"}[5m])) by (le, region))
+- Alert rule: "kv-cache-p95-region-high"
+  - Expression: histogram_quantile(0.95, sum(rate(request_duration_ms_bucket{job=\"kv-prefix-cache\"}[5m])) by (le, region)) > 0.3
+  - For: 5m, Labels: severity=SEV2, owner=kv-cache-team
+
+- Example debug command (operator):
+  - kubectl -n platform logs -l app=kv-prefix-cache --since=15m | jq -r '.message' | grep eviction
+
+Related pages and templates
+
+- Runbook authoring guidelines (required pre-read) — /confluence/eng-platform/how-tos/runbook-authoring-and-maintenance-guidelines-2025
+- Synthetic-replay repository — infra/synthetic-replay (internal git)
+
+Revision history
+
+- 2025-09-10: Created by Priya Kapoor (initial curriculum draft).
+- 2025-11-02: Added PromQL examples and tabletop scenarios (reviewers: Ethan, Marta).
+- 2026-02-15: Adjusted assessment criteria and certification validity (finalized).

@@ -1,0 +1,92 @@
+PO metadata requirements + weekly invoice lane / net terms negotiation
+
+From: Susan Li <susan.li@clearedgehealth.com>
+To: Lukas Meyer <lukas.meyer@redwood.com>
+Cc: Ben Armitage <ben.armitage@clearedgehealth.com>
+Date: Tue, 15 Jun 2027 09:14:00 -0700
+Subject: PO fields + invoice rhythm question for Redwood pilot
+
+Thanks Lukas — quick procurement note as we prepare the PO for the pilot:
+
+1) Our AP system requires a stable PO identifier in three places: the top-level PO number, the PO line UUID (we can generate), and an extra custom field called po_fingerprint for downstream mapping. Can Redwood include an explicit po_fingerprint in the invoice XML (see attached ClearEdge_PO_Template.xlsx)?
+
+2) We currently run weekly payment runs. Would Redwood accept a weekly invoice cadence for the pilot vs monthly? If so we need an invoice file per week and a matching PO line reference for each invoice to avoid duplicate matching.
+
+3) Net terms: our default is Net 45, but we can accelerate to Net 30 with a 1% early-pay discount if Redwood can offer a 5% commitment slab on usage for the pilot period.
+
+4) Lastly — packaging: procurement prefers a seat-based SKU for procurement visibility, but the product team prefers consumption. Is Redwood able to provide a hybrid invoice where we see both a seat headcount and consumption delta per week?
+
+Attaching the PO template and a sample of our XML mapping. Ben and I are on a tight timeline; can you confirm feasibility by EOD tomorrow?
+
+Thanks,
+Susan Li
+Director, Procurement
+ClearEdge Health
+[Attachment: ClearEdge_PO_Template.xlsx (xlsx)]
+[Attachment: ClearEdge_PO_Field_Mapping.xlsx (xlsx)]
+From: Lukas Meyer <lukas.meyer@redwood.com>
+To: Susan Li <susan.li@clearedgehealth.com>
+Cc: Vanessa Ortiz <vanessa.ortiz@redwood.com>, Karthik Iyer <karthik.iyer@redwood.com>
+Date: Tue, 15 Jun 2027 11:02:00 -07:00
+Subject: Re: PO fields + invoice rhythm question for Redwood pilot
+
+Susan — thanks for the clear note and the template. Short answers up front:
+
+- po_fingerprint: yes, we can emit a po_fingerprint field in the invoice XML. We typically populate it from the PO number + line UUID hash; if you have a preferred concatenation we can match it. See attached Redwood_Invoice_Sample.xml for our current schema.
+- Weekly cadence: accepted for the pilot. We will create one invoice file per week and include line-level PO references so your AP auto-match will work.
+- Net terms & early-pay discount: we can support Net 30 with a 1% early-pay discount if the deal includes a 5% commitment slab during the pilot. Vanessa — can you confirm pricing impact?
+- Packaging hybrid: we can include both seat and consumption SKUs on the weekly invoice. The weekly invoice will report seat quantities as a recurring line and consumption as metered lines; both will reference the PO line UUID.
+
+Next steps I propose:
+1) Vanessa to provide a pricing sketch for the 5% commitment slab vs standard usage.
+2) We map a po_fingerprint convention (e.g., PO#|LINEUUID -> SHA1) and update Redwood_Invoice_Sample.xml.
+3) Karthik to confirm internal billing-run changes for weekly file submissions (SFTP/EDIFACT).
+
+I'll get the sample XML updated and return by tomorrow morning. If it helps, we can schedule a 30-min call this afternoon.
+
+Best,
+Lukas Meyer
+Account Executive, Redwood Inference
+[Attachment: Redwood_Invoice_Sample.xml (xml)]
+From: Vanessa Ortiz <vanessa.ortiz@redwood.com>
+To: Susan Li <susan.li@clearedgehealth.com>, Lukas Meyer <lukas.meyer@redwood.com>
+Cc: Karthik Iyer <karthik.iyer@redwood.com>
+Date: Tue, 15 Jun 2027 13:18:00 -07:00
+Subject: Re: PO fields + invoice rhythm question for Redwood pilot
+
+Hi Susan — quick pricing and packaging note. Thanks Lukas for the technical plan.
+
+Pricing impact for the 5% commitment slab (pilot length = 12 weeks):
+- Baseline consumption price: $0.0045 / token-equivalent (metered).
+- 5% committed-discount applied to metered line items for the pilot duration results in $0.004275 / token-equivalent.
+- Seat SKU (optional): $150 / seat / month; for weekly invoices we prorate per week (seat line shows fraction).
+- Early-pay: we can accept Net 30 with 1% discount. Alternatively, Net 45 without the early-pay discount.
+
+Operational asks/constraints:
+- We will need ClearEdge to include the PO line UUID on the PO template you send to AP so that our billing pipeline can attach it to the invoice lines.
+- For weekly cadence, Redwood will deliver invoices to your SFTP folder by Monday 08:00 PT with invoice filenames prefixed by the PO number and week ending date.
+- We recommend a single consolidated weekly invoice file with separate line items (seat + consumption) instead of multiple small invoices to reduce overhead on both sides.
+
+If you sign off on the 5% commitment slab and Net 30 + 1% early pay, I will prepare an amended SOW (see SOW-commitment-slabs-v1.pdf) and route it for signature.
+
+Vanessa Ortiz
+Director, Commercial Ops
+Redwood Inference
+[Attachment: SOW-commitment-slabs-v1.pdf (pdf)]
+From: Ben Armitage <ben.armitage@clearedgehealth.com>
+To: Vanessa Ortiz <vanessa.ortiz@redwood.com>, Lukas Meyer <lukas.meyer@redwood.com>
+Cc: Susan Li <susan.li@clearedgehealth.com>
+Date: Sun, 20 Jun 2027 14:02:00 -07:00
+Subject: Re: PO fields + invoice rhythm question for Redwood pilot
+
+Vanessa / Lukas — thanks, that all looks reasonable. Two quick confirmations from procurement: 
+
+1) We'll populate the PO template with line UUIDs and set the po_fingerprint as PO#|LINEUUID (no hashing) — ClearEdge AP can match that exact string.
+2) We accept the weekly consolidated invoice file delivered Mondays and will update AP to expect the filename convention you proposed.
+
+We are good to move forward with: 5% commitment slab (pilot), weekly invoices, Net 30 with 1% early-pay discount. Please send the amended SOW and an updated invoice XML sample that shows the exact po_fingerprint placement so I can hand to our AP team.
+
+Ben Armitage
+Sr. Procurement Manager
+ClearEdge Health
+[On Wed, 16 Jun 2027 09:00:00 -0700, Lukas Meyer wrote: > Thanks Lukas — quick procurement note as we prepare the PO for the pilot...]

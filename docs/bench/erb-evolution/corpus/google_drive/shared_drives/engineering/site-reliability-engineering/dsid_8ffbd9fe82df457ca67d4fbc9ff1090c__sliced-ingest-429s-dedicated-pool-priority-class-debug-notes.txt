@@ -1,0 +1,98 @@
+Sliced ingest 429s on dedicated pool after migration — priority class + burst pool debug notes (Streamly AI)
+
+Context / why this doc exists
+- This is a working scratchpad for SRE/Eng while debugging Streamly AI’s sustained 429s during sliced ingest after dedicated pool migration.
+- Source ticket: SUP-864999 (customer-support). This doc is meant to be the “newer truth” vs the older ticket narrative since we’ve learned more post-call + after patch testing.
+
+Customer + impact recap (same as ticket, but condensed)
+- Customer: Streamly AI (dedicated tier)
+- Environment: prod us-west, dedicated pool dp-132-usw
+- Traffic mix:
+  - Interactive: short chat calls (priority=high)
+  - Background: multipart embedding uploads (priority=background/low) with signed URL chunk completion callbacks
+- Observed on 2026-03-10 ~09:00–11:30 PDT:
+  - ~30% of short chat requests returned 429 coincident with the scheduled bulk ingest flush
+  - Customer saw retry amplification and user-visible errors
+
+Versions / components
+- Dedicated pool: dp-132-usw
+- Ingest coordinator version (at time of incident): 2026.02.3
+- Rate-limiter version (at time of incident): 1.14.0-canary
+- Edge / API gateway involved due to opaque 429 behavior (missing headers)
+
+Symptoms (what we saw)
+- Persistent 429s for /v1/chat during background upload ramp.
+- Throttle headers when present indicated per-route window exhaustion.
+- A subset of 429s were “opaque” (no X-RateLimit headers) especially during callback fanout peaks.
+
+Example log snippets (from ticket; kept here for reference)
+- 2026-03-10T09:02:14Z - 200 - /v1/chat - key=acct-streamly-01 - latency=62ms
+- 2026-03-10T09:02:19Z - 429 - /v1/chat - key=acct-streamly-01 - throttle: route_window=0/100
+- 2026-03-10T09:02:20Z - 429 - /v1/embed - key=acct-streamly-01 - chunk=12/20 - err=quota_exhausted
+- 2026-03-10T09:05:01Z - 429 - /v1/chat - key=acct-streamly-01 - no-rate-headers (opaque)
+
+Steps to reproduce (traffic shape)
+1) 100 concurrent short chat requests (avg 50ms) + 20 parallel multipart embedding uploads (avg 45s each).
+2) Route both traffic shapes through dp-132-usw with priority classes: interactive=high, background=low.
+3) Start background uploads in tight window (cron-style flush ~09:00 local).
+4) Observe interactive 429s during the first 20–40 minutes of background ramp.
+
+What changed vs initial hypothesis (updated findings)
+- Initial hypothesis in SUP-864999: “priority class mismatch / weight inversion in 1.14.0-canary allows background to borrow interactive burst credits under certain attach sequences.”
+- Updated after deeper review (2026-03-13 to 2026-03-20):
+  - There are TWO overlapping issues:
+    (A) Rate-limiter burst-pool attach race (real) that can temporarily mis-attribute available burst credits across pools.
+    (B) Edge proxy early-return path under backpressure causing missing X-RateLimit headers and (worse) collapsing distinct upstream 429 reasons into a single opaque 429 surface.
+  - The attach race (A) increases the probability that interactive tokens are temporarily depleted during the exact window when callback fanout is max.
+  - The edge behavior (B) makes it look like “random 429s” and prevents the customer from applying correct retry/backoff logic.
+
+Root cause (current best explanation)
+- A burst-pool weight recalculation occurs on route attach to a dedicated pool.
+- Under high fanout (multipart chunk completion callbacks + interactive requests), an attach sequence can read stale bucket state and allow background borrow to temporarily draw from the interactive pool’s credits.
+- Separately, when the edge proxy is under callback-related backpressure, it can return 429 before the normal header-enrichment path runs, producing opaque 429s.
+
+Mitigations applied / tested (new since ticket)
+Temporary customer-facing workaround (still valid)
+- Stagger background multipart uploads and add jitter to the flush window.
+- Reduce background upload concurrency (Streamly tested <= 6 workers) during peak interactive usage.
+
+Config change (applied on 2026-03-12 call)
+- On dp-132-usw we reserved burst capacity explicitly for interactive routes.
+- Updated reservation target: reserve 30% (previous internal suggestion was 20%) of interactive burst credits exclusively for priority=high routes.
+- Also separated the route groups so callbacks cannot share the same per-route window as interactive endpoints.
+
+Patch status (updated)
+- Rate-limiter fix was originally tracked as “target 1.14.1”.
+- As of 2026-03-19: fix is in 1.14.1-rc2 and deployed to canary in us-west dedicated pools (including dp-132-usw) for validation.
+- Early results: eliminates the negative token deltas we were seeing during attach bursts; interactive 429 rate decreased materially during the flush window.
+
+Results from customer validation (new)
+- 2026-03-12 (trial during scheduled flush):
+  - Interactive error rate improved; remaining 429s clustered around callback spikes.
+  - Customer confirmed jitter reduced the “all-at-once” failure mode.
+- 2026-03-20 (post 1.14.1-rc2 canary + reserved burst config still in place):
+  - No sustained 429s for /v1/chat during the 09:00–10:00 window.
+  - A few 429s remain on background /v1/embed chunk callbacks (expected; acceptable if retried with backoff).
+
+Open questions / TODO
+- Edge proxy: ensure X-RateLimit headers are emitted even under backpressure for 429s originating from rate-limiter.
+- Confirm whether signed URL callback endpoints should be assigned their own priority class (e.g., “callback-low”) distinct from generic background.
+- Add a regression test: attach burst + high fanout + two priority classes should never allow cross-pool borrow that depletes interactive tokens.
+
+Recommended next steps (updated plan)
+1) Keep the reserved interactive burst split (30%) for dedicated pools with mixed interactive + bulk ingest traffic.
+2) Promote rate-limiter 1.14.1 from rc to stable after 48h canary observation (watch: rlim.route.tokens.available deltas, interactive 429 rate, attach timing).
+3) Edge proxy change: always populate rate-limit headers (or at least a stable error code) for 429s; avoid “opaque 429”.
+4) Update the support playbook page with explicit guidance for signed URL callback fanout (jitter + concurrency caps + route separation).
+5) Schedule a controlled load test with Streamly AI for 3 consecutive peak windows and collect traces + request IDs for closure criteria.
+
+Notes / timeline crumbs (for internal use)
+- 2026-03-10: incident window; strong correlation with cron flush.
+- 2026-03-11: Eng suspected weight inversion / attach sequence sensitivity.
+- 2026-03-12: customer call; implemented burst reservation + client-side jitter.
+- 2026-03-19: 1.14.1-rc2 canary deployed to us-west dedicated.
+- 2026-03-20: customer reports no sustained interactive 429s during flush.
+
+Closure criteria (for SUP-864999)
+- Interactive endpoints (/v1/chat) see <0.1% 429 during scheduled flush windows for 3 consecutive days.
+- Any remaining 429s are limited to background endpoints and include consistent headers / error codes enabling correct retry behavior.

@@ -1,0 +1,172 @@
+Re: Critical: inference latency spike + 5xx affecting throughput (Crucible Health)
+
+From: Julia Adams <julia@cruciblehealth.com>
+To: Stephanie Nguyen <stephanie_nguyen@redwood.com>
+Date: 2026-08-28T08:12:00-07:00
+Subject: Critical: sudden latency spike and 500s on inference endpoints
+
+Hi Stephanie,
+
+We started seeing a large increase in end-to-end latency and a burst of 5xx errors on the /v1/generate endpoint at ~07:55 PDT. Throughput dropped by ~40% for our primary production inference queue and several batches timed out. This is causing timeouts in our user-facing flow and triggering throttles on our side.
+
+Symptoms observed: 
+- Median latency jumped from ~120ms to ~900ms between 07:55–08:05
+- 500 responses: ~8% of requests in the window
+- Throughput fall from 250 req/s to ~150 req/s for the Crucible production key
+
+We attached recent logs (request IDs included) and a CSV snapshot of KPIs. Please escalate — this is blocking a critical demo at 10:00 PDT.
+
+Sample request IDs: 6a4f9b2c, 6a4f9b45, 6a4f9c01
+
+Attachments: request_logs_20260828.zip, detailed_kpi_snapshot.csv
+
+Thanks,
+Julia Adams
+Head of Integrations, Crucible Health
+
+From: Stephanie Nguyen <stephanie_nguyen@redwood.com>
+To: Marcus Lin <marcus_lin@redwood.com>, Hannah Schmitt <hannah_schmitt@redwood.com>, Laura Bennett <laura_bennett@redwood.com>, Sergio Alvarez <sergio_alvarez@redwood.com>
+Date: 2026-08-28T08:25:00-07:00
+Subject: Fwd: Critical: sudden latency spike and 500s on inference endpoints
+
+Team — forwarding urgent customer report from Crucible Health (Julia).
+
+Quick asks: 
+1) Marcus, can infra/serving triage immediately (metrics + recent deploys + autoscaler behavior)?
+2) Hannah, please own customer comms and schedule an executive sync at 09:00 PDT. They have a demo at 10:00 and want any mitigation now.
+3) Laura / Sergio, finance/econ may need to approve priority capacity if we recommend burst dedicated capacity.
+
+I attached the logs Julia sent. Will coordinate a brief 30-min sync once Marcus confirms an ops hypothesis.
+
+Attachments (from customer): request_logs_20260828.zip, detailed_kpi_snapshot.csv
+
+— Stephanie Nguyen
+Account Executive, Redwood Inference
+stephanie_nguyen@redwood.com
++1 415-555-0108
+
+--- Forwarded message ---
+> From: Julia Adams <julia@cruciblehealth.com>
+> Date: 2026-08-28T08:12:00-07:00
+> Subject: Critical: sudden latency spike and 500s on inference endpoints
+> To: Stephanie Nguyen <stephanie_nguyen@redwood.com>
+> 
+> [original message above]
+
+From: Marcus Lin <marcus_lin@redwood.com>
+To: Stephanie Nguyen <stephanie_nguyen@redwood.com>, Hannah Schmitt <hannah_schmitt@redwood.com>, Laura Bennett <laura_bennett@redwood.com>
+Cc: Sergio Alvarez <sergio_alvarez@redwood.com>
+Date: 2026-08-28T08:30:00-07:00
+Subject: Re: Fwd: Critical: sudden latency spike and 500s on inference endpoints
+
+Looking at the log snippet and metrics in the linked Drive: two quick hypotheses — autoscaler oscillation under sudden burst + one failing shard (GPU OOM or degraded kernel) causing head-of-line blocking.
+
+Immediate actions I can kick off now: 
+- Push an emergency scale to the dedicated pool serving Crucible (add +20% capacity) and temporarily increase max concurrency limits to reduce queueing.
+- Route new requests to the 2ndary model variant (same family, lower context) as an immediate fallback to reduce per-token work.
+- Isolate problematic instance(s) and drain to avoid repeated 5xx.
+
+I requested the SRE-run to execute scale and are running a quick health sweep across nodes for OOMs and kernel failures. ETA for first measurable improvement: ~8–12 minutes after scale.
+
+I'll post an ops note to the Jira incident (INC-9821) and attach a short action plan.
+
+Attachment: scaling_action_plan.md (ops stub)
+
+— Marcus Lin
+Principal Engineer, Serving Runtime
+marcus_lin@redwood.com
+
+> On Aug 28, 2026, at 08:25, Stephanie Nguyen <stephanie_nguyen@redwood.com> wrote:
+> > Team — forwarding urgent customer report from Crucible Health (Julia).
+
+From: Hannah Schmitt <hannah_schmitt@redwood.com>
+To: Stephanie Nguyen <stephanie_nguyen@redwood.com>, Marcus Lin <marcus_lin@redwood.com>, Laura Bennett <laura_bennett@redwood.com>
+Cc: Sergio Alvarez <sergio_alvarez@redwood.com>
+Date: 2026-08-28T08:40:00-07:00
+Subject: Re: Fwd: Critical: sudden latency spike and 500s on inference endpoints
+
+Thanks — I'm on comms. Stephanie, please send the short external status below by 08:50 PDT. I'll run the 09:00 exec sync and include Marcus for the technical update.
+
+Proposed external update to send to Julia (short):
+Hi Julia — we see the spike and have enacted emergency scaling and a fallback routing policy. We expect measurable latency reduction within ~10 minutes and will reconvene with a full status at 09:00 PDT. Apologies for the disruption; prioritizing now.
+
+We should open a temporary SLA exception window and offer demo support. Laura, can we greenlight priority burst capacity billing for this account pending postmortem?
+
+— Hannah Schmitt
+Head of Customer Success
+hannah_schmitt@redwood.com
+
+> On Aug 28, 2026, at 08:30, Marcus Lin <marcus_lin@redwood.com> wrote:
+> > Looking at the log snippet and metrics in the linked Drive...
+
+From: Stephanie Nguyen <stephanie_nguyen@redwood.com>
+To: Julia Adams <julia@cruciblehealth.com>, Ravi Patel <ravi@cruciblehealth.com>
+Cc: Marcus Lin <marcus_lin@redwood.com>, Hannah Schmitt <hannah_schmitt@redwood.com>, Laura Bennett <laura_bennett@redwood.com>
+Date: 2026-08-28T08:50:00-07:00
+Subject: Update: Redwood is actively mitigating the latency issue (ETA ~10m)
+
+Hi Julia / Ravi — quick update from Redwood: 
+
+- We see the anomaly and have enacted emergency scaling for your dedicated pool; SRE is draining a suspected degraded instance.
+- We have enabled a fallback routing policy that will send new traffic to a compatible model variant with lower context length to reduce tail latency.
+- Marcus estimates 8–12 minutes for a measurable improvement. We will join a 09:00 PDT exec sync to share full context and next steps.
+
+We appreciate the heads-up — we're treating this as high priority. I'll be on the 09:00 sync and will keep you updated in the thread.
+
+Attachments: request_logs_20260828.zip (we received your logs and propagated to ops)
+
+Best,
+Stephanie Nguyen
+Account Executive, Redwood Inference
+stephanie_nguyen@redwood.com
+
+> On Aug 28, 2026, at 08:12, Julia Adams <julia@cruciblehealth.com> wrote:
+> > We started seeing a large increase in end-to-end latency...
+
+From: Julia Adams <julia@cruciblehealth.com>
+To: Stephanie Nguyen <stephanie_nguyen@redwood.com>, Hannah Schmitt <hannah_schmitt@redwood.com>
+Date: 2026-08-28T09:05:00-07:00
+Subject: Re: Update: Redwood is actively mitigating the latency issue (ETA ~10m)
+
+Thanks Stephanie — appreciate the fast response. We'll stand by for the 09:00 PDT update and let our demo team know the mitigations are in flight.
+
+Julia
+Head of Integrations, Crucible Health
+
+> On Aug 28, 2026, at 08:50, Stephanie Nguyen <stephanie_nguyen@redwood.com> wrote:
+> > Hi Julia / Ravi — quick update from Redwood...
+
+From: Marcus Lin <marcus_lin@redwood.com>
+To: Stephanie Nguyen <stephanie_nguyen@redwood.com>, Hannah Schmitt <hannah_schmitt@redwood.com>, Laura Bennett <laura_bennett@redwood.com>, Julia Adams <julia@cruciblehealth.com>
+Cc: Sergio Alvarez <sergio_alvarez@redwood.com>
+Date: 2026-08-29T16:45:00-07:00
+Subject: Incident update & postmortem summary — latency spike (INC-9821)
+
+All — final update from the investigation and mitigation performed yesterday. Summary: 
+
+Root cause: A recently deployed autoscaler policy update combined with a rare kernel failure on a single GPU instance produced cascading queue pressure; autoscaler oscillation and a lag in instance replacement led to transient 5xxs and reduced throughput. The failing instance also intermittently returned degraded kernel performance which amplified tail latency.
+
+What we did: 
+- Emergency capacity bump and routing to fallback model variant on 2026-08-28 at 08:28 PDT — immediate tail-latency improved and throughput returned to baseline within ~12 minutes.
+- Drained and reprovisioned the failing instance; patched the kernel path in the affected image and rolled a hotfix to prevent identical failures.
+- Reverted the autoscaler policy update and introduced a short cool-down to prevent oscillation.
+
+Impact: 
+- Customer observed peak 5xx rate of 8% and throughput drop to ~60% of baseline for a ~10-minute window. No customer data exfiltration.
+
+Next steps / action items: 
+1) We will publish a short postmortem to the customer by EOD with the timeline and mitigations (Hannah + Stephanie).
+2) Engineering (Marcus) to harden autoscaler policy testing and add a canary step for autoscaler changes.
+3) Product to add a routing knob for immediate cross-model fallback triggered by SLA breach (Marcus + Product).
+4) Finance to confirm priority-burst billing terms for this incident (Laura).
+
+Attachments: postmortem-draft.md, kpi_before_after.png
+
+Thanks everyone for the quick triage. Julia — we are sending a tailored postmortem and are happy to run a joint technical review next week if you'd like.
+
+— Marcus Lin
+Principal Engineer, Serving Runtime
+marcus_lin@redwood.com
+
+> On Aug 28, 2026, at 08:50, Stephanie Nguyen <stephanie_nguyen@redwood.com> wrote:
+> > Hi Julia / Ravi — quick update from Redwood...

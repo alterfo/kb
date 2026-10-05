@@ -1,0 +1,174 @@
+Audit log export: role-aware filtered dump (2026)
+
+## Overview
+This document specifies the Console and API capability to export filtered slices of tenant audit logs as a bulk dump while enforcing RBAC v2, retention limits, and SSO-backed administrative permissions.
+
+The primary use cases are compliance reporting, e-discovery preparation, and offline analytics. The design explicitly prevents disclosure of sensitive fields to users without the appropriate allow-list role.
+
+## Scope
+### In scope
+- Role-aware bulk export for audit logs, initiated from Console (Admin) and backed by a server-side export worker.
+- Query-scoped exports: time window, actor, resource, action, outcome.
+- Field-level masking and omission using RBAC v2 policy evaluation.
+- Export bundles include a manifest describing query, filters, snapshot time, and schema version.
+- Support for multi-GB exports using cursor-based pagination and resumable multipart downloads.
+- Export request auditing to an immutable audit stream separate from the exported data.
+
+### Out of scope
+- Real-time streaming feeds for customer SIEMs (handled by the Audit Streaming project).
+- Interactive “preview rows” in Console (removed; see decision ADR-EXPORT-004 below).
+
+## User experience (Console)
+1. Admin navigates to: Console → Security → Audit Logs → Export.
+2. Admin configures filters (time range required; other filters optional).
+3. Console shows:
+   - Estimated record count and approximate size (best-effort)
+   - Retention cutoff date for the tenant
+   - Whether any sensitive fields may be included (based on role)
+4. Admin submits export request.
+5. Console shows export status: queued → running → completed/failed.
+6. On completion, Console provides a time-limited download link and checksum.
+
+## Data security and access control
+### Authentication and identity
+- Requester identity is derived from SSO/SAML session (Console) or service token (API).
+- The exported bundle records requester identity in the immutable audit stream (not inside the bundle manifest).
+
+### Authorization model
+RBAC v2 is enforced server-side for every exported row.
+
+Permissions:
+- audit.export.create: can initiate exports
+- audit.export.read: can view export status and download links for exports they initiated
+- audit.export.read_all: can view exports initiated by other admins within the same tenant
+- audit.export.sensitive_fields: can receive fields classified as Sensitive (PII / payload bodies / tokens)
+
+Field handling rules:
+- Default: sensitive fields are omitted entirely (not present) rather than present-but-null.
+- If audit.export.sensitive_fields is present, sensitive fields are included, subject to any additional policy constraints.
+
+### Retention and legal holds
+- Exports cannot retrieve records older than the tenant retention cutoff.
+- The previous “super-admin retention override” is deprecated.
+- New approach (2026-03 update): retrieval beyond standard retention requires an explicit Legal Hold, represented by a legal_hold_id, and is only allowed for tenants with Legal Hold enabled.
+- All uses of legal_hold_id are logged to the immutable audit stream with ticket reference.
+
+## Export formats
+Supported formats (2026-03 update):
+- NDJSON (recommended/default): line-delimited JSON objects
+- CSV: RFC 4180-ish with quoted fields and stable column order
+
+Not supported:
+- “Pretty JSON array” export (removed due to memory pressure and poor incremental handling).
+
+## Export bundle structure
+Each export produces a bundle containing:
+- data.ndjson OR data.csv (may be split into multiple parts)
+- manifest.json
+- checksums.txt
+
+Multipart behavior:
+- Exports larger than 1.0 GB are produced as multiple numbered parts (part-0001, part-0002, ...).
+- Download is resumable using HTTP range requests.
+
+## Manifest contents (manifest.json)
+The manifest is designed to support downstream compliance workflows without leaking sensitive data.
+
+Fields (conceptual):
+- schema_version: string (e.g., "2026-03-18")
+- snapshot_time: RFC3339 timestamp when the export job started reading
+- tenant_id: internal tenant identifier
+- requested_by: NOT included (identity is captured in immutable audit log)
+- query: normalized filters (time window, actor/resource/action/outcome)
+- applied_rbac_policy_hash: hash of effective RBAC v2 policy used for evaluation
+- retention_cutoff: timestamp
+- output_format: "ndjson" | "csv"
+- part_count: integer
+- total_records: integer (best-effort)
+- warnings: array of strings (e.g., "Some fields omitted due to RBAC")
+
+## Backend design
+### High-level flow
+1. Console calls Export API to create an export job.
+2. API validates permissions, normalizes query, enforces retention/hold rules.
+3. API writes an export job record and enqueues work.
+4. Export worker reads audit events in deterministic order, applies RBAC masking/omission, and streams output to object storage.
+5. Worker writes manifest + checksums and marks job complete.
+6. API returns a presigned download URL (time-limited) when requested.
+
+### Storage and encryption
+- Data is streamed directly to object storage using multipart upload to avoid memory pressure.
+- Encryption:
+  - In transit: TLS
+  - At rest: object storage server-side encryption (SSE) plus KMS key per environment
+- Presigned download link TTL (2026-03 update): 4 hours default; configurable per plan tier (max 24 hours).
+
+### Query and pagination
+- Use cursor-based incremental listing to avoid deep OFFSET scans.
+- Cursor format: <event_ts_ms>|<event_id>
+- Ordering: (event_ts asc, event_id asc) to ensure deterministic traversal during concurrent writes.
+
+### Masking and serialization
+- RBAC v2 policy evaluation happens before serialization.
+- Sensitive fields are dropped unless audit.export.sensitive_fields is granted.
+- Additional gating (separate allow-list) applies to:
+  - request_payload
+  - response_content
+  - ip_address (masked by default; last octet removed unless sensitive_fields granted)
+
+## Limits and quotas
+| Limit | Default | Notes |
+| --- | --- | --- |
+| Max concurrent exports per org | 1 | 2026-03 update (was 2) to reduce peak load |
+| Max export lookback | Retention cutoff | Extended lookback requires legal_hold_id |
+| Max parts per export | 2,000 | Prevent runaway multipart bundles |
+| Rate limit: create export | 5 / hour / org | Burst allowed up to 2 within 5 minutes |
+
+## Telemetry and auditing
+Telemetry events:
+- audit_export_created
+- audit_export_started
+- audit_export_completed
+- audit_export_failed
+
+Notes:
+- Telemetry includes tokenized requester ID (for correlation) and tenant ID.
+- A separate immutable audit stream records:
+  - requester identity (SSO subject or service token)
+  - export job id
+  - query summary (redacted)
+  - whether sensitive fields were included
+  - whether legal_hold_id was used and associated ticket reference
+
+## Operational runbook (high level)
+### Common failures
+- Object storage multipart upload failures: retry with exponential backoff; ensure worker has sufficient egress.
+- Policy evaluation timeouts: reduce batch size and ensure policy cache is warm.
+- Retention violations: confirm tenant retention and whether Legal Hold is enabled.
+
+### On-call checks
+- Dashboard: audit-export-metrics (queue depth, completion latency, failures)
+- Verify KMS permissions for export worker identity
+- Confirm org-level concurrency gate is functioning
+
+## Testing and QA
+- Synthetic large dataset test: 50M rows for cursor stability and throughput.
+- RBAC masking matrix: org-admin, security-reader, billing-admin, auditor_role.
+- Resumable download test: interrupt mid-download and resume via range requests.
+- Security review: ensure no indirect disclosure via manifest, filenames, or error messages.
+
+## Key decisions and changes
+- ADR-EXPORT-001: Background worker + presigned link chosen over synchronous generation.
+- ADR-EXPORT-002: Cursor (time+id) chosen over offset-based pagination.
+- ADR-EXPORT-003: NDJSON recommended for JSON-like exports to support streaming parsers.
+- ADR-EXPORT-004 (2026-03 update): Removed “preview first 500 rows” from Console due to data leakage risk and inconsistent RBAC UX; replaced with size estimate + schema description.
+- ADR-EXPORT-005 (2026-03 update): Deprecated super-admin retention override; replaced with Legal Hold workflow using legal_hold_id and mandatory audit trail.
+
+## Ownership
+Primary owner team: Security (Audit & Compliance).
+Implementation team: Engineering (Security-Logging-Initiative).
+
+## References
+- Linear: ENG-78123 (implementation tracking)
+- PR: https://github.com/redwood-inference/platform/pull/4321
+- Privacy matrix: https://drive.redwood.ai/attachments/audit-privacy-matrix.xlsx

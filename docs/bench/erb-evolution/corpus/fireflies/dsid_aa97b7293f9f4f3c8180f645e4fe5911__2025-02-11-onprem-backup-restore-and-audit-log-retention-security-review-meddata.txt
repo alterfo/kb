@@ -1,0 +1,370 @@
+MedData Systems - on-prem backup/restore + audit log retention security review
+
+Meeting header
+Date: 2025-02-11
+Start time: 1:00 PM ET
+Duration: 53 minutes
+Title: MedData Systems - on-prem backup/restore + audit log retention security review
+Organizer: Markus Klein (Redwood)
+Attendees (Redwood): Markus Klein, Aisha Rahman, Hanae Suzuki
+Attendees (MedData): Dana Wright, Priya Shah, Eli Brooks, Nina Gomez
+
+Auto-summary (Fireflies)
+- MedData asked detailed questions on on-prem backup encryption, retention, audit log export, and audit evidence.
+- Redwood clarified that backups are encrypted (envelope encryption) and can be configured for customer-managed keys; in air-gapped mode, keys can be handled via on-prem KMS/HSM depending on integration.
+- Redwood explained scope: control-plane state and configuration are backed up; data plane is treated as stateless; Kubernetes cluster recovery (etcd) is a separate procedure.
+- Discussion covered audit log retention/export format, immutability options, and what operational evidence Redwood can generate (manifests, checksums, restore validation reports).
+
+Topics
+1) On-prem backup scope and retention ownership
+2) Encryption at rest, KMS/HSM, key rotation, and KMS outage behavior
+3) Audit log export + retention (long-term, immutable/WORM)
+4) Evidence needs for regulated audits (restore drill proof, reports)
+5) Operational boundaries: cluster recovery vs app-level restore
+
+Action items (recap)
+- Redwood to send written security note re: envelope encryption + KMS/HSM availability behavior.
+- Redwood to send example backup manifest + restore validation report outline.
+- MedData to confirm retention + immutability requirements and storage target.
+
+Transcript
+
+[00:00] Markus Klein: Alright, I think we’re good. Thanks everyone for joining. This is Markus from Redwood. We’ve got Aisha from security and Hanae from our secrets and key management side. Uh, Dana, Priya, Eli, Nina — thanks for making time.
+
+[00:13] Dana Wright: Yep. Thanks Markus.
+
+[00:15] Priya Shah: Hi.
+
+[00:16] Eli Brooks: Hey.
+
+[00:18] Markus Klein: Cool. The goal today is to go through the on-prem backup and restore story for Redwood Private and then specifically audit log retention and what evidence you need for, you know, your auditors. We can keep it pretty tactical. Does that match what you want?
+
+[00:33] Dana Wright: Yeah. We’re regulated healthcare. We have a pretty strict view on retention and chain-of-custody. We also have air-gap constraints in some sites.
+
+[00:41] Aisha Rahman: Got it.
+
+[00:42] Nina Gomez: And to be explicit, we don’t want any vendor-managed keys. Keys have to stay in our boundary.
+
+[00:49] Hanae Suzuki: Understood.
+
+[00:51] Markus Klein: Great. Maybe Eli, can you just level set the deployment you’re contemplating? Like, is this full air-gapped, or “restricted egress”?
+
+[01:00] Eli Brooks: It’s a mix. Primary is on-prem in two data centers. One is pretty locked down — like, no outbound. The other can do limited egress through a proxy. Kubernetes on bare metal, we use an enterprise distro. Storage is mainly NFS and we have a… sort of S3-compatible appliance, but it’s not AWS.
+
+[01:20] Markus Klein: Okay. That helps.
+
+[01:22] Priya Shah: And retention-wise, we have to keep audit logs for seven years minimum. Some teams push for ten.
+
+[01:29] Markus Klein: Okay.
+
+[01:30] Aisha Rahman: One quick note before we get into details: Redwood Private is designed so you can run the control plane in your cluster/VPC, and you own the underlying storage and retention policies. We provide tooling to produce encrypted backup artifacts and to export audit logs, but you choose where they live and how long you keep them.
+
+[01:50] Dana Wright: That’s fine, but we need to demonstrate that the process is “supported” and repeatable. Not like, “here’s a script, good luck.”
+
+[01:58] Markus Klein: Totally. That’s actually what we’re building right now as part of Day-2 ops: runbooks, deterministic restore steps, validation checks.
+
+[02:06] Nina Gomez: When you say deterministic, what do you mean? Like exact same cluster comes back?
+
+[02:11] Hanae Suzuki: Deterministic in the sense that the backup has a manifest, versioned format, integrity checks, and the restore follows a defined order and reports what was restored. Not necessarily “byte-identical nodes,” but functionally consistent state: tenant configs, routing policies, auth config, etc.
+
+[02:30] Priya Shah: Can we start with scope? What exactly is in the backup?
+
+[02:34] Markus Klein: Yep. For Redwood Private we focus on the control-plane state and critical configuration. That typically includes our config database, object store metadata for control-plane artifacts, and the config that’s needed to redeploy deterministically — think Helm release values, versions, and Redwood-specific CRDs where applicable.
+
+[02:54] Eli Brooks: Are you backing up Kubernetes itself? Like etcd snapshots?
+
+[02:58] Markus Klein: Good question. We don’t automatically take cluster-wide etcd snapshots as part of Redwood’s backup. That’s generally considered cluster recovery and is handled by your Kubernetes ops process. Our runbooks will call out when etcd restore is the right tool versus application-level restore.
+
+[03:15] Dana Wright: So if the cluster is gone, we rebuild Kubernetes and then restore Redwood state.
+
+[03:19] Markus Klein: Exactly.
+
+[03:20] Nina Gomez: What about secrets?
+
+[03:22] Aisha Rahman: By default, we avoid backing up raw secret material. The philosophy is “backup references, not secrets,” where feasible. For example, we’ll capture references to your KMS key IDs, external secret manager paths, or Kubernetes Secret names, but not dump the secret values into the backup artifact.
+
+[03:41] Nina Gomez: But if we lose the cluster, those Secrets are gone.
+
+[03:44] Hanae Suzuki: Right, which is why we usually recommend secrets originate from your system-of-record: external secrets manager or an HSM-backed store, or at minimum your own Kubernetes secret backup process. For customers that do keep secrets only in cluster, we can document options, but it gets tricky for compliance because then you’re proliferating secret copies.
+
+[04:05] Priya Shah: Our auditors will ask: does the backup contain PHI?
+
+[04:09] Markus Klein: In the standard control plane backup, it should not include request payloads or model prompts. Audit logs can contain identifiers depending on how you configure them, and those are handled separately. The backup artifacts are primarily configuration and control plane state.
+
+[04:23] Dana Wright: Okay. Now encryption. You said encrypted backup artifacts. How?
+
+[04:28] Aisha Rahman: The pattern is envelope encryption. The backup artifact is packaged — typically a tarball plus a manifest — and encrypted with a data encryption key, a DEK. That DEK is then wrapped by a key encryption key, KEK, managed by your KMS or HSM. So the backup at rest is always encrypted, and you control the KEK.
+
+[04:50] Nina Gomez: If the environment is air-gapped, how does KMS work?
+
+[04:54] Hanae Suzuki: We support a provider interface. In cloud deployments it’s like AWS KMS. For on-prem, it depends on what you have — some customers have a local KMS service, some have HSMs with an API gateway. If you have an HSM that can do key wrap/unwrap operations, we can integrate through the provider layer, but we’ll need to validate your specific product.
+
+[05:18] Eli Brooks: We have Thales. But access is… it’s locked down.
+
+[05:22] Hanae Suzuki: That’s common. What we’d need from you is what operations are permitted and whether we can do unwrap during restore. Sometimes security teams allow wrap only in certain subnets.
+
+[05:34] Dana Wright: Key rotation is mandatory annually. What happens to old backups?
+
+[05:40] Aisha Rahman: Rotation is supported. Practically: backups created under an older KEK remain decryptable as long as you retain that KEK version or the ability to decrypt old wrapped DEKs. Many KMS/HSMs support key versioning. If you retire keys, you may need to rewrap. We can provide guidance: either keep key versions for the retention window, or periodically re-encrypt/rewrap backups to the latest key.
+
+[06:05] Priya Shah: We might need a written statement there.
+
+[06:08] Aisha Rahman: Yep, we’ll send it in writing.
+
+[06:10] Nina Gomez: What about KMS downtime? Like, if the HSM is offline.
+
+[06:15] Hanae Suzuki: Good call. If the KMS/HSM is unavailable at backup time, you have two options: fail the backup (safe default) or allow a temporary local key with strong warnings — but our default posture is to fail because otherwise you create a backup you can’t attest is encrypted under your KEK. During restore, if KMS/HSM is down, you can’t unwrap the DEK, so restore will fail until key service is available.
+
+[06:43] Dana Wright: That’s acceptable.
+
+[06:45] Eli Brooks: Is there a way to pre-stage the decrypt? Like, do unwrap ahead of time?
+
+[06:50] Hanae Suzuki: Not recommended, because then you’re handling plaintext DEKs. We try to keep the DEK ephemeral in memory.
+
+[06:58] Markus Klein: Shifting to retention and storage: you mentioned NFS and an S3-compatible appliance. Our tooling can write backup artifacts to S3-like object storage or NFS, depending on the config.
+
+[07:10] Eli Brooks: NFS is easier here. Object storage appliance is slower and sometimes flakey.
+
+[07:15] Markus Klein: That’s a common tradeoff. For compliance though, Priya, are you requiring immutable storage?
+
+[07:21] Priya Shah: For audit logs, yes. For backups, not strictly immutable, but they need access controls and we need to show they weren’t tampered.
+
+[07:30] Aisha Rahman: For tamper evidence, we rely on cryptographic integrity checks: the manifest includes checksums for each component and we can also sign the manifest as part of the offline bundle signing process. If you store artifacts in immutable/WORM storage, that’s even stronger. On NFS you can approximate immutability with permissions and snapshots, but it’s not the same as object lock.
+
+[07:55] Nina Gomez: When you say sign, is that GPG?
+
+[07:58] Markus Klein: For on-prem bundle distribution, yes, we ship signed artifacts with a checksum manifest, and you verify signatures offline. For backup artifacts themselves, we can include checksums and optionally sign the manifest using a key you trust, depending on your policy. We can talk through what fits.
+
+[08:16] Dana Wright: Our auditors will ask “who can modify backups” and “prove restore was tested.”
+
+[08:22] Markus Klein: Right.
+
+[08:23] Aisha Rahman: On “who can modify”: access controls are enforced by your storage backend and Kubernetes RBAC for the job that writes backups. We recommend least privilege: a service account that can read the necessary config/state and write-only to the backup location (append-only if supported). For “prove restore was tested,” we can generate a restore validation report: timestamps, versions, checksums verified, and health checks run.
+
+[08:50] Priya Shah: Would that report be something we can hand to an auditor?
+
+[08:54] Markus Klein: That’s the idea. It’s not a formal attestation, but it’s evidence from the system.
+
+[09:01] Nina Gomez: Health checks meaning what exactly?
+
+[09:04] Hanae Suzuki: Post-restore validations like: control plane API readiness, can you list tenants, can you fetch routing policy config, does auth config load, does it connect to dependencies, and optionally a smoke inference call if the data plane is present.
+
+[09:21] Eli Brooks: Are you restoring data plane too?
+
+[09:23] Markus Klein: Typically the data plane is stateless. You redeploy it from declarative config. The important part is capturing the config that pins model versions, routing policies, and your deployment settings.
+
+[09:38] Dana Wright: Okay. Now audit logs. We need audit logs retained 7 years, and we need them exportable. What do you support?
+
+[09:48] Aisha Rahman: Redwood Private emits audit events for control plane actions — config changes, auth changes, admin actions, etc. Those can be exported via an audit log exporter in batch mode. The export can land in your storage (again, NFS or object storage) and you control retention.
+
+[10:09] Priya Shah: What format?
+
+[10:11] Aisha Rahman: Typically JSON lines (one event per line) with stable fields: timestamp, actor, action, resource, result, and correlation IDs. We can provide a schema doc.
+
+[10:25] Nina Gomez: Does it include request content? Prompts?
+
+[10:28] Aisha Rahman: No prompt bodies by default in audit logs. We focus on administrative and control plane events. For data plane requests, you can enable request logging separately but that’s usually discouraged for PHI.
+
+[10:42] Dana Wright: We will not log prompts, period.
+
+[10:45] Markus Klein: Understood.
+
+[10:46] Eli Brooks: Is there a way to send audit logs to our SIEM instead of file exports?
+
+[10:51] Markus Klein: In many deployments, yes — via syslog/HTTP collectors, depending on your environment. For the backup/retention conversation today we’re focused on the batch export for long-term retention, but we can also integrate with SIEM for near real-time.
+
+[11:10] Priya Shah: For seven years, we usually want WORM. If we store JSONL on NFS, that’s not WORM.
+
+[11:16] Aisha Rahman: Correct. If WORM is a hard requirement, we recommend an immutable object storage mechanism. Some on-prem appliances support object lock semantics, or you can use storage snapshots with governance controls, but again, it depends. We can provide recommended patterns: (1) export to object storage with immutability, or (2) export to NFS and then replicate to your compliance archive system.
+
+[11:39] Dana Wright: Who owns the replication step?
+
+[11:41] Markus Klein: You would, typically. Redwood’s responsibility is to produce the export and document how to automate it; your team controls the archival system.
+
+[11:52] Nina Gomez: Evidence: can you show that the export ran and didn’t skip events? Like pagination bugs.
+
+[11:59] Aisha Rahman: Great point. The exporter uses cursoring/pagination safeguards and emits metrics: last exported timestamp, counts, and error codes. We can also include a “gap detection” check — if there’s a hole in sequence or time windows, it flags.
+
+[12:20] Eli Brooks: Metrics as in Prometheus?
+
+[12:22] Markus Klein: Yes, Prometheus-style metrics, and dashboards/alerts if you deploy the observability pack.
+
+[12:29] Priya Shah: And those dashboards can be used as evidence?
+
+[12:33] Aisha Rahman: Screenshots can be included, but better is exporting the metrics data or logs. We can advise what other customers do: keep a quarterly restore drill report plus metrics exports and change tickets.
+
+[12:50] Dana Wright: You mentioned restore drills. Do you recommend a cadence?
+
+[12:54] Markus Klein: Common is quarterly for regulated environments, sometimes monthly in staging. We also see customers do a “tabletop” monthly and full technical restore quarterly.
+
+[13:08] Eli Brooks: Restoring into the same cluster or a clean cluster?
+
+[13:11] Markus Klein: Clean cluster is preferred for DR validation. That proves you can rebuild from nothing.
+
+[13:17] Nina Gomez: But for us that’s heavy.
+
+[13:19] Markus Klein: Yep, it’s an investment. We can keep the restore target smaller — like a minimal control plane footprint — but still validate the critical path.
+
+[13:32] Priya Shah: Okay. One detail: do your backups include Kubernetes manifests or Helm values?
+
+[13:38] Markus Klein: The toolkit captures the Helm release values and versions for Redwood-managed components, because that’s needed to redeploy. It does not generally sweep the entire cluster.
+
+[13:50] Eli Brooks: What about CRDs? We had a vendor restore fail once because CRDs weren’t installed.
+
+[13:56] Hanae Suzuki: Yep, that’s a known sharp edge. Our restore runbook includes a pre-flight: confirm required CRDs exist at the expected versions before applying restore. And if they don’t, it tells you what to install first.
+
+[14:12] Dana Wright: That’s important.
+
+[14:13] Markus Klein: 100%.
+
+[14:15] Nina Gomez: I want to circle back to “backup doesn’t include secrets.” If secrets are in our vault, fine. If secrets are in Kubernetes Secrets, we need a plan.
+
+[14:25] Hanae Suzuki: Agreed. We can provide two patterns: (1) recommended: external secrets manager so secrets are rehydrated on redeploy, or (2) if you must, use a Kubernetes secret backup solution in your cluster DR plan. Redwood won’t discourage it, but we won’t bundle secret plaintext into our backups by default.
+
+[14:47] Priya Shah: For audit scope, we also need to know where encryption happens and whether anything is ever written unencrypted to disk.
+
+[14:55] Aisha Rahman: For backup artifacts: encryption happens before the artifact is persisted to the target backend. Temp files can exist depending on your configuration, but the intent is to keep plaintext minimal and ephemeral. We can document the exact behavior and recommended settings to avoid plaintext on disk.
+
+[15:16] Eli Brooks: Is there streaming encryption? Or does it write then encrypt?
+
+[15:20] Hanae Suzuki: Implementation is streaming where possible, but some components may stage data in a temp directory. We’ll call that out with a secure default: encrypted temp volume or memory-backed where feasible.
+
+[15:36] Dana Wright: If our auditors ask, we need that spelled out.
+
+[15:39] Aisha Rahman: Understood.
+
+[15:41] Markus Klein: Let’s talk evidence pack. Priya, what do you typically need for an audit?
+
+[15:47] Priya Shah: We need policies and procedures, plus evidence of execution. For example: a ticket that says “restore drill performed,” logs showing it, and sign-off. For backups: proof backups ran, proof they’re encrypted, proof retention is applied.
+
+[16:05] Markus Klein: Makes sense.
+
+[16:07] Aisha Rahman: Redwood can provide: (a) runbooks, (b) output logs from backup jobs including backup IDs and checksum verification, (c) a manifest per backup with format version, component list, and checksums, (d) restore validation report output, and (e) metrics that show backup success/failure and duration.
+
+[16:29] Nina Gomez: Do you have SOC 2?
+
+[16:31] Markus Klein: Redwood the company does, yes, but for Redwood Private on-prem it’s still your environment. We can share the SOC 2 report under NDA, but it doesn’t replace your controls.
+
+[16:43] Dana Wright: Right, we understand.
+
+[16:45] Eli Brooks: On retention controls: can the system automatically delete old backups? Or do we manage it?
+
+[16:51] Markus Klein: There’s a retention policy option in the scheduled backup job — like “keep N days” — but in regulated environments we usually advise that retention is enforced by the storage backend lifecycle policy, because it’s harder to tamper with.
+
+[17:08] Priya Shah: Deletion is sensitive. We might require dual control.
+
+[17:12] Aisha Rahman: Exactly. Storage-side lifecycle with approval is better.
+
+[17:17] Nina Gomez: Can you prevent operators from restoring an old backup to exfiltrate data?
+
+[17:22] Aisha Rahman: Restore should be gated by RBAC and audit logged. Also, since backups are encrypted with your keys, anyone who can restore must also have access to unwrap keys — that’s your HSM policy. We strongly recommend separating duties: operators can run the job but can’t access keys.
+
+[17:46] Dana Wright: Good.
+
+[17:48] Eli Brooks: About the air-gapped bundle — you mentioned signed artifacts. How do updates work? We can’t pull from the internet.
+
+[17:56] Markus Klein: We provide an offline bundle with deterministic layout and signature verification steps. You import it into your environment. Updates are delivered as new signed bundles. No external calls during install.
+
+[18:12] Priya Shah: Do the backup scripts depend on external containers?
+
+[18:16] Markus Klein: In on-prem mode, everything needed is inside the bundle, including container images if required, and the checksums manifest to verify.
+
+[18:25] Nina Gomez: Are you calling out to any hosted endpoints for telemetry?
+
+[18:29] Markus Klein: Not in air-gapped mode. Telemetry is optional and can be disabled. For your environment, we assume disabled.
+
+[18:38] Dana Wright: Okay.
+
+[18:40] Markus Klein: I want to make sure we answer the “etcd restore vs app restore” question. Eli asked earlier. The general guidance is: etcd snapshots are for cluster-level recovery if your Kubernetes control plane is corrupted. But for DR where you lose a cluster, you rebuild Kubernetes clean and then restore Redwood control plane state using our workflow. If you have etcd and Redwood both, you can end up with conflicts if you restore etcd from a snapshot that includes stale resources.
+
+[19:10] Eli Brooks: Yeah, we’ve seen that. CRDs and old finalizers.
+
+[19:13] Hanae Suzuki: Exactly.
+
+[19:14] Priya Shah: So from an evidence perspective, would you recommend we document both procedures?
+
+[19:19] Markus Klein: Yes. Two runbooks: one for cluster recovery (your infra team) and one for Redwood application restore.
+
+[19:27] Dana Wright: And audit logs… if the cluster is gone, do we lose audit logs not yet exported?
+
+[19:33] Aisha Rahman: If audit logs are stored locally before export, yes, there’s a risk window. Best practice is near real-time export to your durable storage/SIEM, plus batch exports for long-term. We can talk about reducing RPO for audit logs by increasing export frequency.
+
+[19:54] Nina Gomez: For us, audit log RPO needs to be like minutes, not days.
+
+[19:58] Markus Klein: Then we’ll design it as streaming to SIEM plus periodic archive.
+
+[20:03] Priya Shah: Okay. One more: do you support time sync requirements? We’ve had issues with clock skew messing with evidence.
+
+[20:10] Hanae Suzuki: We recommend NTP and we can add a pre-flight check for time sync drift. If drift is beyond a threshold, backup/export warns or fails.
+
+[20:23] Eli Brooks: Good.
+
+[20:24] Markus Klein: We’re at about halfway. Dana, anything not covered?
+
+[20:29] Dana Wright: I want to know: can you provide a “statement of support” that these procedures are supported by Redwood, not just community best effort.
+
+[20:38] Markus Klein: Yes, for the Private offering we will have supported runbooks and we’ll define the support boundaries. For example: we support the Redwood backup/restore workflow; we don’t support your NFS vendor. But we can help triage.
+
+[20:53] Dana Wright: That’s acceptable.
+
+[20:56] Priya Shah: I’d also like an explicit answer on whether any secrets are ever included in backups. Even accidentally.
+
+[21:03] Aisha Rahman: The design intent: do not include secret material. The tooling can be configured to exclude Kubernetes Secrets and to only include references. We’ll provide a written configuration and a validation step: backup verification checks the manifest for forbidden resource types.
+
+[21:23] Nina Gomez: That’s good. Also make sure that if someone misconfigures it, it doesn’t silently include secrets.
+
+[21:29] Hanae Suzuki: Agreed. Secure-by-default is “exclude,” with a very explicit opt-in if ever allowed.
+
+[21:39] Eli Brooks: Another practical question: backup size. Are we talking gigabytes?
+
+[21:44] Markus Klein: Control plane backups are typically not huge — depends on config DB size. But audit logs over years can be massive, which is why we separate “backup” from “audit archive.”
+
+[21:56] Priya Shah: We compress logs and encrypt them. Can we do that with your exporter?
+
+[22:02] Aisha Rahman: Yes, export can be compressed and encrypted. For encryption, we recommend using the same envelope pattern with your keys.
+
+[22:12] Dana Wright: Okay.
+
+[22:13] Markus Klein: I think we should move to next steps. But before that, any competitor comparisons you’re weighing? Just so we understand.
+
+[22:21] Dana Wright: We’re looking at a self-hosted vLLM stack and also some cloud options like Azure OpenAI, but cloud is hard for PHI.
+
+[22:30] Markus Klein: Yep.
+
+[22:31] Nina Gomez: Bedrock was discussed too, but again, data residency is tough.
+
+[22:35] Markus Klein: Understood.
+
+[22:37] Aisha Rahman: From a security stance, on-prem gives you full control, but it also means your DR and retention controls are yours to operate. What we’re trying to do is make that operationally realistic.
+
+[22:51] Priya Shah: Okay. Can you send a sample of the restore validation report? Like what fields we’d see.
+
+[22:56] Markus Klein: Yes.
+
+[22:57] Hanae Suzuki: We can include: backup ID, backup format version, components restored, checksum verification status, KMS provider used (not keys), and post-restore checks.
+
+[23:11] Dana Wright: And for audit logs, we’ll need the schema.
+
+[23:14] Aisha Rahman: We’ll send schema and an example export file.
+
+[23:18] Markus Klein: Great. Anything else?
+
+[23:20] Eli Brooks: Just one: If we do NFS for backups, what are the permission requirements? We want least privilege.
+
+[23:26] Markus Klein: We’ll provide recommended NFS export options and an RBAC policy for the backup service account. Also we can flag insecure mount options.
+
+[23:36] Eli Brooks: Perfect.
+
+[23:38] Markus Klein: Alright, recap. We’ll send: written envelope encryption note, sample manifest, sample restore report, audit log schema + exporter behavior, and recommended retention/immutability patterns. You’ll confirm retention (7 vs 10) and storage target details and HSM constraints. We’ll schedule a follow-up technical session on the HSM provider integration.
+
+[23:59] Dana Wright: Sounds good.
+
+[24:01] Priya Shah: Thanks.
+
+[24:02] Nina Gomez: Thank you.
+
+[24:03] Eli Brooks: Thanks.
+
+[24:04] Markus Klein: Thanks everyone.
+
+(Note: transcript truncation - Fireflies sometimes stops labeling timestamps after ~25 minutes; remainder of call contained continued Q&A on HSM constraints, export cadence, and internal MedData audit evidence workflow, with no additional decisions beyond the recap above.)

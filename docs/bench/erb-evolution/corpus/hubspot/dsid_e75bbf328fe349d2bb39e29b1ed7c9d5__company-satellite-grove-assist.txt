@@ -1,0 +1,29 @@
+Satellite Grove
+
+Lead source: self-serve signup (product-led). Team: CTO (Aisha Kaur), Eng Lead (Mateo Lopez), PM (Rina Shah). Early discovery call 2026-03-02 via Fireflies ff-20260302-0934. Summary: building an in-app conversational assistant for their B2B workflow SaaS; must feel instant (streaming responses) and run on public cloud.
+
+Key requirements:
+- Streaming websocket support + chunked tokens (UX requires UI tokens arrive in <50ms increments).
+- p50 target ~40-80ms, p95 <120ms, p99 <200ms for short responses (avg 60 tokens).
+- Concurrent active users at launch ~100-200, expected steady-state 20-50.
+- Cost-sensitive: want guidance on batching vs streaming tradeoffs and token/unit price impact.
+- Model preferences: prefer smaller fast open models for latency (we mentioned quantized Llama-family / Mistral-lite), but open to Redwood verified models for throughput.
+- Security: SOC2 on roadmap, need SSO (SAML) + audit logging for partner beta.
+
+POC/workflow discussed:
+- They used free credits to wire up a quick websocket chat to Redwood hosted API. Observed good tail latencies but worried about unit cost when scaling. Did a smoke test with ~50 concurrent short chats (avg reply length 60 tokens) — saw 120ms median, 250ms p99 in one run.
+- Interested in Redwood Optimize suggestions (batching hints, prefix caching) to reduce cost without hurting streaming UX.
+
+Quotes / call notes (shorthand):
+- "Streaming must feel instant — if agents lag, users drop off." — Aisha (CTO).
+- "We need a clear cost model for streaming usage; tickets are tight for first 6 months." — Mateo (Eng Lead).
+
+Timeline & activities: see activity_timeline field for discrete items.
+
+Risk / next-stage signals: if we can show a predictable cost/latency plan and a simple SSO flow, they'll move to a 3-month paid pilot and open a dedicated usage seat in April.
+2026-02-28: Product signup + free credits — initial test with websocket streaming
+2026-03-02: Discovery call (Fireflies ff-20260302-0934) — introduced hosted API streaming endpoints
+2026-03-04: Eng follow-up email with repro of p99 spikes (gt-20260301-dev-inbound-7a9)
+2026-03-06: SE triage — Priya reproduced with 50 concurrent sessions, flagged batching vs concurrency tradeoff
+2026-03-09: Sent preliminary cost/latency delta matrix + link to pricing deck (drive:/deals/SatelliteGrove/pricing-deck-v2.pdf)
+2026-03-10: Customer asked for p99 benchmarks on region us-west and token-based cost example at 200 concurrent users

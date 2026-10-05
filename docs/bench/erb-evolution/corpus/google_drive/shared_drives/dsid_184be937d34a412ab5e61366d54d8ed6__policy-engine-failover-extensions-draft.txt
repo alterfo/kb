@@ -1,0 +1,248 @@
+Draft Spec: Policy Engine Extensions for Regional Failover Automation
+
+Context / why this exists
+- We’re upgrading regional failover automation as part of Reliability Program (Q1–Q2 2026). Today, routing policy evaluation has a few gaps:
+  - Non-deterministic behavior in edge cases (e.g., multiple signals firing, partial signal availability, time-window ambiguity).
+  - Hard to reason about priority across trigger signals (reachability, 5xx burn, tail latency burn, capacity exhaustion).
+  - No first-class “hold-down” / dampening in evaluation; logic is split between policy rules and external controller.
+  - No consistent mechanism to enforce safety constraints per tenant/tier (max flips, blast radius caps, required approval).
+
+Goals
+- Add policy engine primitives so failover decisioning is:
+  - Deterministic and auditable (same inputs => same decision; explainability built-in).
+  - Compatible with ADR-042 (signal priority + corroboration) and ADR-043 (rollback + anti-flap).
+  - Safe by default (rate limits, required corroboration, blast radius constraints).
+- Support both:
+  - “Recommend” (dry-run) mode: compute candidate flips + evidence.
+  - “Enforce” mode: same evaluation but returns executable actions.
+
+Non-goals
+- Replace the automation controller. The controller still orchestrates execution, approvals, and cross-system workflow.
+- Re-architect signal ingestion. We consume normalized, time-bucketed signals from Region Health + SLO toolkit.
+- Build customer-facing UI here.
+
+Terminology
+- Policy: configuration describing routing behavior for a route/service/model/tier.
+- Region set: primary and fallback regions eligible for this route.
+- Trigger signal: normalized boolean or scalar indicating regional impairment or risk.
+- Decision: computed outcome (no-op, failover, partial shift, rollback, hold).
+- Action: executable change (policy flip, weight adjustment, circuit breaker mode) emitted by controller.
+
+Inputs / data model assumptions
+- Policy engine receives inputs as a single evaluation payload, including:
+  - route_id (e.g., hosted.chat.completions, dedicated.pool.<pool_id>)
+  - tenant_id (optional for shared Hosted; required for Dedicated)
+  - tenant_tier (free/pro/enterprise/dedicated)
+  - current_routing_state (primary region, weights, last_flip_at)
+  - signals (per region, per signal type):
+    - reachability: ok|degraded|down + confidence + last_updated
+    - errors_5xx_burn: burn_rate + window + confidence
+    - tail_latency_burn: burn_rate + p95/p99 deltas + confidence
+    - capacity_headroom: percent + “hard gate” boolean
+    - control_plane_health (optional): ok|degraded|down
+  - evaluation_time (UTC epoch + monotonic sequence)
+  - constraints (policy-level + tenant-level): max_flips_per_hour, min_hold_down_seconds, require_approval, blast_radius_limit
+
+Determinism requirements (core)
+1) Stable ordering
+- Evaluation must not depend on map iteration order.
+- Rule matching must define explicit ordering: by priority, then by tie-breakers.
+
+2) Stable time semantics
+- All windowed signals must be anchored to evaluation_time and include:
+  - effective_start, effective_end, and a “freshness” timestamp.
+- Engine must treat stale signals consistently:
+  - If authoritative signals are stale beyond threshold, decision = HOLD (do not fail over) unless reachability is explicitly DOWN with high confidence.
+
+3) Single decision per evaluation
+- For a given (route_id, tenant_id, evaluation_time), engine emits exactly one decision object, even if multiple actions are possible.
+- Multi-step actions (e.g., drain -> shift weights -> finalize) must be represented as a sequence recommendation but still within a single decision record.
+
+4) Explainability
+- Decision must include:
+  - decision_type (NO_OP | FAILOVER | PARTIAL_SHIFT | ROLLBACK | HOLD)
+  - chosen_reason (canonical enum)
+  - evidence: ordered list of signals used, with values, freshness, and thresholds.
+  - rejected_candidates: (optional) top 1–3 alternatives and why they were not selected.
+
+Proposed changes to policy engine
+A) New predicates / functions
+1) region_health(region, signal_type) -> {status, value, confidence, freshness_seconds}
+- Wrapper that pulls normalized data from payload and enforces freshness calculations.
+
+2) is_authoritative_reachability_down(region) -> bool
+- True only if:
+  - reachability.status == down
+  - confidence >= configured_min_confidence (default 0.9)
+  - freshness_seconds <= reachability_max_staleness (default 30s)
+
+3) burn_rate_exceeded(region, metric, window, threshold) -> bool
+- Works for errors_5xx_burn and tail_latency_burn.
+- Window must be one of approved windows (e.g., 1m/5m/30m) to avoid configuration drift.
+
+4) capacity_hard_gate(region) -> bool
+- True if headroom below threshold AND capacity signal confidence is high.
+- Intended to prevent shifting into an already overloaded region.
+
+5) corroborated(primary_signal, secondary_signal) -> bool
+- Enforces ADR-042 “required corroboration signals” when configured.
+- Example: if tail latency burn triggers, require either 5xx burn OR reachability degraded/down OR control plane degraded.
+
+6) hold_down_active(last_flip_at, min_hold_down_seconds) -> bool
+- If true, policy engine returns HOLD unless reachability down is authoritative.
+
+7) flip_budget_ok(tenant_id, route_id, max_flips_per_hour) -> bool
+- Input includes a precomputed counter from controller/state store (policy engine does not store state).
+
+8) blast_radius_ok(tenant_tier, requested_action) -> bool
+- Enforces “can’t shift more than X% traffic for tier Y without approval”.
+- For Hosted, blast radius is route-scoped; for Dedicated, pool-scoped.
+
+B) Deterministic evaluation mode (required)
+- Add an “evaluation_mode” field:
+  - recommend: compute decision + evidence; do not mark as executable
+  - enforce: compute decision; include explicit requested_action(s)
+- Engine must produce identical decision_type and evidence in both modes (action packaging differs).
+
+C) Signal hierarchy evaluation (ADR-042)
+Priority order (proposed canonical order for v1):
+1) Reachability DOWN (authoritative) => FAILOVER (unless no healthy fallback)
+2) Errors (5xx) fast burn (high severity) => FAILOVER or PARTIAL_SHIFT depending on blast radius and capacity
+3) Tail latency burn (p99/p95) => PARTIAL_SHIFT first; escalate to FAILOVER if corroborated and sustained
+4) Capacity exhaustion / hard gate => HOLD + load shed (controller action), avoid shifting into constrained region
+5) Control plane degradation => HOLD (do not flip rapidly; prevent oscillation)
+
+Notes:
+- “No healthy fallback” means every eligible fallback region fails capacity_hard_gate OR reachability is down OR stale beyond threshold.
+- If no healthy fallback, decision should be HOLD and include “degrade_allowed=true” hint (controller can activate load shedding / retry-after).
+
+D) Policy language / config schema additions
+Add new fields (names tentative):
+- failover:
+  - enabled: boolean
+  - eligible_regions: [us-east, eu-west, ...]
+  - signal_requirements:
+    - primary_trigger: enum
+    - corroboration: [enum]
+    - min_confidence: float
+    - max_staleness_seconds: int
+  - dampening:
+    - min_hold_down_seconds: int
+    - require_sustain_seconds: int (for non-reachability triggers)
+  - safety:
+    - require_approval: boolean (default true for prod initially)
+    - max_flips_per_hour: int
+    - max_traffic_shift_percent: int
+    - rollback:
+      - auto_rollback_enabled: boolean
+      - rollback_after_seconds: int
+      - rollback_require_healthy_primary_seconds: int
+
+E) Output schema
+Decision output (single object, JSON):
+- decision_id (stable hash of route_id + tenant_id + evaluation_time + policy_version)
+- policy_version
+- evaluation_time
+- decision_type
+- chosen_reason
+- target_state (string encoding; owned by controller)
+- requested_actions (string encoding; empty in recommend mode)
+- evidence (string encoding; ordered)
+- annotations (string encoding; includes thresholds, staleness, hold-down state)
+
+Note: In our implementation we’ll likely use structured objects, but for logging/audit we must generate a stable, versioned string representation.
+
+Safety constraints (ADR-043 alignment)
+- Anti-flap:
+  - Enforce hold-down between flips for non-reachability triggers.
+  - Any rollback decision must respect a separate rollback hold-down (avoid ping-pong between primary and fallback).
+- Rate limiting:
+  - flip_budget_ok must be true, else HOLD.
+- Approval hooks:
+  - If require_approval is true, decision_type can still be FAILOVER but requested_actions must be empty and “approval_required=true” annotation set.
+- Tenant/tier gates:
+  - Enterprise/Dedicated can be configured with stricter “do not cross data residency boundary” constraint (policy engine should surface “constraint_violation:data_residency” rather than attempt partial shifts).
+
+Edge cases and expected behavior
+1) Partial outage in primary region
+- Reachability degraded (not down), 5xx burn elevated, capacity OK in fallback.
+- Expected: PARTIAL_SHIFT (e.g., shift 25–50% depending on max_traffic_shift_percent) if corroborated. If sustained and escalates to reachability down or error burn becomes severe => FAILOVER.
+
+2) Signal missing / ingestion delayed
+- Any authoritative signal is stale beyond max_staleness_seconds.
+- Expected: HOLD. Evidence must explicitly call out staleness and which signal blocked action.
+
+3) Fallback region constrained
+- Primary is failing (5xx burn), fallback capacity_hard_gate true.
+- Expected: HOLD + annotate “fallback_unhealthy_due_to_capacity”. Controller should invoke load shedding and retry-after rather than shifting load.
+
+4) Control plane degraded
+- Control plane health degraded; data plane signals ambiguous.
+- Expected: HOLD unless reachability down is authoritative. (Avoid flipping policies when control plane is suspect.)
+
+5) Multi-fallback selection
+- If multiple eligible fallback regions are healthy, selection tie-breakers:
+  1) policy-specified order
+  2) lowest latency probe (if available in inputs)
+  3) highest capacity headroom
+  4) stable sort by region name
+
+Testing plan (draft)
+Unit tests
+- Determinism:
+  - Same payload with randomized key order => same decision_id, decision_type, evidence ordering.
+- Staleness gating:
+  - Stale error burn + fresh reachability OK => HOLD.
+- Priority:
+  - Reachability DOWN overrides hold-down.
+  - 5xx burn overrides latency burn when both exceed thresholds.
+
+Integration tests
+- Replay recorded signal snapshots from staging incidents + controlled game day traces.
+- Validate output is compatible with controller dry-run UX (must contain reasons + evidence).
+
+Performance considerations
+- Evaluation must be cheap; do not add per-eval remote calls.
+- Evidence strings must be bounded in size. Cap rejected_candidates and evidence list.
+
+Operational / observability hooks
+- Emit a single log line per decision with:
+  - decision_id, route_id, tenant_id (hashed in shared Hosted contexts), decision_type, chosen_reason
+  - key thresholds and freshness
+- Export metrics:
+  - policy_engine_decisions_total{decision_type, chosen_reason, tier}
+  - policy_engine_hold_reasons_total{reason}
+  - policy_engine_eval_latency_ms
+
+Open questions
+- Exact shape of “target_state” string: should it be a controller-owned serialization of desired weights, or should the policy engine output high-level intent only?
+- Do we want PARTIAL_SHIFT as a first-class decision type (recommended), or represent it as FAILOVER with weight < 100%?
+- How strict should corroboration be for tail latency burn? (ADR-042 indicates corroboration required; we need the exact default set.)
+- Where should data residency constraints live?
+  - Option A: policy engine validates “region set allowed” and blocks action.
+  - Option B: upstream policy compilation prevents invalid eligible_regions.
+
+Near-term next steps
+- Align with Miles/Ravi on canonical signal enum + reason enum.
+- Draft schema PR for policy config additions (behind feature flag).
+- Implement deterministic ordering + evidence output in policy engine.
+- Wire to dry-run mode (ENG-2415) so the controller can display “recommended action + confidence + evidence” on game day.
+
+Appendix: candidate enums (WIP)
+chosen_reason
+- REACHABILITY_DOWN
+- ERROR_BURN_FAST
+- LATENCY_BURN_SUSTAINED
+- CAPACITY_HARD_GATE
+- SIGNALS_STALE
+- HOLD_DOWN_ACTIVE
+- FLIP_BUDGET_EXCEEDED
+- CONSTRAINT_VIOLATION_DATA_RESIDENCY
+- NO_HEALTHY_FALLBACK
+
+signal_type
+- REACHABILITY
+- ERRORS_5XX_BURN
+- TAIL_LATENCY_BURN
+- CAPACITY_HEADROOM
+- CONTROL_PLANE_HEALTH

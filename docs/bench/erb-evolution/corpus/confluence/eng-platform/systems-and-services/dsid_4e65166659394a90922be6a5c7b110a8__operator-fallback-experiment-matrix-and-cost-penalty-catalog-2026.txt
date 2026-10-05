@@ -1,0 +1,166 @@
+Operator fallback experiment matrix and cost penalty catalog
+
+Overview
+========
+
+This document captures a reproducible experiment matrix for operator-driven fallback strategies and an associated cost-penalty catalog used to evaluate trade-offs between SLO preservation and unit economics across regional surges. It is intended for platform operators, SREs, and product engineers running controlled degradation experiments or designing automatic fallback policies.
+
+Why this exists
+---------------
+- Fallbacks are a major lever for preserving SLOs during capacity scarcity or model regressions, but they have measurable cost and quality impacts.
+- Operators need a concise experiment plan with metrics, dashboard queries, and a cost penalty model to compare candidate strategies.
+- This doc standardizes experiment telemetry, rollout/rollback steps, and decision criteria for productionizing fallbacks.
+
+Goals and scope
+---------------
+- Goal: Provide a repeatable experiment matrix that yields quantitative comparisons of: latency SLO retention, token-cost delta, quality regressions (evaluations), and operator intervention effort.
+- Scope: Multiregion inference surface (hosted + dedicated), model variant fallbacks (quantized, smaller model families), and routing degradations (regional drain, tenant throttling).
+- Out of scope: Model training/data pipelines, legal/customer contract negotiation.
+
+Definitions and abbreviations
+---------------------------
+- Fallback variant: Any alternative response path (e.g., model C => model B, or cached response) used when the primary path is unavailable or overloaded.
+- Cost penalty: Unit cost increase or revenue impact metric associated with using a fallback (e.g., tokens * $/token diff, or additional infra cost).
+- SLO preservation: Fraction of requests meeting 95th percentile latency target and error-rate SLO.
+
+Experiment matrix (canonical)
+---------------------------
+Columns: experiment_id | description | fallback_type | trigger | primary-metric | cost-metric | quality-metric | run-length | owner
+
+Example rows (use these as templates):
+1) EXP-001 | Model-variant degrade (Llama-70B -> Llama-13B-int8) | model_variant | queue-depth > 100 OR p95 latency > 600ms | p95 latency, error-rate | token-cost-delta-per-hour | eval-regression@20 prompts | 2h | operator-team
+2) EXP-002 | Regional drain to peer region (eu-west -> us-east) | regional-routing | region capacity throttle 80% | p99 tail latency cross-region | egress-cost-delta | user-visible-quality (latency jump) | 4h | platform-network
+3) EXP-003 | Prefetch cache fallback (serve from prefix cache) | cache_prefetch | cold-start rate > 30 req/min | mean latency | compute-cost-savings | correctness mismatch ratio | 3h | runtime-team
+4) EXP-004 | Token-budgeted throttling for low-priority tenants | quota_throttle | burst credits exhausted | 95th latency of high-priority | revenue-at-risk | customer-error-annotations | 6h | platform-ops
+
+Telemetry and dashboarding recipe
+--------------------------------
+Create a dedicated experimental dashboard with following panels per experiment run:
+- SLO heatmap: p50/p95/p99 latency over time (per region, per tenant priority). Query examples:
+  - latency_p95{experiment_id="EXP-001"} (PromQL)
+  - request_duration_bucket_sum by (le, region)
+- Cost delta stream: rolling token-cost-per-minute and infra-cost-surge.
+  - token_cost_rate{fallback_variant!=""}
+- Quality regression signal: evaluation pass-rate across a held promptset (20-50 prompts) run every 15 minutes.
+  - eval_pass_rate{promptset="fallback-20"}
+- Operator interventions: number and duration of manual rollbacks, with links to runbook tickets.
+  - operator_rollbacks_total{experiment_id="EXP-001"}
+- Composite KPI panel: cost-penalty vs. SLO-preservation scatter plot for each variant.
+
+Minimum instrumentation checklist
+--------------------------------
+1) Annotate requests with experiment_id and fallback_variant in trace metadata.
+2) Emit fallback_reason counter in request pipeline.
+3) Record per-request token accounting and model_version label.
+4) Attach prompt-set id for synthetic eval traffic.
+5) Ensure operator actions log into the incident system with experiment_id tag.
+
+Cost penalty catalog (examples and formulae)
+-------------------------------------------
+Catalog rows: fallback_variant | per-token-diff | expected-throughput | hourly-cost-delta | rollback-cost-estimate | notes
+Example entries:
+- L70B -> L13B-int8 | +0.002 $/token (lower cost) | 2k tokens/s | -$14.4 / hour per 1000 rps | negligible | reduced quality on long-form completion
+- cross-region-eu->us | +$0.05 / 1k tokens (egress) | 1k tokens/s | +$180 / hour at 1000 rps | potential SLA credits | watch cold-start p95
+- cached_prefix_response | -$0.001 $/token (savings) | N/A | -$3.6 / hour per 1000 rps | risk of stale content | requires invalidation policy
+- quota-throttle-low | revenue-at-risk estimate (see calc) | depends on tenant mix | - | revenue-impact = average-MRR-per-req * blocked-reqs | requires customer comms plan
+
+Cost calculations (short formulas)
+- token_cost_delta_hourly = sum_over_requests(token_count * (cost_primary - cost_fallback)) per hour
+- egress_delta_hourly = egress_bytes * egress_rate
+- revenue_at_risk = blocked_requests * avg_revenue_per_request
+Include these calculations in the dashboard as derived timeseries.
+
+Experiment run playbook (step-by-step)
+-------------------------------------
+1) Planning (2–4 days)
+   a) Define hypotheses: e.g., "model-variant fallback preserves p95 latency with <5% quality regression and cost delta < $200/hr"
+   b) Pick held promptset (20–50 prompts) and synthetic traffic profile matching customer mix.
+   c) Create experiment_id, add telemetry tags and dashboard.
+2) Preflight (1 day)
+   a) Run synthetic traffic against fallback in staging and collect baseline metrics.
+   b) Validate eval pass-rate and trace annotation.
+   c) Pre-commit rollback playbook and test it in canary.
+3) Execution (2–6 hours normally, up to 24 hours for long-run metrics)
+   a) Apply experiment on a small cohort (1% of traffic or single region).
+   b) Monitor SLO panels and operator intervention panel.
+   c) Escalate to oncall if p99 > target * 2 or error-rate increases > 2x baseline.
+4) Ramp or rollback (decision gates)
+   a) If cost-savings or SLO-preservation meet hypothesis -> ramp to 10% then 50% using pre-defined step intervals.
+   b) If quality regression > threshold or operator rollbacks > 1 -> rollback immediately, file incident.
+5) Post-run analysis (within 48 hours)
+   a) Populate experiment report template (see artifacts).
+   b) Archive synthetic trace samples and evaluation results.
+
+Rollback quick commands (examples)
+--------------------------------
+- Immediate global rollback: CLI helper
+  - redwoodctl rollout cancel --experiment EXP-001 --force
+- Regional undo (eu-west):
+  - redwoodctl routing set-region-weight --region eu-west --weight 1.0 --experiment EXP-001
+- Re-enable primary model:
+  - redwoodctl model set-default --model redwood/llama-70b --variant baseline --experiment EXP-001
+Include these command snippets in runbook templates and verify operator RBAC before using.
+
+Decision criteria matrix (accept/ramp/abandon)
+--------------------------------------------
+- Accept: p95 latency maintained within 10% of baseline AND eval regression <= 3% AND hourly cost delta within budgeted threshold.
+- Ramp: p95 within 20% and eval regression <= 7% with operator acceptance.
+- Abandon: p95 > 20% degradation OR eval regression > 10% OR unexpected customer errors in the error-tracking system.
+Document reasons in experiment report.
+
+Artifacts to capture and store
+----------------------------
+- Experiment report (.md) with: hypothesis, traffic profile, duration, metrics before/after, cost calculations, operator notes.
+- Trace bundle (link to S3) and synthetic eval outputs (json).
+- Dashboard snapshot and Prometheus queries used.
+- Postmortem if rollback occurred.
+
+Operational responsibilities and ownership
+----------------------------------------
+- Owner: platform-ops (primary contact: oncall@platform) for run coordination.
+- Instrumentation: runtime-team for trace and metric changes.
+- Cost modeling: finance-eng liaison for hourly cost validation.
+- Security review: security-team if any customer data is used in synthetic prompts.
+
+Safety and customer communication
+--------------------------------
+- For tenant-facing throttles or degradations that materially impact customer SLAs, coordinate with Customer Success for banner messaging and QBR notes.
+- For enterprise customers with Dedicated/Private deployments, require explicit sign-off per the customer SLAs before ramping.
+
+Retrospective template (post-experiment)
+--------------------------------------
+1) Summary: one-paragraph outcome
+2) Metrics: baseline vs. experiment (latency, error-rate, cost, eval pass-rate)
+3) What went well
+4) What failed / surprises
+5) Action items (owner + due date)
+6) Decision: accept/ramp/abandon
+
+Appendices
+----------
+A. Sample PromQL snippets
+- p95 latency: histogram_quantile(0.95, sum(rate(request_duration_seconds_bucket{job="inference",experiment_id=~"EXP-.*"}[5m])) by (le, region))
+- fallback rate: sum(rate(fallback_reason_total[1m])) by (fallback_variant)
+
+B. Template experiment report checklist (copy into new experiment ticket)
+- Experiment ID: 
+- Owner: 
+- Hypothesis: 
+- Synthetic promptset id: 
+- Baseline run links: 
+- Dashboard link: 
+- Rollback commands verified: Y/N
+- Customer communication required: Y/N
+
+C. Related runbooks and pages
+- emergency-model-swap-and-token-surge-mitigation (runbook)
+- platform-operator-handbook-degraded-kv-prefix-cache (operator runbook)
+
+D. Change log
+- 2025-11-12: Document created by Aisha Patel.
+- 2025-12-08: Added cost-penalty formulas and cross-region egress example (review: Miguel Torres).
+- 2026-01-18: Finalized decision criteria and PromQL snippets (review: Dana Li).
+
+Contact and follow-up
+--------------------
+For questions or to schedule a live walk-through of the experiment templates, ping #platform-ops or email aisha.patel@redwood.ai.

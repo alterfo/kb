@@ -1,0 +1,173 @@
+AWS Marketplace procurement + security FAQ (2026)
+
+## Overview
+This page is the current internal FAQ for answering enterprise buyer questions about purchasing Redwood Inference through AWS Marketplace (public offer vs private offer), and the most common security/compliance questions (SOC 2, encryption/KMS, retention, audit logs, data residency, incident response, and SSO/RBAC).
+
+This content is used by AEs/SEs for deals where the customer prefers AWS Marketplace so spend can count toward AWS commitments (e.g., EDP) and to streamline vendor onboarding.
+
+---
+
+## What customers typically ask for (quick list)
+- Why buy via AWS Marketplace (EDP/committed spend, consolidated invoicing) and when to use a private offer.
+- SKU fit: Hosted API now, Dedicated capacity later, and when Private (VPC) is required.
+- Metering and billing: dimensions (tokens/requests), reporting cadence, and invoice visibility.
+- Security questionnaire items: SOC 2 posture, encryption/KMS, retention controls, audit logs, data residency, incident response, and SSO/RBAC.
+- Shared responsibility boundaries for Hosted vs Dedicated vs Private.
+- Onboarding flow: subscription → entitlement validation → org provisioning/linking → first API key → first call.
+- Support and escalation expectations for marketplace customers.
+
+---
+
+## Marketplace procurement FAQ
+
+### Q: Public offer or private offer?
+**Recommended for enterprise: Private offer.** Private offers allow us to align term length, committed spend constructs, and any deal-specific exhibits (e.g., security addendum, DPA references) while still using Marketplace as the procurement channel.
+
+**Public offer** (pay-as-you-go) is typically used for small pilots or when procurement does not require an order-form-like artifact.
+
+### Q: Does Marketplace spend count toward AWS commitments (e.g., EDP)?
+In most enterprise cases **yes**, but eligibility is determined by the customer’s AWS agreement and how the offer is accepted. When asked, we should state:
+- We structure offers using standard AWS Marketplace constructs.
+- The customer should confirm EDP crediting mechanics with their AWS account team.
+- Redwood can loop in our AWS partner contact if needed to validate mechanics for the customer.
+
+### Q: What information do we need to create a private offer?
+Provide the customer the intake checklist and collect:
+- Buyer AWS account ID(s) that will accept the offer
+- Preferred AWS region(s) for processing (and any single-region requirement)
+- Requested start date
+- Term length (12 months is most common)
+- Commercial structure (committed spend target, prepay vs monthly, overage expectations)
+- Required legal/security exhibits (DPA, breach notification language, subprocessor references)
+- Signatory / procurement contact
+
+**Internal note:** The current intake path is the “AWS MP Private Offer Intake” Salesforce form (ask Deal Desk for the latest link).
+
+### Q: What is the onboarding flow after subscription?
+Typical flow:
+1) Customer subscribes/accepts the offer in AWS Marketplace.
+2) AWS sends an entitlement to Redwood.
+3) Customer signs into the Redwood Console and links the Marketplace subscription.
+4) Customer creates or links a Redwood org.
+5) Customer generates an API key and makes a first test call.
+
+**Entitlement timing (updated):** Most entitlements propagate in **5–20 minutes**. In rare cases it can take longer (up to a few hours) depending on AWS-side propagation.
+
+**If entitlement is delayed:** Customer should contact Redwood support first. We can confirm whether we received the entitlement and can trigger a re-sync using the subscription/entitlement identifier.
+
+---
+
+## SKU + deployment model FAQ
+
+### Q: What’s the difference between Hosted, Dedicated, and Private?
+- **Hosted:** Fastest start. Shared infrastructure with tenant isolation controls. Usage-based metering via Marketplace. Best for pilots and many production workloads.
+- **Dedicated:** Reserved capacity for predictable throughput and stronger isolation. Often adopted after a successful Hosted pilot.
+- **Private (VPC):** Redwood runs in (or is tightly attached to) the customer’s network boundary. Best for strict network controls, VPC-only access, and certain key management/residency requirements.
+
+### Q: Shared responsibility (what we own vs what the customer owns)
+- **Hosted/Dedicated:** Redwood operates the service, core security controls, and platform availability. Customer configures org access (SSO/RBAC), API key practices, and application-layer security.
+- **Private:** Customer owns more of the network boundary and can own more of the key management and logging pipeline depending on architecture. Redwood still owns application security and platform components we operate.
+
+---
+
+## Security & compliance FAQ (common questionnaire items)
+
+### Q: Do you have SOC 2 Type II?
+**Yes.** Redwood maintains a current SOC 2 Type II report.
+- We provide access via our trust portal with controlled access.
+- For Marketplace reviews, we also provide a security overview packet that maps major controls without distributing the full report broadly.
+
+### Q: ISO 27001?
+Redwood is aligned to ISO 27001 control areas and maintains a formal security program. If a customer specifically requires an ISO certificate, route the request to Security/Compliance to confirm the current status and appropriate response for the deal.
+
+### Q: Encryption in transit and at rest (what TLS versions)?
+- **In transit:** TLS **1.2+** (TLS 1.3 supported for modern clients where applicable). API and console require HTTPS.
+- **At rest:** Encrypted storage layers.
+
+### Q: Do you support customer-managed KMS keys (BYOK)?
+**Updated guidance (2026):**
+- **Hosted:** Customer-managed KMS is available for enterprise tenants in select regions as an add-on, using per-tenant key configuration (subject to feasibility review). If not available in the target region, the default is provider-managed keys.
+- **Dedicated:** Customer-managed key options are available for many Dedicated configurations.
+- **Private (VPC):** Customer-managed keys are supported and typically the recommended path when BYOK is a hard requirement.
+
+If asked for a simple statement: “Hosted uses provider-managed keys by default; customer-managed keys are available for certain enterprise configurations; Private/VPC supports customer-managed keys.”
+
+### Q: Do you store prompts and completions? Can retention be set to zero?
+We should avoid vague language. Use these points:
+- Redwood does **not** use customer prompts/outputs to train models.
+- Redwood retains limited metadata required for service reliability, abuse prevention, billing reconciliation, and security investigations.
+- **Content retention controls:** Enterprise configurations can disable content logging and minimize content persistence.
+
+**Updated retention guidance (2026):**
+- Default for enterprise Hosted is **content logging disabled** unless explicitly enabled for debugging.
+- Minimal operational/billing metadata is retained per policy; the retention window is documented in the “Data Handling & Retention” attachment for Marketplace buyers.
+- “Retention = 0” should be positioned as “no persistent storage of request/response content,” while acknowledging that transient in-memory processing is required to serve the request.
+
+### Q: Audit logs (what events exist, can we export to Splunk)?
+Redwood provides audit logging for admin actions and auth events, such as:
+- User invites and role changes
+- SSO configuration changes
+- API key creation/revocation
+- Model deployment/config changes (where applicable)
+- Policy/config updates
+
+**Export options (updated):**
+- API-based export is supported.
+- Standard integrations include export to customer SIEM pipelines (Splunk commonly) and/or customer-owned storage (e.g., S3) depending on deployment and plan.
+
+**Immutability/WORM:** Redwood maintains integrity controls. If the customer requires WORM/immutable retention guarantees, the recommended approach is exporting logs to the customer’s immutable store where they enforce WORM retention.
+
+### Q: Data residency / region restriction (e.g., US-only, us-east-1 only)
+- Redwood can support regional processing commitments within the set of available regions for the customer’s SKU.
+- If the customer requires strict single-region processing (e.g., **us-east-1 only**), confirm feasibility for the specific SKU and put the commitment in writing (private offer exhibits / order form language) referencing the data handling documentation.
+- For Private (VPC), data residency aligns to the customer’s chosen region and architecture.
+
+### Q: SSO / SAML / RBAC
+- Enterprise orgs support SSO/SAML.
+- Console access is governed by RBAC.
+- API keys are scoped and can be managed per org/project practices.
+
+### Q: Incident response and breach notification timelines
+Redwood maintains an incident response program with defined severities and notification processes. Specific notification timelines are typically addressed contractually; route strict requirements to Legal + Security/Compliance.
+
+### Q: Subprocessors
+Redwood maintains a current subprocessor list and shares it through the security packet/trust portal. Scope varies by Hosted vs Private (Private can reduce reliance on some subprocessors depending on the customer architecture).
+
+### Q: Private connectivity (VPC endpoints / PrivateLink)
+- **Private (VPC):** Supported.
+- **Hosted:** Generally accessed over public internet with TLS. If the customer has strict network controls requiring private connectivity, position **Private** as the intended solution.
+
+---
+
+## Metering, billing, and FinOps FAQ
+
+### Q: What are the metering dimensions?
+Metering is usage-based and expressed in AWS Marketplace dimensions (commonly token-based for generation and embeddings units depending on SKU). The exact dimension names are included in the offer and listing details.
+
+### Q: How quickly does usage show up in AWS billing / Cost Explorer?
+**Updated guidance (2026):** Marketplace metering is not real-time. Customers typically see updates within **hours to ~24 hours** depending on AWS billing pipelines.
+
+### Q: Does Redwood provide usage reporting that matches the AWS invoice?
+Yes. Redwood provides org-level usage reporting (e.g., by project/model/route) and supports reconciliation with Marketplace billing line items.
+
+---
+
+## Standard next steps for an enterprise Marketplace deal
+1) Send the customer the Marketplace security packet and short-form security FAQ.
+2) Provide trust portal access instructions for SOC 2 (as needed).
+3) Collect buyer AWS account IDs, region constraints, term/start date, and commercial preferences.
+4) Draft and route the private offer internally (Deal Desk) and then to the customer.
+5) Book a technical deep dive if the customer requests detail on audit logs, retention controls, or entitlement troubleshooting.
+
+---
+
+## Internal escalation and ownership
+- Security/compliance questionnaire, SOC 2 access, retention/residency commitments: **Security & Compliance (Naomi Feldman)**
+- Marketplace entitlement/provisioning issues and onboarding flow: **Solutions Engineering (Markus Klein)**
+- Private offer structure, term/commit mechanics, and procurement timelines: **Account Team / Deal Desk (primary AE: Stephanie Nguyen)**
+
+---
+
+## Change log
+- 2026-03-12: Updated guidance on Hosted customer-managed KMS availability, entitlement timing, and AWS billing latency expectations.
+- 2026-02-03: Initial publication for sales enablement.
