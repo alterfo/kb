@@ -397,8 +397,11 @@ absolute numbers are not comparable to the full-corpus 75.2% figure, only the
 relative deltas between adjacent stages.
 
 For the same ladder on the category-targeted ERB slice, see
-`docs/bench/erb-evolution-report.md` — a planned diagnostic run whose result
-tables are filled after the live ai-box run described in Post-Completion.
+`docs/bench/erb-evolution-report.md` — a single-run diagnostic over all seven
+stages with the Dynamic Currency Score (`kb bench dynamic`), which scores
+whether answers name the current rather than a superseded fact. The sample is
+11 questions, so only the broad pattern is supported, not stage-to-stage
+rankings; see the report's Reliability section.
 
 The `verify` command needs a live LLM endpoint (retrieval + synthesis);
 integration tests for the QA harness are gated behind
