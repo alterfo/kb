@@ -47,3 +47,16 @@ func TestLoadActualization(t *testing.T) {
 		t.Fatal("want decode error")
 	}
 }
+
+func TestFromActualizationRejectsEmpty(t *testing.T) {
+	if _, _, _, err := FromActualization(nil); err == nil {
+		t.Fatal("want error for no questions")
+	}
+	p := filepath.Join(t.TempDir(), "empty.json")
+	if err := os.WriteFile(p, []byte(`{"questions":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := LoadActualization(p); err == nil {
+		t.Fatal("want error for empty run.json")
+	}
+}

@@ -33,6 +33,9 @@ func LoadActualization(path string) ([]Case, map[string]string, map[string]strin
 }
 
 func FromActualization(qs []actualizationQuestion) ([]Case, map[string]string, map[string]string, error) {
+	if len(qs) == 0 {
+		return nil, nil, nil, fmt.Errorf("dynamic: actualization run has no questions")
+	}
 	cases := make([]Case, 0, len(qs))
 	before := make(map[string]string, len(qs))
 	after := make(map[string]string, len(qs))

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/alterfo/kb/internal/bench/dynamic"
 	runbench "github.com/alterfo/kb/internal/bench/run"
@@ -45,6 +46,16 @@ func runBenchDynamicCmd(args []string, stdout, stderr io.Writer) int {
 		after := make(map[string]string, len(sub))
 		for id, a := range sub {
 			after[id] = a.Answer
+		}
+		var unanswered []string
+		for _, c := range cases {
+			if _, ok := sub[c.ID]; !ok {
+				unanswered = append(unanswered, c.ID)
+			}
+		}
+		if len(unanswered) > 0 {
+			fmt.Fprintf(stderr, "bench dynamic: submission has no answer for: %s\n", strings.Join(unanswered, ", "))
+			return 1
 		}
 		rep = dynamic.Score(cases, nil, after)
 	default:

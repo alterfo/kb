@@ -3,6 +3,7 @@ package dynamic
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -21,7 +22,7 @@ func TestLoadERB(t *testing.T) {
 {"question_id":"qst_2","question_type":"basic","question":"Other","language":"en"}
 {"question_id":"qst_3","question_type":"conflicting_info","question":"Unlabelled","language":"en"}
 `)
-	st := writeFile(t, dir, "s.json", `{"qst_1":{"current":["30%"],"stale":["20%"]},"qst_9":{"current":["x"],"stale":["y"]}}`)
+	st := writeFile(t, dir, "s.json", `{"qst_1":{"current":["30%"],"stale":["20%"]}}`)
 	cases, err := LoadERB(qs, st)
 	if err != nil {
 		t.Fatal(err)
@@ -32,6 +33,21 @@ func TestLoadERB(t *testing.T) {
 	c := cases[0]
 	if c.ID != "qst_1" || c.Language != "en" || c.Question != "How many?" || c.Control || c.Current[0] != "30%" || c.Stale[0] != "20%" {
 		t.Fatalf("case: %+v", c)
+	}
+}
+
+func TestLoadERBRejectsSpecWithoutQuestion(t *testing.T) {
+	dir := t.TempDir()
+	qs := writeFile(t, dir, "q.jsonl", `{"question_id":"qst_1","question":"q","language":"en"}`)
+	st := writeFile(t, dir, "s.json", `{"qst_1":{"current":["a"],"stale":["b"]},"qst_9":{"current":["x"],"stale":["y"]},"qst_8":{"current":["x"],"stale":["y"]}}`)
+	_, err := LoadERB(qs, st)
+	if err == nil {
+		t.Fatal("want error for stale spec entries with no question")
+	}
+	for _, id := range []string{"qst_8", "qst_9"} {
+		if !strings.Contains(err.Error(), id) {
+			t.Fatalf("error %q does not name %s", err, id)
+		}
 	}
 }
 

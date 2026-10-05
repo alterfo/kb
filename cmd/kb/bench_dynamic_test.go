@@ -38,3 +38,25 @@ func TestBenchDynamicUsageAndErrors(t *testing.T) {
 		t.Fatalf("code %d", code)
 	}
 }
+
+func TestBenchDynamicERBRejectsMissingAnswer(t *testing.T) {
+	dir := t.TempDir()
+	w := func(n, b string) string {
+		p := filepath.Join(dir, n)
+		if err := os.WriteFile(p, []byte(b), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	q := w("q.jsonl", `{"question_id":"qst_1","question":"a","language":"en"}
+{"question_id":"qst_2","question":"b","language":"en"}`)
+	s := w("s.json", `{"qst_1":{"current":["30%"],"stale":["20%"]},"qst_2":{"current":["x1"],"stale":["y1"]}}`)
+	a := w("a.jsonl", `{"question_id":"qst_1","answer":"30%"}`)
+	var out, errb bytes.Buffer
+	if code := runBenchDynamicCmd([]string{"-questions", q, "-stale", s, "-submission", a}, &out, &errb); code != 1 {
+		t.Fatalf("code %d out=%s", code, out.String())
+	}
+	if !strings.Contains(errb.String(), "qst_2") {
+		t.Fatalf("stderr %q does not name qst_2", errb.String())
+	}
+}
