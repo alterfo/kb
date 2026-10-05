@@ -4,6 +4,30 @@
 
 `kb` is a knowledge base over code, docs, tasks, and chats.
 
+## Results at a glance
+
+Feature ladder on a 60-question [EnterpriseRAG-Bench](https://github.com/onyx-dot-app/EnterpriseRAG-Bench)
+slice (conflicting_info / constrained / basic), each stage adds one capability.
+**DCS** (Dynamic Currency Score) is the share of answers that name the current
+value rather than a superseded one, on 11 `conflicting_info` questions.
+
+| # | Stage | Adds | DCS | stale_leak | miss | facts | retrieval_hit |
+|---|-------|------|-----|------------|------|-------|---------------|
+| 0 | Native | dense-only, one LLM call | 0.18 | 0.09 | 0.73 | 0.23 | 54/60 |
+| 1 | +Hybrid | dense + BM25 + RRF | 0.27 | 0.09 | 0.64 | 0.20 | 57/60 |
+| 2 | +Graph | graph-aware fusion | 0.27 | 0.18 | 0.55 | 0.23 | 57/60 |
+| 3 | +Rerank | LLM rerank | 0.27 | 0.27 | 0.45 | 0.21 | 57/60 |
+| 4 | +Logic | Graph-of-Thoughts | 0.45 | 0.09 | 0.27 | 0.26 | 60/60 |
+| 5 | +Temporal | strict supersede + contradiction detection | 0.64 | 0.18 | 0.18 | 0.18 | 60/60 |
+| 6 | +Qualifiers | qualifier filter | 0.55 | 0.00 | 0.27 | 0.23 | 59/60 |
+
+Read it as a pattern, not a ranking: one run per stage on an 11-question sample,
+so one question moves DCS by 0.09. The supported claim is the gap between the
+naive stages (0.18-0.27) and the Graph-of-Thoughts stages (0.45-0.64); the order
+among stages 4-6 is within noise. Retrieval is not the bottleneck (54-60/60 at
+every stage). Method, per-question results and caveats:
+[docs/bench/erb-evolution-report.md](docs/bench/erb-evolution-report.md).
+
 ## Requirements
 
 - **Go 1.26+** to build from source (or use a prebuilt release binary).
