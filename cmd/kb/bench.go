@@ -27,6 +27,9 @@ func runBenchCmd(args []string, env config.Env, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "score" {
 		return runBenchScoreCmd(args[1:], env, stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "dynamic" {
+		return runBenchDynamicCmd(args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "generate" {
 		return runBenchGenerateCmd(args[1:], env, stdout, stderr)
 	}
