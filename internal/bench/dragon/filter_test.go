@@ -52,7 +52,7 @@ func TestFilterQuestions(t *testing.T) {
 	kept := map[string]struct{}{"10": {}, "20": {}, "40": {}}
 	questions := []corpus.Question{{ID: "1"}, {ID: "2"}, {ID: "3"}, {ID: "4"}, {ID: "5"}, {ID: "6"}}
 
-	matched, malformed := FilterQuestions(gold, questions, kept)
+	matched, malformed := FilterQuestions(gold, questions, kept, nil)
 	if malformed != 1 {
 		t.Fatalf("malformed = %d, want 1", malformed)
 	}
@@ -67,7 +67,7 @@ func TestFilterQuestions(t *testing.T) {
 func TestFilterQuestions_NoKeptDocs(t *testing.T) {
 	gold := []GoldQA{{PublicID: 1, TextIDs: "[10]"}}
 	questions := []corpus.Question{{ID: "1"}}
-	matched, malformed := FilterQuestions(gold, questions, map[string]struct{}{})
+	matched, malformed := FilterQuestions(gold, questions, map[string]struct{}{}, nil)
 	if malformed != 0 {
 		t.Fatalf("malformed = %d, want 0", malformed)
 	}
@@ -79,7 +79,7 @@ func TestFilterQuestions_NoKeptDocs(t *testing.T) {
 func TestFilterQuestions_AllMalformed(t *testing.T) {
 	gold := []GoldQA{{PublicID: 1, TextIDs: "not json"}}
 	questions := []corpus.Question{{ID: "1"}}
-	matched, malformed := FilterQuestions(gold, questions, map[string]struct{}{})
+	matched, malformed := FilterQuestions(gold, questions, map[string]struct{}{}, nil)
 	if malformed != 1 {
 		t.Fatalf("malformed = %d, want 1", malformed)
 	}
@@ -107,5 +107,21 @@ func TestMaxDocLimit(t *testing.T) {
 				t.Errorf("MaxDocLimit(%v, %v) = %d, want %d", tc.secondsPerDoc, tc.budget, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestFilterQuestions_TranslatesPrivateIDsToPublic(t *testing.T) {
+	gold := []GoldQA{
+		{PublicID: 1, TextIDs: "[500]"},
+		{PublicID: 2, TextIDs: "[501]"},
+		{PublicID: 3, TextIDs: "[999]"},
+	}
+	kept := map[string]struct{}{"10": {}}
+	privateToPublic := InvertMapping(map[string]string{"10": "500", "11": "501"})
+	questions := []corpus.Question{{ID: "1"}, {ID: "2"}, {ID: "3"}}
+
+	matched, _ := FilterQuestions(gold, questions, kept, privateToPublic)
+	if len(matched) != 1 || matched[0].ID != "1" {
+		t.Fatalf("matched = %+v, want only question 1", matched)
 	}
 }

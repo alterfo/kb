@@ -5,11 +5,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/alterfo/kb/internal/bench/corpus"
 	"github.com/alterfo/kb/internal/config"
+	"github.com/alterfo/kb/internal/engine/got"
 	"github.com/alterfo/kb/internal/engine/retriever"
 	"github.com/alterfo/kb/internal/llm"
 	"github.com/alterfo/kb/internal/store/sqlite"
@@ -229,5 +231,74 @@ func TestBenchDragonGotConfigWiresMaxRefineLatencyMS(t *testing.T) {
 	unset := benchDragonGotConfig(config.Env{LLMModel: "m"}, nil, chat, 5)
 	if unset.MaxRefineLatencyMS != 0 {
 		t.Fatalf("MaxRefineLatencyMS = %d, want 0 when env unset", unset.MaxRefineLatencyMS)
+	}
+}
+
+func TestRankedDocIDsKeepsRetrievalOrder(t *testing.T) {
+	g := got.ThoughtGraph{
+		Sources:      []got.Source{{DocID: "1"}, {DocID: "25"}, {DocID: "9"}},
+		ChunkSources: []got.Source{{DocID: "9"}, {DocID: "25"}, {DocID: "9"}, {DocID: "1"}},
+	}
+	want := []string{"9", "25", "1"}
+	if out := rankedDocIDs(g); !reflect.DeepEqual(out, want) {
+		t.Fatalf("rankedDocIDs = %v, want %v", out, want)
+	}
+}
+
+func TestRankedDocIDsFallsBackToSources(t *testing.T) {
+	g := got.ThoughtGraph{Sources: []got.Source{{DocID: "7"}, {DocID: "3"}}}
+	want := []string{"7", "3"}
+	if out := rankedDocIDs(g); !reflect.DeepEqual(out, want) {
+		t.Fatalf("rankedDocIDs = %v, want %v", out, want)
+	}
+}
+
+type shortAnswerChat struct {
+	resp string
+	err  error
+	req  llm.ChatRequest
+}
+
+func (c *shortAnswerChat) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
+	c.req = req
+	return llm.ChatResponse{Content: c.resp}, c.err
+}
+
+func TestWithShortAnswerReducesAnswerAndKeepsDocIDs(t *testing.T) {
+	chat := &shortAnswerChat{resp: "  Новосибирск \n"}
+	base := func(ctx context.Context, q corpus.Question) (string, []string) {
+		return "Согласно источникам, самый популярный город — Новосибирск.", []string{"9", "1"}
+	}
+	answer, docIDs := withShortAnswer(base, chat, "m")(context.Background(), corpus.Question{Text: "В каком городе?"})
+	if answer != "Новосибирск" {
+		t.Errorf("answer = %q", answer)
+	}
+	if !reflect.DeepEqual(docIDs, []string{"9", "1"}) {
+		t.Errorf("docIDs = %v", docIDs)
+	}
+	if chat.req.Model != "m" || !strings.Contains(chat.req.Messages[1].Content, "В каком городе?") {
+		t.Errorf("request = %+v", chat.req)
+	}
+}
+
+func TestWithShortAnswerFailsOpen(t *testing.T) {
+	base := func(ctx context.Context, q corpus.Question) (string, []string) { return "long answer", []string{"1"} }
+	for name, chat := range map[string]*shortAnswerChat{
+		"error": {err: context.DeadlineExceeded},
+		"empty": {resp: "  "},
+	} {
+		answer, _ := withShortAnswer(base, chat, "m")(context.Background(), corpus.Question{Text: "q"})
+		if answer != "long answer" {
+			t.Errorf("%s: answer = %q, want original", name, answer)
+		}
+	}
+}
+
+func TestWithShortAnswerSkipsEmptyAnswer(t *testing.T) {
+	chat := &shortAnswerChat{resp: "x"}
+	base := func(ctx context.Context, q corpus.Question) (string, []string) { return "", nil }
+	answer, _ := withShortAnswer(base, chat, "m")(context.Background(), corpus.Question{Text: "q"})
+	if answer != "" || chat.req.Model != "" {
+		t.Errorf("answer = %q, chat called = %v", answer, chat.req.Model != "")
 	}
 }

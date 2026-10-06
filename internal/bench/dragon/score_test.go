@@ -187,3 +187,18 @@ func TestScore_EmptyGoldAnswerNeverCounted(t *testing.T) {
 		t.Fatalf("AnswerContains = %d, want 0", rep.AnswerContains)
 	}
 }
+
+func TestTranslateFoundIDsMapsPublicToPrivateAndDropsUnknown(t *testing.T) {
+	sub := map[string]SubmissionEntry{"1": {FoundIDs: []string{"10", "99", "11"}, ModelAnswer: "a"}}
+	out := TranslateFoundIDs(sub, map[string]string{"10": "500", "11": "501"})
+	got := out["1"].FoundIDs
+	if len(got) != 2 || got[0] != "500" || got[1] != "501" {
+		t.Fatalf("FoundIDs = %v, want [500 501]", got)
+	}
+	if out["1"].ModelAnswer != "a" {
+		t.Fatalf("ModelAnswer lost")
+	}
+	if len(sub["1"].FoundIDs) != 3 {
+		t.Fatalf("input mutated: %v", sub["1"].FoundIDs)
+	}
+}

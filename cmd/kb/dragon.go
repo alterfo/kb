@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/alterfo/kb/internal/bench/corpus"
@@ -14,6 +15,7 @@ import (
 	"github.com/alterfo/kb/internal/config"
 	"github.com/alterfo/kb/internal/engine/got"
 	"github.com/alterfo/kb/internal/engine/retriever"
+	"github.com/alterfo/kb/internal/llm"
 	"github.com/alterfo/kb/internal/store/sqlite"
 	"github.com/alterfo/kb/internal/verify"
 )
@@ -38,6 +40,7 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 	docLimit := fset.Int("doc-limit", 0, "keep only the first N fetched texts (0 = all)")
 	smoke := fset.Bool("smoke", false, "use a small fixed subset for a one-minute sanity run")
 	answerMode := fset.String("answer-mode", "got", "answering path: got (Graph-of-Thoughts, default) or naive (single-shot retrieval + one chat call)")
+	shortAnswer := fset.Bool("short-answer", false, "reduce each answer to its bare value (name/number/date/short list) with one extra chat call; matches the official DRAGON generation metrics (EM/substring/ROUGE)")
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
@@ -138,7 +141,12 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 			fmt.Fprintf(stderr, "bench-dragon: %v\n", err)
 			return 1
 		}
-		matched, malformed := dragon.FilterQuestions(gold, questions, keptDocIDs)
+		mapping, err := dragon.FetchTextMapping(ctx, httpClient, *baseURL, dragon.HistPrivateTexts)
+		if err != nil {
+			fmt.Fprintf(stderr, "bench-dragon: %v\n", err)
+			return 1
+		}
+		matched, malformed := dragon.FilterQuestions(gold, questions, keptDocIDs, dragon.InvertMapping(mapping))
 		fmt.Fprintf(stdout, "bench-dragon: matched %d/%d questions to doc subset (%d malformed gold entries skipped)\n", len(matched), len(questions), malformed)
 		questions = matched
 	}
@@ -153,6 +161,9 @@ func runBenchDragonCmd(args []string, env config.Env, stdout, stderr io.Writer) 
 
 	r := benchRetriever(env, bundle)
 	ask := benchDragonAsk(env, r, bundle.chat, *answerMode, *topK)
+	if *shortAnswer {
+		ask = withShortAnswer(ask, bundle.chat, env.LLMModel)
+	}
 
 	fmt.Fprintln(stdout, "bench-dragon: answering questions...")
 	total := len(questions)
@@ -206,12 +217,47 @@ func benchDragonAsk(env config.Env, r *retriever.Retriever, chat runbench.ChatCl
 	orch := got.New(benchDragonGotConfig(env, r, chat, topK))
 	return func(ctx context.Context, q corpus.Question) (string, []string) {
 		g := orch.Run(ctx, q.Text)
-		docIDs := make([]string, 0, len(g.Sources))
+		return g.FinalAnswer, rankedDocIDs(g)
+	}
+}
+
+const shortAnswerPrompt = "Reduce the given answer to the bare answer to the question: only the name, number, date, place or short comma-separated list. No explanation, no citations, no full sentence, no trailing period. Keep the language and the wording of the answer. If the answer says the information is not available, reply with exactly that in a few words."
+
+func withShortAnswer(ask dragon.AskFunc, chat runbench.ChatClient, model string) dragon.AskFunc {
+	return func(ctx context.Context, q corpus.Question) (string, []string) {
+		answer, docIDs := ask(ctx, q)
+		if strings.TrimSpace(answer) == "" {
+			return answer, docIDs
+		}
+		resp, err := chat.Chat(ctx, llm.ChatRequest{
+			Model: model,
+			Messages: []llm.ChatMessage{
+				{Role: "system", Content: shortAnswerPrompt},
+				{Role: "user", Content: fmt.Sprintf("Question: %s\n\nAnswer:\n%s", q.Text, answer)},
+			},
+		})
+		if err != nil {
+			return answer, docIDs
+		}
+		short := strings.TrimSpace(resp.Content)
+		if short == "" {
+			return answer, docIDs
+		}
+		return short, docIDs
+	}
+}
+
+func rankedDocIDs(g got.ThoughtGraph) []string {
+	docIDs := make([]string, 0, len(g.ChunkSources))
+	for _, s := range g.ChunkSources {
+		docIDs = append(docIDs, s.DocID)
+	}
+	if len(docIDs) == 0 {
 		for _, s := range g.Sources {
 			docIDs = append(docIDs, s.DocID)
 		}
-		return g.FinalAnswer, runbench.CorpusDocumentIDs(docIDs)
 	}
+	return runbench.CorpusDocumentIDs(docIDs)
 }
 
 func benchDragonGotConfig(env config.Env, r *retriever.Retriever, chat runbench.ChatClient, topK int) got.Config {
@@ -331,7 +377,12 @@ func runBenchDragonScoreCmd(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "bench-dragon score: fetched %d gold QA pairs\n", len(gold))
 
-	rep, err := dragon.Score(submission, gold)
+	mapping, err := dragon.FetchTextMapping(ctx, httpClient, *baseURL, dragon.HistPrivateTexts)
+	if err != nil {
+		fmt.Fprintf(stderr, "bench-dragon score: %v\n", err)
+		return 1
+	}
+	rep, err := dragon.Score(dragon.TranslateFoundIDs(submission, mapping), gold)
 	if err != nil {
 		fmt.Fprintf(stderr, "bench-dragon score: %v\n", err)
 		return 1

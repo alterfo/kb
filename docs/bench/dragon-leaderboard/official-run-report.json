@@ -1,0 +1,71 @@
+{
+  "dragon_version": "1.15.0",
+  "n_questions": 600,
+  "average_metrics": {
+    "overall": {
+      "retrieval": {
+        "hit_rate": 0.8802777777777777,
+        "mrr": 0.2055339071546502
+      },
+      "generation": {
+        "rouge1": 0.042863259635257826,
+        "rouge2": 0.022146601606215583,
+        "rougeL": 0.03934331903101198,
+        "exact_match": 0.0,
+        "substring_match": 0.0
+      }
+    },
+    "cond": {
+      "retrieval": {
+        "hit_rate": 0.9066666666666666,
+        "mrr": 0.22013190063577062
+      },
+      "generation": {
+        "rouge1": 0.030116768444136587,
+        "rouge2": 0.014326850989117209,
+        "rougeL": 0.030116768444136587,
+        "exact_match": 0.0,
+        "substring_match": 0.0
+      }
+    },
+    "mh": {
+      "retrieval": {
+        "hit_rate": 0.9044444444444444,
+        "mrr": 0.24472725966843611
+      },
+      "generation": {
+        "rouge1": 0.02939662354688367,
+        "rouge2": 0.014101479133140433,
+        "rougeL": 0.02915827229240338,
+        "exact_match": 0.0,
+        "substring_match": 0.0
+      }
+    },
+    "set": {
+      "retrieval": {
+        "hit_rate": 0.87,
+        "mrr": 0.1765811825486748
+      },
+      "generation": {
+        "rouge1": 0.07537239505928023,
+        "rouge2": 0.038478128149797494,
+        "rougeL": 0.062005735487193195,
+        "exact_match": 0.0,
+        "substring_match": 0.0
+      }
+    },
+    "simple": {
+      "retrieval": {
+        "hit_rate": 0.84,
+        "mrr": 0.1806952857657192
+      },
+      "generation": {
+        "rouge1": 0.03656725149073084,
+        "rouge2": 0.021679948152807212,
+        "rougeL": 0.03609249990031479,
+        "exact_match": 0.0,
+        "substring_match": 0.0
+      }
+    }
+  }
+}

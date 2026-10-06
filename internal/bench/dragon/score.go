@@ -42,6 +42,21 @@ func (r *ScoreReport) Summary() string {
 	return b.String()
 }
 
+func TranslateFoundIDs(submission map[string]SubmissionEntry, publicToPrivate map[string]string) map[string]SubmissionEntry {
+	out := make(map[string]SubmissionEntry, len(submission))
+	for k, e := range submission {
+		ids := make([]string, 0, len(e.FoundIDs))
+		for _, id := range e.FoundIDs {
+			if priv, ok := publicToPrivate[id]; ok {
+				ids = append(ids, priv)
+			}
+		}
+		e.FoundIDs = ids
+		out[k] = e
+	}
+	return out
+}
+
 func Score(submission map[string]SubmissionEntry, gold []GoldQA) (*ScoreReport, error) {
 	rep := &ScoreReport{Total: len(gold), Types: map[string]*ScoreStat{}}
 	for _, g := range gold {

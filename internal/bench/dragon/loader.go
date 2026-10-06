@@ -15,6 +15,7 @@ const (
 	HistTextsDataset     = "ai-forever/hist-rag-bench-public-texts"
 	HistQuestionsDataset = "ai-forever/hist-rag-bench-public-questions"
 	HistGoldDataset      = "ai-forever/hist-rag-bench-private-qa"
+	HistPrivateTexts     = "ai-forever/hist-rag-bench-private-texts"
 )
 
 type Text struct {
@@ -56,6 +57,25 @@ func FetchTexts(ctx context.Context, doer HTTPDoer, baseURL, dataset string) ([]
 			return err
 		}
 		out = append(out, t)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func FetchTextMapping(ctx context.Context, doer HTTPDoer, baseURL, dataset string) (map[string]string, error) {
+	out := map[string]string{}
+	err := fetchRows(ctx, doer, baseURL, dataset, func(raw json.RawMessage) error {
+		var row struct {
+			ID       json.Number `json:"id"`
+			PublicID json.Number `json:"public_id"`
+		}
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return err
+		}
+		out[row.PublicID.String()] = row.ID.String()
 		return nil
 	})
 	if err != nil {

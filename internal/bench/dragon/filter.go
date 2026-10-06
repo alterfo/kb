@@ -16,6 +16,14 @@ func LimitTexts(texts []Text, limit int) []Text {
 }
 
 // TextIDSet returns the string document IDs present in texts.
+func InvertMapping(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[v] = k
+	}
+	return out
+}
+
 func TextIDSet(texts []Text) map[string]struct{} {
 	ids := make(map[string]struct{}, len(texts))
 	for _, t := range texts {
@@ -27,8 +35,10 @@ func TextIDSet(texts []Text) map[string]struct{} {
 // FilterQuestions returns the questions whose gold source documents are all
 // contained in kept. Malformed gold TextIDs entries are skipped (fail-open)
 // and counted so callers can report them; empty gold document sets are also
-// excluded because they carry no retrievable source signal.
-func FilterQuestions(gold []GoldQA, questions []corpus.Question, kept map[string]struct{}) (matched []corpus.Question, malformed int) {
+// excluded because they carry no retrievable source signal. Gold text_ids
+// live in the private id space while kept holds public text ids, so
+// privateToPublic translates between them (nil means the ids already agree).
+func FilterQuestions(gold []GoldQA, questions []corpus.Question, kept map[string]struct{}, privateToPublic map[string]string) (matched []corpus.Question, malformed int) {
 	allowed := make(map[string]struct{}, len(gold))
 	for _, g := range gold {
 		ids, err := flattenTextIDs(g.TextIDs)
@@ -41,6 +51,14 @@ func FilterQuestions(gold []GoldQA, questions []corpus.Question, kept map[string
 		}
 		full := true
 		for _, id := range ids {
+			if privateToPublic != nil {
+				pub, ok := privateToPublic[id]
+				if !ok {
+					full = false
+					break
+				}
+				id = pub
+			}
 			if _, ok := kept[id]; !ok {
 				full = false
 				break

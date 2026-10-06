@@ -168,3 +168,23 @@ func TestFetchTexts_DefaultBaseURL(t *testing.T) {
 		t.Fatalf("DefaultBaseURL = %q, want https URL", DefaultBaseURL)
 	}
 }
+
+func TestFetchTextMapping_PublicToPrivate(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rows", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("dataset"); got != HistPrivateTexts {
+			t.Errorf("dataset = %q, want %q", got, HistPrivateTexts)
+		}
+		fmt.Fprint(w, `{"rows":[{"row_idx":0,"row":{"id":478,"public_id":148}},{"row_idx":1,"row":{"id":"194","public_id":"158"}}],"num_rows_total":2}`)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	m, err := FetchTextMapping(context.Background(), srv.Client(), srv.URL, HistPrivateTexts)
+	if err != nil {
+		t.Fatalf("FetchTextMapping: %v", err)
+	}
+	if m["148"] != "478" || m["158"] != "194" || len(m) != 2 {
+		t.Fatalf("mapping = %v", m)
+	}
+}
