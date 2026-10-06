@@ -1,13 +1,14 @@
 # ERB Evolution Bench: Native → Hybrid → Graph → Rerank → Logic → Temporal → Qualifiers
 
-Status: complete single run of all seven stages on the 60-question slice
-(2026-10-04/05, ai-box, qwen3.8 + qwen3-embedding:0.6b).
+Status: complete. Stages 0-3 are one run each; stages 4-6 were run three times
+each with an identical configuration (2026-10-04/06, ai-box, qwen3.8 +
+qwen3-embedding:0.6b).
 
 > This is a diagnostic run on a small, category-targeted EnterpriseRAG-Bench
 > slice, not a second official full-corpus ERB score. Absolute numbers are not
-> comparable to a full ERB leaderboard score. Each stage is **one run**; the
-> dynamic-data sample is 11 questions, so one question moves DCS by 0.09 and
-> differences under 2–3 questions are noise (see Reliability).
+> comparable to a full ERB leaderboard score. The dynamic-data sample is 11
+> questions, so one question moves DCS by 0.09 and differences under 2–3
+> questions are noise (see Reliability and Repeats).
 
 ## Why
 
@@ -67,9 +68,26 @@ the same gold.
 | 1 | +Hybrid | `KB_HYBRID=true` | naive | 57 | 0.76 | 0.20 | 0.27 | 0.09 | 0.00 | 0.64 |
 | 2 | +Graph | `KB_INDEX_GRAPH=true` | naive | 57 | 0.77 | 0.23 | 0.27 | 0.18 | 0.00 | 0.55 |
 | 3 | +Rerank | `KB_RERANK=llm` | naive | 57 | 0.76 | 0.21 | 0.27 | 0.27 | 0.00 | 0.45 |
-| 4 | +Logic | Graph-of-Thoughts | got | 60 | 0.85 | 0.26 | 0.45 | 0.09 | 0.18 | 0.27 |
-| 5 | +Temporal | `KB_SUPERSEDE_MODE=strict`, `KB_DETECT_CONTRADICTIONS=true` | got | 60 | 0.84 | 0.18 | 0.64 | 0.18 | 0.00 | 0.18 |
-| 6 | +Qualifiers | `KB_QUALIFIER_FILTER=true` | got | 59 | 0.84 | 0.23 | 0.55 | 0.00 | 0.18 | 0.27 |
+| 4 | +Logic | Graph-of-Thoughts | got | 58–60 | 0.84–0.85 | 0.24 | 0.58 (0.45–0.64) | 0.06 | 0.12 | 0.24 |
+| 5 | +Temporal | `KB_SUPERSEDE_MODE=strict`, `KB_DETECT_CONTRADICTIONS=true` | got | 59–60 | 0.84 | 0.21 | 0.61 (0.55–0.64) | 0.15 | 0.09 | 0.15 |
+| 6 | +Qualifiers | `KB_QUALIFIER_FILTER=true` | got | 59–60 | 0.84 | 0.25 | 0.55 (0.36–0.73) | 0.12 | 0.09 | 0.24 |
+
+Stages 0–3: single run. Stages 4–6: mean of three runs; DCS range in brackets,
+`retrieval_hit` and `ctx_recall` as range, `facts`/`stale_leak`/`hedge`/`miss`
+as mean.
+
+## Repeats (stages 4–6, three identical runs each)
+
+| Stage | DCS r1 / r2 / r3 | mean | sd | facts r1 / r2 / r3 | retrieval_hit r1 / r2 / r3 |
+|---|---|---|---|---|---|
+| 4 +Logic | 0.45 / 0.64 / 0.64 | 0.58 | 0.09 | 0.26 / 0.28 / 0.18 | 60 / 58 / 58 |
+| 5 +Temporal | 0.64 / 0.64 / 0.55 | 0.61 | 0.04 | 0.18 / 0.23 / 0.23 | 60 / 59 / 60 |
+| 6 +Qualifiers | 0.55 / 0.73 / 0.36 | 0.55 | 0.15 | 0.23 / 0.28 / 0.24 | 59 / 59 / 60 |
+
+The first runs ranked these stages 0.45 / 0.64 / 0.55 and suggested temporal as
+the best; the repeats reverse or erase that order. Run 2 and 3 files:
+`docs/bench/erb-evolution/repeats/`. The per-question class table below is
+from the first runs only.
 
 ## Per-category facts_coverage
 
@@ -109,23 +127,29 @@ the same gold.
   retrieval and rerank surface more documents, including superseded versions,
   and without conflict handling the model sometimes answers with the old value.
 - **Graph-of-Thoughts is the first step that moves currency clearly**
-  (0.27 → 0.45) and lifts `context_recall` to 0.85 and `retrieval_hit` to 60/60.
-- **Temporal (0.64) and Qualifiers (0.55) are not distinguishable from Logic
-  or from each other on this sample.** Their DCS differs by ±1 question, and
-  per-question results swing between runs of different stages (e.g. `qst_0412`
-  goes current → stale → current → stale → missing across stages), which points
-  to generation variance rather than a stage effect. `facts_coverage` does not
-  follow DCS: stage 5 has the highest DCS and the lowest facts (0.18).
-- Qualifier filtering has no visible effect on `constrained` (0.21 → 0.19 →
-  0.20 facts); the slice's 20 `constrained` questions are not scored on
+  (0.27 → mean 0.58 over three runs) and lifts `context_recall` to about 0.84
+  and `retrieval_hit` to 58–60/60.
+- **Temporal and Qualifiers are not distinguishable from Logic or from each
+  other.** Means 0.58 / 0.61 / 0.55 with run-to-run ranges of 0.19, 0.09 and
+  0.37; the same configuration swings by more than any difference between stages.
+  The first single runs (0.45 / 0.64 / 0.55) looked like a temporal win and were
+  noise. `facts_coverage` does not follow DCS either.
+- **What survives the repeats:** every one of the nine GoT runs (0.36–0.73)
+  has DCS at or above the best naive-stage run (0.27); the lowest GoT run, 0.36,
+  is still above it. That supports "GoT helps currency" on this sample; it does
+  not support ranking the stages above it. The naive stages themselves were not
+  repeated, so their own variance is unmeasured.
+- Qualifier filtering has no visible effect on `constrained` facts (0.21 → 0.19
+  → 0.20 in the first runs); the 20 `constrained` questions are not scored on
   currency at all.
 
 ## Reliability
 
-- One run per stage, 11 dynamic questions, no repeats: no confidence interval
-  can be claimed. The supported statements are the broad pattern (native
-  lowest, GoT stages clearly above naive stages) and the per-question table;
-  rankings among stages 4–6 are not supported.
+- 11 dynamic questions; stages 0–3 are one run, so their DCS carries unmeasured
+  variance, and stages 4–6 show run-to-run sd of 0.04–0.15 (one question = 0.09).
+  The supported statements are the broad pattern (native lowest, GoT stages
+  above the naive stages) and the per-question table; rankings among stages 4–6
+  are not supported, and no confidence interval is claimed.
 - The metric classifies the leading paragraph only, so stale values that appear
   later (in "supporting facts") are ignored by design, and contamination of
   control answers by other corrections is not detected on the static corpus.
@@ -158,8 +182,8 @@ Artifacts: `docs/bench/erb-evolution/stage{N}-{name}.{jsonl,score.json,dcs.json}
 
 ## Next
 
-- Repeat stages 4–6 several times (or lower temperature) to separate stage
-  effects from generation variance.
+- Repeat the naive stages 0–3 as well, so the naive-vs-GoT gap has variance on
+  both sides.
 - Grow `stale.json` beyond 11 pairs; add control questions so `stability` and
   `adoption` can be measured on ERB.
 - Revmux the scorer-affecting code (`internal/bench/dynamic`) before quoting

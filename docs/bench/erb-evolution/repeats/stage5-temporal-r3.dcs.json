@@ -1,0 +1,13 @@
+{
+  "total": 11,
+  "affected": 11,
+  "control": 0,
+  "currency_rate": 0.5454545454545454,
+  "stale_leak_rate": 0.18181818181818182,
+  "hedge_rate": 0.18181818181818182,
+  "miss_rate": 0.09090909090909091,
+  "adoption_eligible": 0,
+  "adoption": 0,
+  "stability": 0,
+  "dcs": 0.5454545454545454
+}

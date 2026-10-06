@@ -17,15 +17,21 @@ value rather than a superseded one, on 11 `conflicting_info` questions.
 | 1 | +Hybrid | dense + BM25 + RRF | 0.27 | 0.09 | 0.64 | 0.20 | 57/60 |
 | 2 | +Graph | graph-aware fusion | 0.27 | 0.18 | 0.55 | 0.23 | 57/60 |
 | 3 | +Rerank | LLM rerank | 0.27 | 0.27 | 0.45 | 0.21 | 57/60 |
-| 4 | +Logic | Graph-of-Thoughts | 0.45 | 0.09 | 0.27 | 0.26 | 60/60 |
-| 5 | +Temporal | strict supersede + contradiction detection | 0.64 | 0.18 | 0.18 | 0.18 | 60/60 |
-| 6 | +Qualifiers | qualifier filter | 0.55 | 0.00 | 0.27 | 0.23 | 59/60 |
+| 4 | +Logic | Graph-of-Thoughts | 0.58 (0.45-0.64) | 0.06 | 0.24 | 0.24 | 58-60/60 |
+| 5 | +Temporal | strict supersede + contradiction detection | 0.61 (0.55-0.64) | 0.15 | 0.15 | 0.21 | 59-60/60 |
+| 6 | +Qualifiers | qualifier filter | 0.55 (0.36-0.73) | 0.12 | 0.24 | 0.25 | 59-60/60 |
 
-Read it as a pattern, not a ranking: one run per stage on an 11-question sample,
-so one question moves DCS by 0.09. The supported claim is the gap between the
-naive stages (0.18-0.27) and the Graph-of-Thoughts stages (0.45-0.64); the order
-among stages 4-6 is within noise. Retrieval is not the bottleneck (54-60/60 at
-every stage). Method, per-question results and caveats:
+Stages 0-3 are a single run; stages 4-6 are the mean of three identical runs
+(range in brackets).
+
+Read it as a pattern, not a ranking, on 11 questions (one question moves DCS by
+0.09). The single run that first ranked stages 4-6 as 0.45 / 0.64 / 0.55 was
+noise: three repeats of each overlap almost entirely (qualifiers alone ranges
+0.36-0.73). What the data supports: the Graph-of-Thoughts stages (means
+0.55-0.61, lowest single run 0.36) sit above the naive stages (0.18-0.27, one run
+each, so their own variance is unmeasured); temporal and qualifiers show no gain
+over plain GoT; retrieval is not the bottleneck (54-60/60 at every stage). Method,
+per-question results and caveats:
 [docs/bench/erb-evolution-report.md](docs/bench/erb-evolution-report.md).
 
 ## Requirements
