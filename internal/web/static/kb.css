@@ -106,3 +106,6 @@ button.danger { background: var(--err); }
 .feedback, .feedback-inline { display: inline; margin-left: 8px; }
 .feedback button, .feedback-inline button { padding: 2px 6px; font-size: 14px; background: transparent; }
 .feedback button.active, .feedback-inline button.active { background: var(--panel); border: 1px solid var(--accent); }
+.ask-reasoning, .ask-think { margin: 12px 0; }
+.ask-reasoning > summary, .ask-think > summary { cursor: pointer; color: var(--muted); }
+.ask-think .markdown { margin-top: 8px; }

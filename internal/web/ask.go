@@ -245,7 +245,7 @@ func (s *Server) handleAskPage(w http.ResponseWriter, r *http.Request) {
 			if e, ok, err := s.deps.History.AskRun(r.Context(), runID); err == nil && ok {
 				data.Query = e.Query
 				data.Status = e.Status
-				data.GraphJSON = template.JS(e.GraphJSON)
+				data.GraphJSON = askGraphJSONToJS(e.GraphJSON)
 			}
 		}
 	}
@@ -259,7 +259,7 @@ func (s *Server) handleAskPage(w http.ResponseWriter, r *http.Request) {
 // failure (which cannot happen for this JSON-serializable type in practice)
 // degrades to "null" rather than breaking the page.
 func graphToJS(g got.ThoughtGraph) template.JS {
-	b, err := json.Marshal(g)
+	b, err := marshalAskGraph(g)
 	if err != nil {
 		return "null"
 	}
@@ -440,7 +440,7 @@ func drainAskProgress(w io.Writer, flusher http.Flusher, ch <-chan got.ThoughtGr
 }
 
 func writeSSE(w io.Writer, event string, g got.ThoughtGraph) {
-	data, err := json.Marshal(g)
+	data, err := marshalAskGraph(g)
 	if err != nil {
 		return
 	}

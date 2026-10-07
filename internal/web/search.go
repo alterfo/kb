@@ -46,6 +46,7 @@ type savedSearchView struct {
 	Query        string
 	SourceFilter string
 	Answer       template.HTML
+	Reasoning    template.HTML
 	ResultsCount int
 	DurationMS   int64
 	CreatedAt    string
@@ -57,6 +58,7 @@ type searchData struct {
 	Source                  string
 	Path                    string
 	Answer                  template.HTML
+	Reasoning               template.HTML
 	SynthesisFallback       bool
 	SynthesisFallbackReason string
 	Saved                   *savedSearchView
@@ -117,7 +119,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		data.SynthesisFallbackReason = reason
 		stored = ""
 	} else {
-		data.Answer = renderMarkdown(answer)
+		data.Answer, data.Reasoning = renderAnswer(answer)
 	}
 	s.recordSearch(ctx, q, source, len(data.Results), stored, s.deps.Now().Sub(start), uniqueDocIDs(result.Chunks))
 	data.History = s.recentSearches(ctx)
@@ -180,11 +182,13 @@ func (s *Server) renderSavedSearch(ctx context.Context, w http.ResponseWriter, r
 	}
 	data.Query = entry.Query
 	data.Source = entry.SourceFilter
+	savedAnswer, savedReasoning := renderAnswer(entry.Answer)
 	data.Saved = &savedSearchView{
+		Answer:       savedAnswer,
+		Reasoning:    savedReasoning,
 		ID:           entry.ID,
 		Query:        entry.Query,
 		SourceFilter: entry.SourceFilter,
-		Answer:       renderMarkdown(entry.Answer),
 		ResultsCount: entry.ResultsCount,
 		DurationMS:   entry.DurationMS,
 		CreatedAt:    entry.CreatedAt.Format(time.RFC3339),

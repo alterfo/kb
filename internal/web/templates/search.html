@@ -30,6 +30,7 @@
   <p class="muted">query: {{.Query}}</p>
   {{with .Answer}}
   <h3>Synthesis</h3>
+  {{if $.Data.Saved.Reasoning}}<details class="ask-think"><summary>Размышления модели</summary><div class="markdown">{{$.Data.Saved.Reasoning}}</div></details>{{end}}
   <div class="markdown">{{.}}</div>
   {{end}}
   <p class="muted">{{.ResultsCount}} results · {{.DurationMS}}ms · {{.CreatedAt}}</p>
@@ -47,6 +48,7 @@
 {{with .Data.Answer}}
 <section>
   <h2>Synthesis</h2>
+  {{if $.Data.Reasoning}}<details class="ask-think"><summary>Размышления модели</summary><div class="markdown">{{$.Data.Reasoning}}</div></details>{{end}}
   <div class="markdown">{{.}}</div>
 </section>
 {{end}}
