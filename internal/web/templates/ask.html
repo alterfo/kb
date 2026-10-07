@@ -29,6 +29,41 @@
     <button type="submit" class="secondary">Promote (retire cited sources)</button>
   </form>
 </div>
+<section id="followup" class="followup" data-run-id="{{.}}" data-websearch="{{if $.Data.WebSearch}}1{{else}}0{{end}}"{{if ne $.Data.Status "done"}} hidden{{end}}>
+  <h2>Follow-up</h2>
+  <div id="followup-thread">
+    {{range $.Data.Thread}}
+    {{if eq .Role "user"}}
+    <div class="followup-msg followup-user"><strong>You</strong><div class="followup-body">{{.Content}}</div></div>
+    {{else}}
+    <div class="followup-msg followup-assistant"><strong>Assistant</strong>{{if .WebUsed}} <span class="badge badge-web">внешний, непроверенный</span>{{end}}
+      {{if .ReasoningHTML}}<details class="ask-think"><summary>Размышления модели</summary><div class="markdown">{{.ReasoningHTML}}</div></details>{{end}}
+      <div class="markdown">{{.AnswerHTML}}</div>
+      {{if .Sources}}<p class="muted">sources: {{join .Sources ", "}}</p>{{end}}
+    </div>
+    {{end}}
+    {{end}}
+  </div>
+  <form id="followup-form" class="row">
+    <input type="text" id="followup-input" name="question" placeholder="уточняющий вопрос" autocomplete="off">
+    {{if $.Data.WebSearch}}<label class="check-row"><input type="checkbox" id="followup-webcheck"> искать в интернете</label>{{end}}
+    <button type="submit">Ask</button>
+  </form>
+</section>
+{{if $.Data.WebSearch}}
+<dialog id="websearch-confirm">
+  <form method="dialog" class="form-box">
+    <h3>Подтвердите внешний поиск</h3>
+    <div class="alert alert-warning">Точный запрос ниже будет отправлен во внешний поисковый сервис. Не включайте секреты, личные данные или внутренние названия.</div>
+    <label for="websearch-query">Точный исходящий запрос</label>
+    <textarea id="websearch-query" rows="3"></textarea>
+    <div class="row">
+      <button type="button" id="websearch-send">Отправить</button>
+      <button type="button" id="websearch-cancel" class="secondary">Отмена</button>
+    </div>
+  </form>
+</dialog>
+{{end}}
 <script>
 (function () {
   var out = document.getElementById("ask-out");
@@ -91,9 +126,111 @@
   es.addEventListener("progress", function (e) { renderGraph(JSON.parse(e.data)); });
   es.addEventListener("done", function (e) {
     renderGraph(JSON.parse(e.data));
+    var followup = document.getElementById("followup");
+    if (followup) followup.hidden = false;
     es.close();
   });
   {{end}}
+})();
+</script>
+<script>
+(function () {
+  var section = document.getElementById("followup");
+  var form = document.getElementById("followup-form");
+  var input = document.getElementById("followup-input");
+  var thread = document.getElementById("followup-thread");
+  var webCheck = document.getElementById("followup-webcheck");
+  var runID = section.getAttribute("data-run-id");
+  var webEnabled = section.getAttribute("data-websearch") === "1";
+  var confirmDialog = document.getElementById("websearch-confirm");
+  var queryEl = document.getElementById("websearch-query");
+  var sendBtn = document.getElementById("websearch-send");
+  var cancelBtn = document.getElementById("websearch-cancel");
+  var pending = null;
+
+  function escapeHTML(s) {
+    var div = document.createElement("div");
+    div.textContent = s == null ? "" : String(s);
+    return div.innerHTML;
+  }
+
+  function postJSON(path, payload) {
+    return fetch(path, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload)
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) {
+        return {ok: r.ok, status: r.status, data: data};
+      });
+    });
+  }
+
+  function appendUser(content) {
+    var div = document.createElement("div");
+    div.className = "followup-msg followup-user";
+    div.innerHTML = '<strong>You</strong><div class="followup-body"></div>';
+    div.lastChild.textContent = content;
+    thread.appendChild(div);
+  }
+
+  function appendAssistant(view) {
+    var div = document.createElement("div");
+    div.className = "followup-msg followup-assistant";
+    var html = "<strong>Assistant</strong>";
+    if (view.web_used) html += ' <span class="badge badge-web">внешний, непроверенный</span>';
+    if (view.reasoning_html) html += '<details class="ask-think"><summary>Размышления модели</summary><div class="markdown">' + view.reasoning_html + '</div></details>';
+    html += '<div class="markdown">' + (view.answer_html || "<p>" + escapeHTML(view.answer) + "</p>") + '</div>';
+    if (view.sources && view.sources.length) html += '<p class="muted">sources: ' + escapeHTML(view.sources.join(", ")) + '</p>';
+    div.innerHTML = html;
+    thread.appendChild(div);
+  }
+
+  function appendError(message) {
+    var div = document.createElement("div");
+    div.className = "alert alert-error";
+    div.textContent = message || "follow-up failed";
+    thread.appendChild(div);
+  }
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var question = input.value.trim();
+    if (!question) return;
+    input.value = "";
+    appendUser(question);
+    if (webEnabled && webCheck && webCheck.checked) {
+      postJSON("/ask/followup/websearch/propose", {run_id: runID, question: question}).then(function (res) {
+        if (!res.ok) { appendError(res.data.error || "web search proposal failed"); return; }
+        pending = {token: res.data.token, question: question};
+        queryEl.value = res.data.query || "";
+        confirmDialog.showModal();
+      });
+    } else {
+      postJSON("/ask/followup", {run_id: runID, question: question}).then(function (res) {
+        if (res.ok) appendAssistant(res.data); else appendError(res.data.error);
+      });
+    }
+  });
+
+  if (sendBtn) {
+    sendBtn.addEventListener("click", function () {
+      if (!pending) return;
+      var query = queryEl.value.trim();
+      confirmDialog.close();
+      postJSON("/ask/followup/websearch/confirm", {
+        run_id: runID,
+        query: query,
+        token: pending.token,
+        question: pending.question
+      }).then(function (res) {
+        if (res.ok) appendAssistant(res.data); else appendError(res.data.error || "web search failed");
+      });
+    });
+  }
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", function () { confirmDialog.close(); });
+  }
 })();
 </script>
 {{end}}

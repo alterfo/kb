@@ -222,6 +222,29 @@ type askData struct {
 	RunID     string
 	Status    string
 	GraphJSON template.JS
+	WebSearch bool
+	Thread    []askMessageView
+}
+
+type askMessageView struct {
+	Role          string
+	Content       string
+	AnswerHTML    template.HTML
+	ReasoningHTML template.HTML
+	WebUsed       bool
+	Sources       []string
+}
+
+func askThreadView(thread []history.AskMessage) []askMessageView {
+	views := make([]askMessageView, 0, len(thread))
+	for _, m := range thread {
+		v := askMessageView{Role: m.Role, Content: m.Content, WebUsed: m.WebUsed, Sources: m.Sources}
+		if m.Role == history.AskRoleAssistant {
+			v.AnswerHTML, v.ReasoningHTML = renderAnswer(m.Content)
+		}
+		views = append(views, v)
+	}
+	return views
 }
 
 // handleAskPage resolves the run's current state from the live askManager
@@ -232,7 +255,7 @@ type askData struct {
 func (s *Server) handleAskPage(w http.ResponseWriter, r *http.Request) {
 	runID := r.URL.Query().Get("run")
 	query := r.URL.Query().Get("q")
-	data := askData{Query: query, RunID: runID, GraphJSON: "null"}
+	data := askData{Query: query, RunID: runID, GraphJSON: "null", WebSearch: s.websearch.isEnabled()}
 	if runID != "" {
 		if g, done, exists := s.asks.get(runID); exists {
 			data.Query = g.Query
@@ -246,6 +269,11 @@ func (s *Server) handleAskPage(w http.ResponseWriter, r *http.Request) {
 				data.Query = e.Query
 				data.Status = e.Status
 				data.GraphJSON = askGraphJSONToJS(e.GraphJSON)
+			}
+		}
+		if s.deps.History != nil {
+			if thread, err := s.deps.History.AskThread(r.Context(), runID); err == nil {
+				data.Thread = askThreadView(thread)
 			}
 		}
 	}

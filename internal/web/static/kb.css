@@ -109,3 +109,21 @@ button.danger { background: var(--err); }
 .ask-reasoning, .ask-think { margin: 12px 0; }
 .ask-reasoning > summary, .ask-think > summary { cursor: pointer; color: var(--muted); }
 .ask-think .markdown { margin-top: 8px; }
+.followup { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 8px; }
+.followup-msg { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin: 10px 0; }
+.followup-msg .markdown { margin-top: 8px; }
+.followup-msg .followup-body { margin-top: 4px; }
+.followup-user { border-left: 3px solid var(--accent); }
+.followup-assistant { border-left: 3px solid var(--ok); }
+.badge-web { border-color: var(--warn); color: var(--warn); }
+dialog {
+	background: var(--panel);
+	color: var(--text);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 8px 16px 16px;
+	max-width: 640px;
+	width: calc(100% - 48px);
+}
+dialog::backdrop { background: rgba(0, 0, 0, .55); }
+dialog textarea { min-height: 90px; }
