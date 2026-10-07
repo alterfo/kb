@@ -53,10 +53,10 @@
 - [x] run tests - must pass before next task
 
 ### Task 2: Query generalizer (LLM-обобщение)
-- [ ] `Generalizer.Propose(ctx, chat, question, answerContext) (string, error)`: промпт требует общий формулировку без имён, идентификаторов, внутренних терминов; контекст корпуса в промпт отдаётся минимально
-- [ ] вывод модели чистится (`<think>` вырезается), проходит `Guard.Check`; при блокировке — одна повторная попытка с перечислением запрещённого, затем отказ
-- [ ] write tests с fake `ChatClient`: нормальный ответ, ответ с утечкой → retry → отказ, пустой ответ, ошибка LLM
-- [ ] run tests - must pass before next task
+- [x] `Generalizer.Propose(ctx, chat, question, answerContext) (string, error)`: промпт требует общий формулировку без имён, идентификаторов, внутренних терминов; контекст корпуса в промпт отдаётся минимально
+- [x] вывод модели чистится (`<think>` вырезается), проходит `Guard.Check`; при блокировке — одна повторная попытка с перечислением запрещённого, затем отказ
+- [x] write tests с fake `ChatClient`: нормальный ответ, ответ с утечкой → retry → отказ, пустой ответ, ошибка LLM
+- [x] run tests - must pass before next task
 
 ### Task 3: SearXNG client
 - [ ] `internal/websearch/searxng`: `Search(ctx, query, n) ([]Result, error)` с JSON API, таймаутом, лимитом размера ответа, обходом прокси по `KB_NO_PROXY`
