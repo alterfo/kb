@@ -36,6 +36,7 @@ type Env struct {
 	SetMaxRounds          int
 	AbstainThreshold      float64
 	SupersedeMode         string
+	SupersedeMinShared    int
 	IntraDocBudget        int
 	AskRollingWindow      int
 	StaleAfter            time.Duration
@@ -68,36 +69,37 @@ func defaultAuthorityBonus() map[string]float64 {
 
 func Defaults() Env {
 	return Env{
-		KBRoot:           "./kb_root",
-		PersistDir:       "./kb_root/.persist",
-		LLMBaseURL:       DefaultLocalLLMURL,
-		LLMModel:         "qwen3.8:latest",
-		EmbedModel:       "qwen3-embedding",
-		DescribeModel:    "qwen3.8:latest",
-		DescribeBatch:    10,
-		Hybrid:           true,
-		Rerank:           "off",
-		AuthorityBonus:   defaultAuthorityBonus(),
-		NoProxy:          []string{"127.0.0.1"},
-		TopK:             10,
-		ChunkSize:        4096,
-		ChunkOverlap:     512,
-		RRFK:             60,
-		CommunityAlgo:    "louvain",
-		CandidateK:       20,
-		PerDocCap:        2,
-		SetMaxRounds:     3,
-		SupersedeMode:    "soft",
-		AskRollingWindow: 3,
-		StaleAfter:       24 * time.Hour,
-		LLMTimeout:       60 * time.Second,
-		MaxSubgoals:      5,
-		MaxGapQueries:    3,
-		IndexGraph:       true,
-		FTS5:             true,
-		ANNPrefilter:     false,
-		PIIRedact:        false,
-		WebRateLimit:     0,
+		KBRoot:             "./kb_root",
+		PersistDir:         "./kb_root/.persist",
+		LLMBaseURL:         DefaultLocalLLMURL,
+		LLMModel:           "qwen3.8:latest",
+		EmbedModel:         "qwen3-embedding",
+		DescribeModel:      "qwen3.8:latest",
+		DescribeBatch:      10,
+		Hybrid:             true,
+		Rerank:             "off",
+		AuthorityBonus:     defaultAuthorityBonus(),
+		NoProxy:            []string{"127.0.0.1"},
+		TopK:               10,
+		ChunkSize:          4096,
+		ChunkOverlap:       512,
+		RRFK:               60,
+		CommunityAlgo:      "louvain",
+		CandidateK:         20,
+		PerDocCap:          2,
+		SetMaxRounds:       3,
+		SupersedeMode:      "soft",
+		SupersedeMinShared: 1,
+		AskRollingWindow:   3,
+		StaleAfter:         24 * time.Hour,
+		LLMTimeout:         60 * time.Second,
+		MaxSubgoals:        5,
+		MaxGapQueries:      3,
+		IndexGraph:         true,
+		FTS5:               true,
+		ANNPrefilter:       false,
+		PIIRedact:          false,
+		WebRateLimit:       0,
 	}
 }
 
@@ -234,6 +236,13 @@ func LoadEnv(lookup EnvLookup) (Env, error) {
 			return Env{}, fmt.Errorf("KB_SUPERSEDE_MODE: invalid value %q (want soft|strict)", v)
 		}
 		e.SupersedeMode = v
+	}
+	if v, ok := lookup("KB_SUPERSEDE_MIN_SHARED"); ok && v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return Env{}, fmt.Errorf("KB_SUPERSEDE_MIN_SHARED: invalid positive int %q", v)
+		}
+		e.SupersedeMinShared = n
 	}
 	if v, ok := lookup("KB_ABSTAIN_THRESHOLD"); ok && v != "" {
 		f, err := strconv.ParseFloat(v, 64)

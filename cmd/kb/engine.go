@@ -96,13 +96,14 @@ func newEngineBundleAt(env config.Env, dbPath string) (*engineBundle, error) {
 		graphForIndex = nil
 	}
 	idx := engine.NewIndexer(engine.Config{
-		Root:         env.KBRoot,
-		Vector:       vectorStore,
-		Graph:        graphForIndex,
-		Embed:        embedIndex,
-		EmbedModel:   env.EmbedModel,
-		ChunkSize:    env.ChunkSize,
-		ChunkOverlap: env.ChunkOverlap,
+		Root:                 env.KBRoot,
+		Vector:               vectorStore,
+		Graph:                graphForIndex,
+		Embed:                embedIndex,
+		EmbedModel:           env.EmbedModel,
+		ChunkSize:            env.ChunkSize,
+		ChunkOverlap:         env.ChunkOverlap,
+		BlastRadiusMinShared: env.SupersedeMinShared,
 	})
 	graphStore.RefreshFunc = updater.RefreshStaleCommunities
 

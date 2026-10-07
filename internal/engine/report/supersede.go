@@ -29,15 +29,16 @@ func SupersessionBlock(chunks []vector.ScoredChunk) string {
 		if !ok {
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("- OLD: %s (%s) superseded by NEW: %s (%s). Prefer NEW and mention that older %s states a different value.",
+		lines = append(lines, fmt.Sprintf("- OLD: %s (%s) superseded by NEW: %s (%s)",
 			c.Chunk.FileName, chunkDocDate(c.Chunk),
-			newer.Chunk.FileName, chunkDocDate(newer.Chunk),
-			c.Chunk.FileName))
+			newer.Chunk.FileName, chunkDocDate(newer.Chunk)))
 	}
 	if len(lines) == 0 {
 		return ""
 	}
-	return "Superseded documents detected (prefer the newer document; state both versions explicitly):\n" +
+	return "Superseded documents detected. This is a background note, not the question: use it only when the " +
+		"excerpts above give different values for the question being asked (then prefer the newer document and " +
+		"state both values). Never answer about this note itself and do not mention it otherwise:\n" +
 		strings.Join(lines, "\n")
 }
 

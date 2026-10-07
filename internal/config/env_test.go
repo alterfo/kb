@@ -86,6 +86,7 @@ func TestLoadEnv_Overrides(t *testing.T) {
 		"KB_SET_MAX_ROUNDS":            "7",
 		"KB_ABSTAIN_THRESHOLD":         "0.6",
 		"KB_SUPERSEDE_MODE":            "strict",
+		"KB_SUPERSEDE_MIN_SHARED":      "4",
 		"KB_INTRA_DOC_BUDGET":          "5000",
 		"KB_STALE_AFTER":               "6h30m",
 		"KB_DESCRIBE_MODEL":            "llama3",
@@ -169,6 +170,9 @@ func TestLoadEnv_Overrides(t *testing.T) {
 	if e.SupersedeMode != "strict" {
 		t.Errorf("SupersedeMode = %q, want strict", e.SupersedeMode)
 	}
+	if e.SupersedeMinShared != 4 {
+		t.Errorf("SupersedeMinShared = %d, want 4", e.SupersedeMinShared)
+	}
 	if e.IntraDocBudget != 5000 {
 		t.Errorf("IntraDocBudget = %d, want 5000", e.IntraDocBudget)
 	}
@@ -241,6 +245,8 @@ func TestLoadEnv_InvalidValues(t *testing.T) {
 		{"bad abstain_threshold negative", "KB_ABSTAIN_THRESHOLD", "-0.2"},
 		{"bad abstain_threshold above one", "KB_ABSTAIN_THRESHOLD", "1.1"},
 		{"bad supersede_mode", "KB_SUPERSEDE_MODE", "hard"},
+		{"bad supersede_min_shared zero", "KB_SUPERSEDE_MIN_SHARED", "0"},
+		{"bad supersede_min_shared not a number", "KB_SUPERSEDE_MIN_SHARED", "some"},
 		{"bad intra_doc_budget negative", "KB_INTRA_DOC_BUDGET", "-1"},
 		{"bad intra_doc_budget not a number", "KB_INTRA_DOC_BUDGET", "many"},
 		{"bad stale_after format", "KB_STALE_AFTER", "soon"},

@@ -275,6 +275,7 @@ func envVars(e Env) []EffectiveVar {
 		{Name: "KB_SET_MAX_ROUNDS", Value: strconv.Itoa(e.SetMaxRounds), Default: "3"},
 		{Name: "KB_ABSTAIN_THRESHOLD", Value: formatOptionalFloat(e.AbstainThreshold), Default: ""},
 		{Name: "KB_SUPERSEDE_MODE", Value: e.SupersedeMode, Default: "soft"},
+		{Name: "KB_SUPERSEDE_MIN_SHARED", Value: strconv.Itoa(e.SupersedeMinShared), Default: "1"},
 		{Name: "KB_INTRA_DOC_BUDGET", Value: strconv.Itoa(e.IntraDocBudget), Default: ""},
 		{Name: "KB_ASK_ROLLING_WINDOW", Value: strconv.Itoa(e.AskRollingWindow), Default: "3"},
 		{Name: "KB_STALE_AFTER", Value: e.StaleAfter.String(), Default: "24h"},

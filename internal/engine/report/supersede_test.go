@@ -36,6 +36,22 @@ func TestSupersessionBlockFormatsPairs(t *testing.T) {
 	}
 }
 
+func TestSupersessionBlockIsBackgroundNoteNotATask(t *testing.T) {
+	chunks := []vector.ScoredChunk{
+		{Chunk: vector.Chunk{ID: "old", RefDocID: "doc-old", FileName: "old.md", SupersededBy: "doc-new"}, Score: 1},
+		{Chunk: vector.Chunk{ID: "new", RefDocID: "doc-new", FileName: "new.md"}, Score: 2},
+	}
+	got := SupersessionBlock(chunks)
+	for _, want := range []string{"background note", "not the question", "Never answer about this note itself"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("block must frame itself as subordinate to the question, missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "Prefer NEW and mention") {
+		t.Errorf("block must not instruct the model to mention the supersession unconditionally:\n%s", got)
+	}
+}
+
 func TestBuildSynthesisPromptIncludesBlock(t *testing.T) {
 	chunks := []vector.ScoredChunk{
 		{Chunk: vector.Chunk{ID: "old", RefDocID: "doc-old", FileName: "old.md", Text: "old text", SupersededBy: "doc-new"}, Score: 1},

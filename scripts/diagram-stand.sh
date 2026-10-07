@@ -27,6 +27,7 @@ stand_env() {
   export KB_LLM_MODEL="$LLM_MODEL"
   export KB_EMBED_MODEL="$EMBED_MODEL"
   export KB_LLM_NO_THINK=true
+  export KB_SUPERSEDE_MIN_SHARED="${KB_SUPERSEDE_MIN_SHARED:-3}"
   export KB_NO_PROXY="127.0.0.1,$LLM_HOST"
   export NO_PROXY="127.0.0.1,$LLM_HOST"
 }
@@ -49,6 +50,7 @@ cmd="${1:-all}"
 case "$cmd" in
   prepare) stand_env; prepare ;;
   index)   stand_env; "$STAND/kb" reindex ;;
+  shadow)  stand_env; rm -f "$STAND"/shadow.db "$STAND"/shadow.db-shm "$STAND"/shadow.db-wal; "$STAND/kb" reindex --into "$STAND/shadow.db" ;;
   serve)   stand_env; exec "$STAND/kb" serve -addr "$ADDR" ;;
   diagram) stand_env; shift; exec "$STAND/kb" diagram "$@" ;;
   all)     stand_env; prepare; "$STAND/kb" reindex; exec "$STAND/kb" serve -addr "$ADDR" ;;

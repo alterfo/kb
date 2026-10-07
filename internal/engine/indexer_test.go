@@ -2306,3 +2306,36 @@ func (c *chatRoutingChat) Chat(ctx context.Context, req llm.ChatRequest) (llm.Ch
 	}
 	return llm.ChatResponse{Content: c.summary}, nil
 }
+
+func TestBlastRadiusMinSharedRaisesSupersedeThreshold(t *testing.T) {
+	root := t.TempDir()
+	writeDoc(t, root, "notes/a.md", connector.Document{ID: "a", Source: "notes", Body: "Alice knows Bob."})
+	writeDoc(t, root, "notes/b.md", connector.Document{ID: "b", Source: "notes", Body: "Alice knows Carol."})
+
+	db := openTestDB(t)
+	vs := sqlite.NewVectorStore(db)
+	gs := sqlite.NewGraphStore(db)
+	chat := &scriptedChat{responses: []string{
+		aliceBobJSON, `{"title":"Alice Bob","summary":"AB"}`,
+		aliceCarolJSON, `{"title":"Alice Carol","summary":"AC"}`,
+	}}
+	updater := graph.NewGraphUpdater(gs, graph.NewExtractor(chat, "test-model"), graph.NewSummarizer(chat, "test-model"))
+	ix := NewIndexer(Config{Root: root, Vector: vs, Graph: updater, ChunkSize: 512, BlastRadiusMinShared: 2})
+	ctx := context.Background()
+
+	for _, rel := range []string{"notes/a.md", "notes/b.md"} {
+		if err := ix.AddOrUpdateDocument(ctx, rel); err != nil {
+			t.Fatalf("AddOrUpdateDocument %s: %v", rel, err)
+		}
+	}
+
+	chunks, err := vs.ChunksByDoc(ctx, "notes/a")
+	if err != nil {
+		t.Fatalf("ChunksByDoc a: %v", err)
+	}
+	for _, c := range chunks {
+		if c.ValidTo == "" && c.SupersededBy != "" {
+			t.Fatalf("chunk %s superseded_by = %q, want none: only one entity (Alice) is shared and the threshold is 2", c.ID, c.SupersededBy)
+		}
+	}
+}

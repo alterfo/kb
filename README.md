@@ -133,6 +133,7 @@ connector that needs them (Discord).
 | `KB_QUALIFIER_FILTER` | `false` | Extract structured metadata qualifiers from the question via one LLM call and filter every retrieval leg |
 | `KB_ABSTAIN_THRESHOLD` | (off) | Float in `(0,1]`: answer "not found" when every subgoal is uncovered and average coverage is below the threshold |
 | `KB_SUPERSEDE_MODE` | `soft` | `soft` = rank superseded docs lower; `strict` = drop a superseded doc from synthesis when its replacement is retrieved |
+| `KB_SUPERSEDE_MIN_SHARED` | `1` | Minimum number of graph entities a new document must share with an older chunk to mark that chunk superseded at index time. `1` means any single shared entity (e.g. the project name) supersedes; raise to `3`+ for corpora of related but complementary documents |
 | `KB_INTRA_DOC_BUDGET` | (off) | Approx token budget for pulling sibling sections of winning documents into results (intra-document questions) |
 | `KB_STALE_AFTER` | `24h` | Sync staleness threshold for `doctor` / `/integrations` |
 | `KB_COMMUNITY_ALGO` | `louvain` | Community detection: `louvain` \| `leiden` (Leiden is hierarchical) |

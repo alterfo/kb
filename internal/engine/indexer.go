@@ -38,6 +38,8 @@ type Config struct {
 	EmbedModel   string
 	ChunkSize    int
 	ChunkOverlap int
+
+	BlastRadiusMinShared int
 }
 
 // Result summarizes a Reindex/BuildAll run.
@@ -47,7 +49,7 @@ type Result struct {
 	Removed int
 }
 
-const blastRadiusMinShared = 1
+const defaultBlastRadiusMinShared = 1
 
 // Indexer ties ingest output (markdown files under Root, or Documents
 // written directly via an API sink) to the vector store and knowledge
@@ -61,6 +63,8 @@ type Indexer struct {
 	embedModel string
 	chunker    *chunk.TextChunker
 	chat       *chunk.ChatChunker
+
+	blastMinShared int
 
 	mu       sync.Mutex
 	chatBuf  map[string][]threadChatMsg
@@ -76,14 +80,15 @@ type threadChatMsg struct {
 
 func NewIndexer(cfg Config) *Indexer {
 	return &Indexer{
-		root:       cfg.Root,
-		vector:     cfg.Vector,
-		graph:      cfg.Graph,
-		embed:      cfg.Embed,
-		embedModel: cfg.EmbedModel,
-		chunker:    chunk.NewTextChunker(cfg.ChunkSize, cfg.ChunkOverlap),
-		chat:       chunk.NewChatChunker(0),
-		apiRefs:    map[string]struct{}{},
+		root:           cfg.Root,
+		vector:         cfg.Vector,
+		graph:          cfg.Graph,
+		embed:          cfg.Embed,
+		embedModel:     cfg.EmbedModel,
+		chunker:        chunk.NewTextChunker(cfg.ChunkSize, cfg.ChunkOverlap),
+		chat:           chunk.NewChatChunker(0),
+		blastMinShared: blastMinSharedOrDefault(cfg.BlastRadiusMinShared),
+		apiRefs:        map[string]struct{}{},
 	}
 }
 
@@ -731,7 +736,7 @@ func (ix *Indexer) indexChunks(ctx context.Context, rel string, doc connector.Do
 			log.Printf("engine: index %q: clear own superseded_by: %v (continuing)", rel, err)
 		}
 		if len(touched) > 0 && ix.graph.Store != nil {
-			overlapping, err := ix.graph.Store.OverlappingChunks(ctx, touched, refDocID, blastRadiusMinShared)
+			overlapping, err := ix.graph.Store.OverlappingChunks(ctx, touched, refDocID, ix.blastMinShared)
 			if err != nil {
 				log.Printf("engine: index %q: blast-radius overlap query: %v (continuing)", rel, err)
 			} else if len(overlapping) > 0 {
@@ -994,4 +999,11 @@ func sanitizeID(id string) string {
 		fmt.Fprintf(&b, "-%x", sum[:4])
 	}
 	return b.String()
+}
+
+func blastMinSharedOrDefault(n int) int {
+	if n <= 0 {
+		return defaultBlastRadiusMinShared
+	}
+	return n
 }
