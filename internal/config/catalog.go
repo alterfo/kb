@@ -179,6 +179,12 @@ func validateEnv(e Env) error {
 	if e.WebRateLimit < 0 {
 		return fmt.Errorf("KB_WEB_RATE_LIMIT: must be non-negative")
 	}
+	if e.WebSearchMaxResults <= 0 {
+		return fmt.Errorf("KB_WEBSEARCH_MAX_RESULTS: must be positive")
+	}
+	if e.WebSearchMaxPerThread < 0 {
+		return fmt.Errorf("KB_WEBSEARCH_MAX_PER_THREAD: must be non-negative")
+	}
 	return nil
 }
 
@@ -290,6 +296,9 @@ func envVars(e Env) []EffectiveVar {
 		{Name: "KB_ANN_PREFILTER", Value: strconv.FormatBool(e.ANNPrefilter), Default: "false"},
 		{Name: "KB_PII_REDACT", Value: strconv.FormatBool(e.PIIRedact), Default: "false"},
 		{Name: "KB_WEB_RATE_LIMIT", Value: strconv.Itoa(e.WebRateLimit), Default: "0"},
+		{Name: "KB_WEBSEARCH_URL", Value: e.WebSearchURL, Default: ""},
+		{Name: "KB_WEBSEARCH_MAX_RESULTS", Value: strconv.Itoa(e.WebSearchMaxResults), Default: "5"},
+		{Name: "KB_WEBSEARCH_MAX_PER_THREAD", Value: strconv.Itoa(e.WebSearchMaxPerThread), Default: "0"},
 	}
 }
 

@@ -59,11 +59,11 @@
 - [x] run tests - must pass before next task
 
 ### Task 3: SearXNG client
-- [ ] `internal/websearch/searxng`: `Search(ctx, query, n) ([]Result, error)` с JSON API, таймаутом, лимитом размера ответа, обходом прокси по `KB_NO_PROXY`
-- [ ] конфиг: `KB_WEBSEARCH_URL` (пусто = фича выключена), `KB_WEBSEARCH_MAX_RESULTS`, лимит запросов на тред
-- [ ] нормализация результатов: title/url/snippet обрезаются, HTML вырезается, дубли по домену ограничиваются
-- [ ] write tests на `httptest.Server`: успех, не-200, таймаут, огромный ответ, невалидный JSON
-- [ ] run tests - must pass before next task
+- [x] `internal/websearch/searxng`: `Search(ctx, query, n) ([]Result, error)` с JSON API, таймаутом, лимитом размера ответа, обходом прокси по `KB_NO_PROXY`
+- [x] конфиг: `KB_WEBSEARCH_URL` (пусто = фича выключена), `KB_WEBSEARCH_MAX_RESULTS`, лимит запросов на тред
+- [x] нормализация результатов: title/url/snippet обрезаются, HTML вырезается, дубли по домену ограничиваются
+- [x] write tests на `httptest.Server`: успех, не-200, таймаут, огромный ответ, невалидный JSON
+- [x] run tests - must pass before next task
 
 ### Task 4: Follow-up storage
 - [ ] расширить `history.Store`: `AppendAskMessage/AskThread` (таблица `ask_messages`: run_id, seq, role, content, sources JSON, web_used, created_at) и миграция в `store/sqlite`

@@ -51,6 +51,9 @@ type Env struct {
 	ANNPrefilter          bool
 	PIIRedact             bool
 	WebRateLimit          int
+	WebSearchURL          string
+	WebSearchMaxResults   int
+	WebSearchMaxPerThread int
 }
 
 // DefaultLocalLLMURL is the local LLM. It is pinned to the local
@@ -69,37 +72,39 @@ func defaultAuthorityBonus() map[string]float64 {
 
 func Defaults() Env {
 	return Env{
-		KBRoot:             "./kb_root",
-		PersistDir:         "./kb_root/.persist",
-		LLMBaseURL:         DefaultLocalLLMURL,
-		LLMModel:           "qwen3.8:latest",
-		EmbedModel:         "qwen3-embedding",
-		DescribeModel:      "qwen3.8:latest",
-		DescribeBatch:      10,
-		Hybrid:             true,
-		Rerank:             "off",
-		AuthorityBonus:     defaultAuthorityBonus(),
-		NoProxy:            []string{"127.0.0.1"},
-		TopK:               10,
-		ChunkSize:          4096,
-		ChunkOverlap:       512,
-		RRFK:               60,
-		CommunityAlgo:      "louvain",
-		CandidateK:         20,
-		PerDocCap:          2,
-		SetMaxRounds:       3,
-		SupersedeMode:      "soft",
-		SupersedeMinShared: 1,
-		AskRollingWindow:   3,
-		StaleAfter:         24 * time.Hour,
-		LLMTimeout:         60 * time.Second,
-		MaxSubgoals:        5,
-		MaxGapQueries:      3,
-		IndexGraph:         true,
-		FTS5:               true,
-		ANNPrefilter:       false,
-		PIIRedact:          false,
-		WebRateLimit:       0,
+		KBRoot:                "./kb_root",
+		PersistDir:            "./kb_root/.persist",
+		LLMBaseURL:            DefaultLocalLLMURL,
+		LLMModel:              "qwen3.8:latest",
+		EmbedModel:            "qwen3-embedding",
+		DescribeModel:         "qwen3.8:latest",
+		DescribeBatch:         10,
+		Hybrid:                true,
+		Rerank:                "off",
+		AuthorityBonus:        defaultAuthorityBonus(),
+		NoProxy:               []string{"127.0.0.1"},
+		TopK:                  10,
+		ChunkSize:             4096,
+		ChunkOverlap:          512,
+		RRFK:                  60,
+		CommunityAlgo:         "louvain",
+		CandidateK:            20,
+		PerDocCap:             2,
+		SetMaxRounds:          3,
+		SupersedeMode:         "soft",
+		SupersedeMinShared:    1,
+		AskRollingWindow:      3,
+		StaleAfter:            24 * time.Hour,
+		LLMTimeout:            60 * time.Second,
+		MaxSubgoals:           5,
+		MaxGapQueries:         3,
+		IndexGraph:            true,
+		FTS5:                  true,
+		ANNPrefilter:          false,
+		PIIRedact:             false,
+		WebRateLimit:          0,
+		WebSearchMaxResults:   5,
+		WebSearchMaxPerThread: 0,
 	}
 }
 
@@ -362,6 +367,23 @@ func LoadEnv(lookup EnvLookup) (Env, error) {
 			return Env{}, fmt.Errorf("KB_WEB_RATE_LIMIT: invalid non-negative int %q", v)
 		}
 		e.WebRateLimit = n
+	}
+	if v, ok := lookup("KB_WEBSEARCH_URL"); ok && v != "" {
+		e.WebSearchURL = strings.TrimSpace(v)
+	}
+	if v, ok := lookup("KB_WEBSEARCH_MAX_RESULTS"); ok && v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return Env{}, fmt.Errorf("KB_WEBSEARCH_MAX_RESULTS: invalid positive int %q", v)
+		}
+		e.WebSearchMaxResults = n
+	}
+	if v, ok := lookup("KB_WEBSEARCH_MAX_PER_THREAD"); ok && v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return Env{}, fmt.Errorf("KB_WEBSEARCH_MAX_PER_THREAD: invalid non-negative int %q", v)
+		}
+		e.WebSearchMaxPerThread = n
 	}
 
 	if err := validateEnv(e); err != nil {

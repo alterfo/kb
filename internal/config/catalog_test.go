@@ -212,3 +212,20 @@ func TestFingerprintTreatsSecretPresenceOnly(t *testing.T) {
 		t.Fatal("Fingerprint changed across secret value rotation; want presence-only")
 	}
 }
+
+func TestEffectiveVarsContainsWebSearchConfig(t *testing.T) {
+	vars := EffectiveVars(Defaults(), nil)
+	for _, want := range []struct {
+		name  string
+		value string
+	}{
+		{"KB_WEBSEARCH_URL", ""},
+		{"KB_WEBSEARCH_MAX_RESULTS", "5"},
+		{"KB_WEBSEARCH_MAX_PER_THREAD", "0"},
+	} {
+		v := findVar(vars, want.name)
+		if v == nil || v.Value != want.value {
+			t.Fatalf("%s = %#v, want value %q", want.name, v, want.value)
+		}
+	}
+}

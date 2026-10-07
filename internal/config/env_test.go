@@ -58,6 +58,15 @@ func TestLoadEnv_Defaults(t *testing.T) {
 	if e.WebRateLimit != 0 {
 		t.Errorf("WebRateLimit = %d, want 0", e.WebRateLimit)
 	}
+	if e.WebSearchURL != "" {
+		t.Errorf("WebSearchURL = %q, want empty", e.WebSearchURL)
+	}
+	if e.WebSearchMaxResults != 5 {
+		t.Errorf("WebSearchMaxResults = %d, want 5", e.WebSearchMaxResults)
+	}
+	if e.WebSearchMaxPerThread != 0 {
+		t.Errorf("WebSearchMaxPerThread = %d, want 0", e.WebSearchMaxPerThread)
+	}
 	if e.AuthorityBonus["notes/"] != 0.15 || e.AuthorityBonus["notes/approved/"] != 0.30 {
 		t.Errorf("AuthorityBonus = %v, want defaults", e.AuthorityBonus)
 	}
@@ -100,6 +109,9 @@ func TestLoadEnv_Overrides(t *testing.T) {
 		"KB_ANN_PREFILTER":             "true",
 		"KB_PII_REDACT":                "true",
 		"KB_WEB_RATE_LIMIT":            "30",
+		"KB_WEBSEARCH_URL":             "http://search.example.com",
+		"KB_WEBSEARCH_MAX_RESULTS":     "8",
+		"KB_WEBSEARCH_MAX_PER_THREAD":  "2",
 	}
 	e, err := LoadEnv(fakeLookup(m))
 	if err != nil {
@@ -212,6 +224,15 @@ func TestLoadEnv_Overrides(t *testing.T) {
 	if e.WebRateLimit != 30 {
 		t.Errorf("WebRateLimit = %d, want 30", e.WebRateLimit)
 	}
+	if e.WebSearchURL != "http://search.example.com" {
+		t.Errorf("WebSearchURL = %q", e.WebSearchURL)
+	}
+	if e.WebSearchMaxResults != 8 {
+		t.Errorf("WebSearchMaxResults = %d, want 8", e.WebSearchMaxResults)
+	}
+	if e.WebSearchMaxPerThread != 2 {
+		t.Errorf("WebSearchMaxPerThread = %d, want 2", e.WebSearchMaxPerThread)
+	}
 }
 
 func TestLoadEnv_InvalidValues(t *testing.T) {
@@ -269,6 +290,9 @@ func TestLoadEnv_InvalidValues(t *testing.T) {
 		{"bad ann prefilter bool", "KB_ANN_PREFILTER", "notabool"},
 		{"bad pii redact bool", "KB_PII_REDACT", "notabool"},
 		{"bad web rate limit", "KB_WEB_RATE_LIMIT", "-1"},
+		{"bad websearch max results zero", "KB_WEBSEARCH_MAX_RESULTS", "0"},
+		{"bad websearch max results not a number", "KB_WEBSEARCH_MAX_RESULTS", "many"},
+		{"bad websearch max per thread negative", "KB_WEBSEARCH_MAX_PER_THREAD", "-1"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
