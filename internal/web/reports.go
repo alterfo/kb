@@ -15,6 +15,9 @@ type reportsData struct {
 	Query  string
 	NodeID string
 	Report template.HTML
+
+	Mermaid      string
+	DiagramNotes []string
 }
 
 func (s *Server) handleReportsForm(w http.ResponseWriter, r *http.Request) {
@@ -42,12 +45,30 @@ func (s *Server) handleReports(w http.ResponseWriter, r *http.Request) {
 			Data:   data,
 		})
 	}
+	ctx := r.Context()
+	if mode == "diagram" {
+		if s.deps.Graph == nil {
+			fail("knowledge graph is not configured")
+			return
+		}
+		res, err := report.Diagram(ctx, s.deps.Graph, s.deps.Chat, s.deps.LLMModel, strings.TrimSpace(q), report.DiagramOptions{})
+		if err != nil {
+			fail("building diagram failed: " + err.Error())
+			return
+		}
+		data.Mermaid = res.Mermaid
+		if res.Reason != "" {
+			data.DiagramNotes = append(data.DiagramNotes, res.Reason)
+		}
+		data.DiagramNotes = append(data.DiagramNotes, res.Dropped...)
+		s.render(w, "page-reports", http.StatusOK, page{Title: "Reports", Data: data})
+		return
+	}
 	if strings.TrimSpace(q) == "" {
 		fail("query is required")
 		return
 	}
 
-	ctx := r.Context()
 	switch mode {
 	case "", "search":
 		s.refreshBM25(ctx)

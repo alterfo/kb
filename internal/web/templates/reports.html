@@ -3,6 +3,7 @@
 <html lang="en">
 <head>
 {{template "head" .}}
+{{if .Data.Mermaid}}<script src="/static/mermaid.min.js"></script>{{end}}
 </head>
 <body>
 {{template "nav" .}}
@@ -14,12 +15,28 @@
   <select name="mode">
     <option value="search" {{if eq .Data.Mode "search"}}selected{{end}}>search synthesis</option>
     <option value="global" {{if eq .Data.Mode "global"}}selected{{end}}>global (communities)</option>
+    <option value="diagram" {{if eq .Data.Mode "diagram"}}selected{{end}}>diagram (architecture)</option>
   </select>
-  <input type="search" name="q" value="{{.Data.Query}}" placeholder="report query">
+  <input type="search" name="q" value="{{.Data.Query}}" placeholder="report query / diagram entity (empty = whole graph)">
   <button type="submit">Generate</button>
 </form>
 {{with .Data.Report}}
 <div class="markdown">{{.}}</div>
+{{end}}
+{{range .Data.DiagramNotes}}<div class="alert alert-warning">{{.}}</div>{{end}}
+{{if .Data.Mermaid}}
+<pre class="mermaid" id="diagram">{{.Data.Mermaid}}</pre>
+<details>
+  <summary>Mermaid source</summary>
+  <pre>{{.Data.Mermaid}}</pre>
+</details>
+<script>
+(function () {
+  if (window.mermaid) {
+    mermaid.initialize({ startOnLoad: true, theme: "dark", securityLevel: "strict" });
+  }
+})();
+</script>
 {{end}}
 </main>
 </body>

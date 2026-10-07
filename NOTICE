@@ -13,3 +13,8 @@ licenses. Full license texts are reproduced in THIRD_PARTY_LICENSES.md.
   Copyright (c) 2020, Big Sky Software
   Licensed under the Zero-Clause BSD License
   https://github.com/bigskysoftware/htmx
+
+- Mermaid (internal/web/static/mermaid.min.js)
+  Copyright (c) 2014 - 2022 Knut Sveidqvist
+  Licensed under the MIT License
+  https://github.com/mermaid-js/mermaid

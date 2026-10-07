@@ -43,6 +43,45 @@ func TestReports_GlobalFallsBackWithoutLLM(t *testing.T) {
 	}
 }
 
+func TestReports_DiagramRendersMermaidWithoutLLM(t *testing.T) {
+	te := newTestEnv(t, nil)
+	ctx := context.Background()
+	if err := te.graph.UpsertEntities(ctx, []graphstore.Entity{
+		{ID: "e:web", Name: "Web", Type: "component", SourceChunks: []string{"c1"}},
+		{ID: "e:db", Name: "Database", Type: "storage", SourceChunks: []string{"c1"}},
+	}); err != nil {
+		t.Fatalf("UpsertEntities: %v", err)
+	}
+	if err := te.graph.UpsertRelations(ctx, []graphstore.Relation{
+		{ID: "r:1", Src: "e:web", Dst: "e:db", Type: "reads", SourceChunks: []string{"c1"}},
+	}); err != nil {
+		t.Fatalf("UpsertRelations: %v", err)
+	}
+
+	rr := postForm(t, te.server.Handler(), "/reports", url.Values{"mode": {"diagram"}, "q": {""}})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	for _, want := range []string{`class="mermaid"`, "flowchart LR", "Database", "/static/mermaid.min.js"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("diagram page missing %q: %q", want, body)
+		}
+	}
+}
+
+func TestReports_DiagramUnknownEntityShowsNote(t *testing.T) {
+	te := newTestEnv(t, nil)
+	rr := postForm(t, te.server.Handler(), "/reports", url.Values{"mode": {"diagram"}, "q": {"nothing-here"}})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "no entity matches") || strings.Contains(body, `class="mermaid"`) {
+		t.Errorf("want note and no diagram: %q", body)
+	}
+}
+
 func TestReports_InvalidModeRejected(t *testing.T) {
 	te := newTestEnv(t, nil)
 	rr := postForm(t, te.server.Handler(), "/reports", url.Values{"mode": {"bogus"}, "q": {"x"}})
