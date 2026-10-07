@@ -101,7 +101,7 @@
 - [x] `go test ./...`, `go vet ./...`, `gofmt -l .` чистые
 
 ### Task N: [Final] Update documentation
-- [ ] обновить `AGENTS.md` (карта пакетов: `internal/websearch`, исключение fail-closed), `README.md` (env-переменные), `.env.example`, `CHANGELOG.md`
+- [x] обновить `AGENTS.md` (карта пакетов: `internal/websearch`, исключение fail-closed), `README.md` (env-переменные), `.env.example`, `CHANGELOG.md`
 
 ## Technical Details
 - Env: `KB_WEBSEARCH_URL`, `KB_WEBSEARCH_MAX_RESULTS` (дефолт 5), `KB_WEBSEARCH_DENYLIST`, `KB_WEBSEARCH_MAX_PER_THREAD`.

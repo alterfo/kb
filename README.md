@@ -148,6 +148,9 @@ connector that needs them (Discord).
 | `KB_FTS5` | `true` | Lexical index backend: SQLite FTS5 (default) vs. the legacy in-memory BM25 index when `false` |
 | `KB_WEB_AUTH_TOKEN` | (unset) | Bearer/`X-KB-Token`/cookie token required by `kb serve`; mandatory when `-addr` is non-loopback |
 | `KB_WEB_RATE_LIMIT` | `0` (off) | Requests per minute per client IP for `kb serve`; only enforced on non-loopback binds |
+| `KB_WEBSEARCH_URL` | (unset) | SearXNG base URL enabling optional web search in Ask follow-up chat; empty (default) disables the feature |
+| `KB_WEBSEARCH_MAX_RESULTS` | `5` | Max web results returned per confirmed web search |
+| `KB_WEBSEARCH_MAX_PER_THREAD` | `0` (unlimited) | Max confirmed web searches per ask thread; `0` = no per-thread limit |
 
 Connector instances are declared in `$KB_ROOT/sources.yaml`. The file stores
 only the *names* of environment variables that hold secrets; values are read
@@ -520,6 +523,15 @@ Starts the web dashboard (`internal/web`):
   config fingerprint)`, so a repeated question against an unchanged corpus and
   configuration returns the previous answer (including fail-open placeholders)
   without paying LLM/retrieval cost again; stale entries are pruned on startup.
+- **Ask follow-up chat** — after the final answer, the conversation can
+  continue on the same thread; responses render as markdown with reasoning
+  hidden behind `<think>` spoilers, and the thread persists to SQLite across
+  restarts. With `KB_WEBSEARCH_URL` set, follow-ups can optionally search the
+  web: the outgoing query is LLM-generalized, passed through a deterministic
+  leak filter, then shown to the user for explicit per-query confirmation
+  before any request leaves the process (fail-closed). Web results are
+  untrusted external data, cited as `[web:N]`, and never indexed into the
+  corpus.
 - **Documents** — summary list, edit form, htmx delete; `/documents/view` shows
   a document's graph relationships (entities/relations whose source chunks
   overlap the document), not just its raw content.

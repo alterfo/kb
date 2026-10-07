@@ -15,7 +15,7 @@
 
 General project rules apply; this section keeps only kb-specific rules.
 
-- **Fail-open everywhere**, except embedding dimension — fail-loud (`ErrDimMismatch`): every step (retrieval/LLM/rerank/graph) returns a partial result + error; the caller degrades, never panics.
+- **Fail-open everywhere**, except embedding dimension — fail-loud (`ErrDimMismatch`): every step (retrieval/LLM/rerank/graph) returns a partial result + error; the caller degrades, never panics. Explicit exception: outbound web search (`internal/websearch`) is fail-closed — any guard/generalizer/confirmation error means no search request leaves, and the answer is served from the corpus only.
 - **TDD.** Tests land in the same task as the code; pure algorithms get tests first. A task is done only when `go test ./...`, `go vet ./...`, `gofmt -l .` are clean.
 - **No LLM, no network in unit tests.** DI seams: `EnvLookup`, `httptest.Server`, `HTTPDoer`/clock, in-memory `Sink`, fake `LLMClient`/`Embedder`/`Reranker`/`GraphStore`. Live LLM — only behind `//go:build integration` + `KB_LLM_IT=1`.
 
@@ -99,6 +99,7 @@ General project rules apply; this section keeps only kb-specific rules.
 | `internal/connector/registry` | `map[type]Factory`, `New(type)` | точка регистрации нового коннектора |
 | `internal/connectors/{github,gitlab,wiki,mcp,chat,tracker,searchapi,file,discord,blog,web}` | конкретные коннекторы | все реализованы: chat = telegram/slack/mattermost, tracker = yandex-tracker/youtrack/kaiten/weeek/trello, discord (SOCKS через `KB_SOCKS_PROXY`), blog = rss, web = sitemap/pages-краулер, file — через импортёры |
 | `internal/transport` | общий HTTP-клиент: пейджеры, retry/backoff, ratelimit, ETag, no-proxy, SOCKS5 (`SOCKS5DialContext`) | переиспользуется всеми коннекторами |
+| `internal/websearch/{guard,generalizer,searxng}` | безопасный исходящий веб-поиск для ask follow-up: `guard` (детерминированный фильтр утечек: email/телефон/IP/токены/ключи/пути/приватные хосты/denylist, fail-closed), `generalizer` (LLM-обобщение запроса с повторной попыткой через guard), `searxng` (JSON-клиент SearXNG с нормализацией результатов) | явное осознанное исключение из fail-open: любая ошибка guard/generalizer/подтверждения = поиск не выполняется, ответ только по корпусу; веб-результаты — недоверенные внешние данные, цитируются `[web:N]`, не смешиваются с корпусом и не индексируются |
 | `internal/state` | `.sync-state.json` (курсор advance-on-success+rollback), `.tombstones.json` | |
 | `internal/render` | `Document → markdown + YAML frontmatter` | golden-тесты в `render/testdata` |
 | `internal/markdown` | HTML → Markdown (используется `rss`/`web`-коннекторами) | |

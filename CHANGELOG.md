@@ -10,6 +10,14 @@ follows Keep a Changelog, and the project versions with Semantic Versioning.
 - `kb bench slice` to build a category-targeted ERB corpus and question subset.
 - `kb bench score` to grade ERB submissions with gold-answer/facts/retrieval scoring.
 - `kb bench -answer-mode` for the `got` or `naive` answering path.
+- Ask follow-up chat on `/ask`: continue the conversation after the final
+  answer with markdown responses and reasoning hidden behind `<think>`
+  spoilers; the thread persists to SQLite and is restored after restart.
+- Optional safe web search (SearXNG) for Ask follow-ups with a fail-closed
+  outbound-query pipeline: LLM generalization, deterministic leak filter, and
+  explicit per-query confirmation before any request leaves the process; web
+  results are cited as external `[web:N]` sources and never indexed into the
+  corpus.
 
 ### Changed
 
