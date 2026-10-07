@@ -53,6 +53,8 @@ type testEnv struct {
 	chat    ChatClient
 }
 
+type testEnvOption func(*Deps)
+
 func openTestDB(t *testing.T) *sqlite.DB {
 	t.Helper()
 	db, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "kb.db"))
@@ -78,7 +80,7 @@ func writeDoc(t *testing.T, root, relPath string, d connector.Document) {
 	}
 }
 
-func newTestEnv(t *testing.T, chat ChatClient) *testEnv {
+func newTestEnv(t *testing.T, chat ChatClient, opts ...testEnvOption) *testEnv {
 	t.Helper()
 	root := t.TempDir()
 	persist := filepath.Join(root, ".persist")
@@ -105,7 +107,7 @@ func newTestEnv(t *testing.T, chat ChatClient) *testEnv {
 		SourcesPath: filepath.Join(root, "sources.yaml"),
 	})
 
-	srv := NewServer(Deps{
+	deps := Deps{
 		Root:         root,
 		PersistDir:   persist,
 		Vector:       vs,
@@ -123,7 +125,11 @@ func newTestEnv(t *testing.T, chat ChatClient) *testEnv {
 		DefaultK:     10,
 		SourcesPath:  filepath.Join(root, "sources.yaml"),
 		Governance:   gov,
-	})
+	}
+	for _, opt := range opts {
+		opt(&deps)
+	}
+	srv := NewServer(deps)
 
 	return &testEnv{
 		server:  srv,

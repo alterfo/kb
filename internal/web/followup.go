@@ -39,6 +39,7 @@ type followupRequest struct {
 	Retrieved        []vector.ScoredChunk
 	Thread           []history.AskMessage
 	Web              []searxng.Result
+	Notice           string
 	MaxThread        int
 }
 
@@ -104,6 +105,9 @@ func needsFollowupRetrieval(req followupRequest) bool {
 
 func buildFollowupPrompt(req followupRequest) []llm.ChatMessage {
 	msgs := []llm.ChatMessage{{Role: "system", Content: followupSystemPrompt}}
+	if notice := strings.TrimSpace(req.Notice); notice != "" {
+		msgs = append(msgs, llm.ChatMessage{Role: "system", Content: notice})
+	}
 	if corpus := buildFollowupContext(req); corpus != "" {
 		msgs = append(msgs, llm.ChatMessage{Role: "user", Content: corpus})
 	}

@@ -89,6 +89,12 @@ type Deps struct {
 	EnvLookup   func(key string) (string, bool)
 	Spawn       func(func())
 
+	WebSearchURL          string
+	WebSearchMaxResults   int
+	WebSearchMaxPerThread int
+	WebSearchDenylist     []string
+	WebSearchAudit        func(runID, query string, at time.Time)
+
 	Governance *governance.Governance
 }
 
@@ -102,6 +108,8 @@ type Server struct {
 	asks      *askManager
 	asksSem   chan struct{}
 	limiter   *clientRateLimiter
+	followup  *followupEngine
+	websearch *webSearchService
 }
 
 func NewServer(deps Deps) *Server {
@@ -178,6 +186,10 @@ func NewServer(deps Deps) *Server {
 		ANNPrefilter:   deps.ANNPrefilter,
 	})
 	s.retriever = r
+	s.followup = newFollowupEngine(deps.Chat, deps.LLMModel, func(ctx context.Context, query string, k int) ([]vector.ScoredChunk, error) {
+		return r.Retrieve(ctx, query, retriever.Options{K: k})
+	}, defaultFollowupRetrieveK, defaultFollowupThreadWindow)
+	s.websearch = newWebSearchService(deps)
 	return s
 }
 
@@ -194,6 +206,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ask/events", s.handleAskEvents)
 	mux.HandleFunc("POST /ask/approve", s.handleAskApprove)
 	mux.HandleFunc("POST /ask/promote", s.handleAskPromote)
+	mux.HandleFunc("POST /ask/followup", s.handleAskFollowup)
+	mux.HandleFunc("POST /ask/followup/websearch/propose", s.handleAskWebSearchPropose)
+	mux.HandleFunc("POST /ask/followup/websearch/confirm", s.handleAskWebSearchConfirm)
 	mux.HandleFunc("GET /documents", s.handleDocuments)
 	mux.HandleFunc("GET /documents/view", s.handleDocumentView)
 	mux.HandleFunc("DELETE /documents", s.handleDocumentDelete)
