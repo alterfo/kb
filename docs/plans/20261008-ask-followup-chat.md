@@ -96,9 +96,9 @@
 - [x] run tests - must pass before next task
 
 ### Task N-1: Verify acceptance criteria
-- [ ] ни один веб-запрос не уходит без явного подтверждения; фильтр fail-closed
-- [ ] markdown и спойлеры работают в треде и после перезагрузки страницы
-- [ ] `go test ./...`, `go vet ./...`, `gofmt -l .` чистые
+- [x] ни один веб-запрос не уходит без явного подтверждения; фильтр fail-closed
+- [x] markdown и спойлеры работают в треде и после перезагрузки страницы
+- [x] `go test ./...`, `go vet ./...`, `gofmt -l .` чистые
 
 ### Task N: [Final] Update documentation
 - [ ] обновить `AGENTS.md` (карта пакетов: `internal/websearch`, исключение fail-closed), `README.md` (env-переменные), `.env.example`, `CHANGELOG.md`
