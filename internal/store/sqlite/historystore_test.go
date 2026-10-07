@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -468,5 +469,141 @@ func TestHistoryStoreLabeledEval(t *testing.T) {
 		if e.LabeledAt.IsZero() {
 			t.Errorf("LabeledAt should be set for %q", e.Query)
 		}
+	}
+}
+
+func TestHistoryStoreAppendAskMessageAndThread(t *testing.T) {
+	db := openTestDB(t)
+	s := NewHistoryStore(db)
+	ctx := context.Background()
+	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+
+	if err := s.AppendAskMessage(ctx, history.AskMessage{RunID: "run-1", Role: history.AskRoleUser, Content: "what about security?", CreatedAt: base}); err != nil {
+		t.Fatalf("AppendAskMessage user: %v", err)
+	}
+	if err := s.AppendAskMessage(ctx, history.AskMessage{
+		RunID:     "run-1",
+		Role:      history.AskRoleAssistant,
+		Content:   "see notes/approved/security.md",
+		Sources:   []string{"notes/approved/security.md", "docs/design.md"},
+		WebUsed:   true,
+		CreatedAt: base.Add(time.Second),
+	}); err != nil {
+		t.Fatalf("AppendAskMessage assistant: %v", err)
+	}
+
+	got, err := s.AskThread(ctx, "run-1")
+	if err != nil {
+		t.Fatalf("AskThread: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("AskThread: got %d messages, want 2", len(got))
+	}
+	if got[0].Role != history.AskRoleUser || got[0].Content != "what about security?" {
+		t.Fatalf("AskThread[0]: unexpected message: %+v", got[0])
+	}
+	if got[0].Seq != 1 || got[1].Seq != 2 {
+		t.Fatalf("AskThread: seq = %d,%d, want 1,2", got[0].Seq, got[1].Seq)
+	}
+	if got[1].Role != history.AskRoleAssistant {
+		t.Fatalf("AskThread[1].Role = %q", got[1].Role)
+	}
+	if !got[1].WebUsed {
+		t.Fatalf("AskThread[1].WebUsed = false, want true")
+	}
+	if len(got[1].Sources) != 2 || got[1].Sources[0] != "notes/approved/security.md" {
+		t.Fatalf("AskThread[1].Sources = %v", got[1].Sources)
+	}
+	if !got[0].CreatedAt.Equal(base) || !got[1].CreatedAt.Equal(base.Add(time.Second)) {
+		t.Fatalf("AskThread: CreatedAt not round-tripped: %+v", got)
+	}
+}
+
+func TestHistoryStoreAskThreadKeepsRunsSeparate(t *testing.T) {
+	db := openTestDB(t)
+	s := NewHistoryStore(db)
+	ctx := context.Background()
+
+	for _, runID := range []string{"run-a", "run-b"} {
+		if err := s.AppendAskMessage(ctx, history.AskMessage{RunID: runID, Role: history.AskRoleUser, Content: "q"}); err != nil {
+			t.Fatalf("AppendAskMessage %s: %v", runID, err)
+		}
+		if err := s.AppendAskMessage(ctx, history.AskMessage{RunID: runID, Role: history.AskRoleAssistant, Content: "a"}); err != nil {
+			t.Fatalf("AppendAskMessage %s: %v", runID, err)
+		}
+	}
+
+	got, err := s.AskThread(ctx, "run-a")
+	if err != nil {
+		t.Fatalf("AskThread: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("AskThread run-a: got %d messages, want 2", len(got))
+	}
+	if got[0].Seq != 1 || got[1].Seq != 2 {
+		t.Fatalf("AskThread run-a: seq = %d,%d, want 1,2", got[0].Seq, got[1].Seq)
+	}
+	for _, m := range got {
+		if m.RunID != "run-a" {
+			t.Fatalf("AskThread run-a returned message for %q", m.RunID)
+		}
+	}
+}
+
+func TestHistoryStoreAskThreadRecovery(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "kb.db")
+
+	db1, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	s1 := NewHistoryStore(db1)
+	if err := s1.AppendAskMessage(ctx, history.AskMessage{RunID: "r", Role: history.AskRoleUser, Content: "hello"}); err != nil {
+		t.Fatalf("AppendAskMessage: %v", err)
+	}
+	if err := s1.AppendAskMessage(ctx, history.AskMessage{RunID: "r", Role: history.AskRoleAssistant, Content: "hi there", WebUsed: true}); err != nil {
+		t.Fatalf("AppendAskMessage: %v", err)
+	}
+	if err := db1.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	db2, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	t.Cleanup(func() { db2.Close() })
+	s2 := NewHistoryStore(db2)
+	got, err := s2.AskThread(ctx, "r")
+	if err != nil {
+		t.Fatalf("AskThread after reopen: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("AskThread after reopen: got %d messages, want 2", len(got))
+	}
+	if got[0].Content != "hello" || got[1].Content != "hi there" || !got[1].WebUsed {
+		t.Fatalf("AskThread after reopen: unexpected messages: %+v", got)
+	}
+}
+
+func TestHistoryStoreAppendAskMessageRequiresRunID(t *testing.T) {
+	db := openTestDB(t)
+	s := NewHistoryStore(db)
+	err := s.AppendAskMessage(context.Background(), history.AskMessage{Role: history.AskRoleUser, Content: "no run"})
+	if err == nil {
+		t.Fatalf("AppendAskMessage: expected error for missing run_id")
+	}
+}
+
+func TestHistoryStoreAskThreadEmpty(t *testing.T) {
+	db := openTestDB(t)
+	s := NewHistoryStore(db)
+	got, err := s.AskThread(context.Background(), "missing")
+	if err != nil {
+		t.Fatalf("AskThread: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("AskThread: got %d messages, want 0", len(got))
 	}
 }

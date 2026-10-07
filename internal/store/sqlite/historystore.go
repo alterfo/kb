@@ -263,6 +263,71 @@ func (s *HistoryStore) MarkRunningInterrupted(ctx context.Context) (int, error) 
 	return int(n), nil
 }
 
+// AppendAskMessage adds a message to a run's follow-up thread. The sequence
+// is assigned per run inside a serialized write transaction, so concurrent
+// appends cannot produce duplicate (run_id, seq) rows.
+func (s *HistoryStore) AppendAskMessage(ctx context.Context, m history.AskMessage) error {
+	if m.RunID == "" {
+		return fmt.Errorf("sqlite: AppendAskMessage: run_id is required")
+	}
+	sources := m.Sources
+	if sources == nil {
+		sources = []string{}
+	}
+	srcJSON, err := json.Marshal(sources)
+	if err != nil {
+		return fmt.Errorf("sqlite: AppendAskMessage: encode sources: %w", err)
+	}
+	tx, err := s.db.beginWriteTx(ctx)
+	if err != nil {
+		return fmt.Errorf("sqlite: AppendAskMessage: begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	var seq int
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) + 1 FROM ask_messages WHERE run_id = ?`, m.RunID).Scan(&seq); err != nil {
+		return fmt.Errorf("sqlite: AppendAskMessage: next seq: %w", err)
+	}
+	webUsed := 0
+	if m.WebUsed {
+		webUsed = 1
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO ask_messages (run_id, seq, role, content, sources, web_used, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, m.RunID, seq, m.Role, m.Content, string(srcJSON), webUsed, encodeTime(&m.CreatedAt)); err != nil {
+		return fmt.Errorf("sqlite: AppendAskMessage: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("sqlite: AppendAskMessage: commit: %w", err)
+	}
+	return nil
+}
+
+func (s *HistoryStore) AskThread(ctx context.Context, runID string) ([]history.AskMessage, error) {
+	rows, err := s.db.sql.QueryContext(ctx, `
+		SELECT run_id, seq, role, content, sources, web_used, created_at
+		FROM ask_messages WHERE run_id = ? ORDER BY seq ASC
+	`, runID)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: AskThread: %w", err)
+	}
+	defer rows.Close()
+
+	var out []history.AskMessage
+	for rows.Next() {
+		m, err := scanAskMessage(rows)
+		if err != nil {
+			return nil, fmt.Errorf("sqlite: AskThread: scan: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite: AskThread: %w", err)
+	}
+	return out, nil
+}
+
 func decodeDocumentIDs(raw string) ([]string, error) {
 	if raw == "" || raw == "[]" || raw == "null" {
 		return nil, nil
@@ -313,4 +378,25 @@ func scanAskRun(row scanner) (history.AskRunEntry, error) {
 		return history.AskRunEntry{}, fmt.Errorf("decode finished_at: %w", err)
 	}
 	return e, nil
+}
+
+func scanAskMessage(row scanner) (history.AskMessage, error) {
+	var m history.AskMessage
+	var sources, createdAt string
+	var webUsed int
+	if err := row.Scan(&m.RunID, &m.Seq, &m.Role, &m.Content, &sources, &webUsed, &createdAt); err != nil {
+		return history.AskMessage{}, err
+	}
+	m.WebUsed = webUsed != 0
+	if t, err := decodeTime(createdAt); err != nil {
+		return history.AskMessage{}, fmt.Errorf("decode created_at: %w", err)
+	} else if t != nil {
+		m.CreatedAt = *t
+	}
+	ids, err := decodeDocumentIDs(sources)
+	if err != nil {
+		return history.AskMessage{}, fmt.Errorf("decode sources: %w", err)
+	}
+	m.Sources = ids
+	return m, nil
 }

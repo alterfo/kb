@@ -108,6 +108,17 @@ CREATE TABLE IF NOT EXISTS ask_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_ask_runs_created_at ON ask_runs(created_at);
 
+CREATE TABLE IF NOT EXISTS ask_messages (
+	run_id TEXT NOT NULL,
+	seq INTEGER NOT NULL,
+	role TEXT NOT NULL,
+	content TEXT NOT NULL DEFAULT '',
+	sources TEXT NOT NULL DEFAULT '[]',
+	web_used INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL,
+	PRIMARY KEY (run_id, seq)
+);
+
 CREATE TABLE IF NOT EXISTS ask_cache (
 	cache_key TEXT PRIMARY KEY,
 	corpus_version INTEGER NOT NULL,

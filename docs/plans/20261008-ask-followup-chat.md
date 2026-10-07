@@ -66,10 +66,10 @@
 - [x] run tests - must pass before next task
 
 ### Task 4: Follow-up storage
-- [ ] расширить `history.Store`: `AppendAskMessage/AskThread` (таблица `ask_messages`: run_id, seq, role, content, sources JSON, web_used, created_at) и миграция в `store/sqlite`
-- [ ] write tests для sqlite-реализации: append, порядок, восстановление после повторного открытия базы
-- [ ] write tests для fake-реализации в `internal/web/fakes_test.go`
-- [ ] run tests - must pass before next task
+- [x] расширить `history.Store`: `AppendAskMessage/AskThread` (таблица `ask_messages`: run_id, seq, role, content, sources JSON, web_used, created_at) и миграция в `store/sqlite`
+- [x] write tests для sqlite-реализации: append, порядок, восстановление после повторного открытия базы
+- [x] write tests для fake-реализации в `internal/web/fakes_test.go`
+- [x] run tests - must pass before next task
 
 ### Task 5: Follow-up answer engine
 - [ ] `internal/web/followup.go`: сборка промпта (вопрос, финальный ответ, источники, последние N реплик), опциональный ретрив по корпусу для уточнения

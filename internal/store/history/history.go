@@ -17,6 +17,12 @@ const (
 	AskRunStatusInterrupted = "interrupted"
 )
 
+// Ask message roles for follow-up threads attached to an ask run.
+const (
+	AskRoleUser      = "user"
+	AskRoleAssistant = "assistant"
+)
+
 // Search feedback values. FeedbackNone means the user has not rated the
 // search; FeedbackUp/FeedbackDown are the two explicit ratings.
 const (
@@ -64,6 +70,19 @@ type AskRunEntry struct {
 	FinishedAt *time.Time
 }
 
+// AskMessage is one message in a follow-up thread attached to an ask run.
+// Sources holds the source identifiers cited by an assistant message;
+// WebUsed records whether untrusted web results fed that message.
+type AskMessage struct {
+	RunID     string
+	Seq       int
+	Role      string
+	Content   string
+	Sources   []string
+	WebUsed   bool
+	CreatedAt time.Time
+}
+
 type Store interface {
 	// RecordSearch logs a completed search. Callers should treat errors as
 	// fail-open: history is diagnostic, not load-bearing for the search
@@ -98,4 +117,11 @@ type Store interface {
 	// MarkRunningInterrupted flips every run still "running" to
 	// "interrupted"; called once at server startup.
 	MarkRunningInterrupted(ctx context.Context) (int, error)
+
+	// AppendAskMessage appends a message to the follow-up thread of an ask
+	// run. The message sequence is assigned automatically per run, so the
+	// caller appends in conversational order without managing Seq.
+	AppendAskMessage(ctx context.Context, m AskMessage) error
+	// AskThread returns the follow-up messages for a run, ordered by seq.
+	AskThread(ctx context.Context, runID string) ([]AskMessage, error)
 }
