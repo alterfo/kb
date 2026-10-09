@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -352,6 +353,7 @@ func runBenchDragonScoreCmd(args []string, stdout, stderr io.Writer) int {
 	out := fset.String("out", "", "optional score report JSON output path")
 	baseURL := fset.String("hf-base-url", dragon.DefaultBaseURL, "HuggingFace datasets-server base URL")
 	historyPath := fset.String("history", "", "score metrics history JSON path (default: out.history.json or dragon-score-history.json)")
+	model := fset.String("model", os.Getenv("KB_LLM_MODEL"), "LLM model name recorded in the score history entry")
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
@@ -404,7 +406,7 @@ func runBenchDragonScoreCmd(args []string, stdout, stderr io.Writer) int {
 			scoreHistoryPath = "dragon-score-history.json"
 		}
 	}
-	if err := dragon.AppendScoreHistory(scoreHistoryPath, rep); err != nil {
+	if err := dragon.AppendScoreHistoryModel(scoreHistoryPath, rep, *model); err != nil {
 		fmt.Fprintf(stderr, "bench-dragon score: %v\n", err)
 		return 1
 	}

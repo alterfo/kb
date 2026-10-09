@@ -1,0 +1,66 @@
+[
+  {
+    "timestamp": "2026-10-04T06:24:20.23916Z",
+    "model": "gemma4",
+    "report": {
+      "total": 600,
+      "matched": 600,
+      "retrieval_hits": 551,
+      "answer_contains_gold": 411,
+      "types": {
+        "cond": {
+          "count": 150,
+          "retrieval_hits": 142,
+          "answer_contains_gold": 126
+        },
+        "mh": {
+          "count": 150,
+          "retrieval_hits": 135,
+          "answer_contains_gold": 110
+        },
+        "set": {
+          "count": 150,
+          "retrieval_hits": 142,
+          "answer_contains_gold": 76
+        },
+        "simple": {
+          "count": 150,
+          "retrieval_hits": 132,
+          "answer_contains_gold": 99
+        }
+      }
+    }
+  },
+  {
+    "timestamp": "2026-10-09T10:16:48.720767Z",
+    "model": "qwen3.8:latest",
+    "report": {
+      "total": 600,
+      "matched": 600,
+      "retrieval_hits": 563,
+      "answer_contains_gold": 373,
+      "types": {
+        "cond": {
+          "count": 150,
+          "retrieval_hits": 143,
+          "answer_contains_gold": 127
+        },
+        "mh": {
+          "count": 150,
+          "retrieval_hits": 137,
+          "answer_contains_gold": 89
+        },
+        "set": {
+          "count": 150,
+          "retrieval_hits": 145,
+          "answer_contains_gold": 73
+        },
+        "simple": {
+          "count": 150,
+          "retrieval_hits": 138,
+          "answer_contains_gold": 84
+        }
+      }
+    }
+  }
+]

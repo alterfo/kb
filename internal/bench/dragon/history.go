@@ -10,19 +10,24 @@ import (
 
 type ScoreHistoryEntry struct {
 	Timestamp time.Time   `json:"timestamp"`
+	Model     string      `json:"model,omitempty"`
 	Report    ScoreReport `json:"report"`
 }
 
 func AppendScoreHistory(path string, rep *ScoreReport) error {
-	return appendScoreHistoryAt(path, rep, time.Now().UTC())
+	return appendScoreHistoryAt(path, rep, time.Now().UTC(), "")
 }
 
-func appendScoreHistoryAt(path string, rep *ScoreReport, timestamp time.Time) error {
+func AppendScoreHistoryModel(path string, rep *ScoreReport, model string) error {
+	return appendScoreHistoryAt(path, rep, time.Now().UTC(), model)
+}
+
+func appendScoreHistoryAt(path string, rep *ScoreReport, timestamp time.Time, model string) error {
 	entries, err := LoadScoreHistory(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	entries = append(entries, ScoreHistoryEntry{Timestamp: timestamp, Report: *rep})
+	entries = append(entries, ScoreHistoryEntry{Timestamp: timestamp, Model: model, Report: *rep})
 	data, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
 		return fmt.Errorf("dragon: encode score history: %w", err)
