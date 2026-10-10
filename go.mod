@@ -10,7 +10,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/ncruces/go-sqlite3 v0.35.6
 	github.com/neurosnap/sentences v1.1.2
-	github.com/tidwall/gjson v1.19.1
+	github.com/tidwall/gjson v1.20.0
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/net v0.59.0
 	gonum.org/v1/gonum v0.17.0
