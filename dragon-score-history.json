@@ -62,5 +62,37 @@
         }
       }
     }
+  },
+  {
+    "timestamp": "2026-10-10T13:40:19.291435Z",
+    "model": "qwen3.8:latest (long answers)",
+    "report": {
+      "total": 600,
+      "matched": 600,
+      "retrieval_hits": 554,
+      "answer_contains_gold": 449,
+      "types": {
+        "cond": {
+          "count": 150,
+          "retrieval_hits": 139,
+          "answer_contains_gold": 133
+        },
+        "mh": {
+          "count": 150,
+          "retrieval_hits": 140,
+          "answer_contains_gold": 108
+        },
+        "set": {
+          "count": 150,
+          "retrieval_hits": 137,
+          "answer_contains_gold": 93
+        },
+        "simple": {
+          "count": 150,
+          "retrieval_hits": 138,
+          "answer_contains_gold": 115
+        }
+      }
+    }
   }
 ]
